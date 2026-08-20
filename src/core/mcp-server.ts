@@ -235,10 +235,10 @@ export function createMcpServer(db: Db, registry: ProjectRegistry, archiveRoots:
     {
       title: 'Lister tous les projets connus',
       description:
-        "Retourne tous les projets sync-hub (id, nom, chemin réel si connu, nombre de fils, archivé ou non) — y compris le " +
-        'projet spécial "unassigned" ("Non affecté") qui regroupe les fils qu\'aucune règle n\'a pu rattacher automatiquement ' +
-        'à un vrai projet. Point de départ pour toute réorganisation : repère les projets concernés ici avant de lister leurs ' +
-        'fils avec list_threads.',
+        "Retourne tous les projets sync-hub (id, nom, chemin réel si connu, catégorie, nombre de fils, archivé ou non) — y " +
+        'compris le projet spécial "unassigned" ("Non affecté") qui regroupe les fils qu\'aucune règle n\'a pu rattacher ' +
+        'automatiquement à un vrai projet. Point de départ pour toute réorganisation : repère les projets concernés ici avant ' +
+        'de lister leurs fils avec list_threads ou de les catégoriser avec set_project_category.',
       inputSchema: {},
     },
     logged(db, 'list_projects', async () => {
@@ -246,8 +246,9 @@ export function createMcpServer(db: Db, registry: ProjectRegistry, archiveRoots:
       const lines = projects.map((p) => {
         const count = db.countThreadsForProject(p.id);
         const path = p.canonicalPath ? ` — ${p.canonicalPath}` : '';
+        const category = p.category ? ` [${p.category}]` : '';
         const archived = p.archived ? ' [archivé]' : '';
-        return `${p.id} — ${p.name}${path} (${count} fil${count === 1 ? '' : 's'})${archived}`;
+        return `${p.id} — ${p.name}${path} (${count} fil${count === 1 ? '' : 's'})${category}${archived}`;
       });
       return { content: [{ type: 'text', text: lines.join('\n') }] };
     }),
@@ -304,6 +305,32 @@ export function createMcpServer(db: Db, registry: ProjectRegistry, archiveRoots:
       db.renameProject(project.id, name.trim());
       updatePointerFiles(db, db.getProject(project.id)!);
       return { content: [{ type: 'text', text: `"${project.name}" renommé en "${name.trim()}".` }] };
+    }),
+  );
+
+  server.registerTool(
+    'set_project_category',
+    {
+      title: 'Catégoriser un projet',
+      description:
+        "Assigne un projet à une catégorie libre pour le regroupement dans le dashboard — au minimum \"ekonum\" (outillage/travaux " +
+        'internes Ekonum), "client" (missions pour un client identifié) et "perso" sont utilisées, mais toute étiquette est ' +
+        'acceptée. Jamais deviné : n\'assigne que ce qui est explicitement demandé. category=null retire le projet de toute catégorie.',
+      inputSchema: {
+        project: z.string().describe('Id ou nom du projet'),
+        category: z.string().nullable().describe('Étiquette de catégorie (ex: "ekonum", "client", "perso"), ou null pour retirer'),
+      },
+    },
+    logged(db, 'set_project_category', async ({ project: projectRef, category }) => {
+      const project = resolveProject(db, projectRef);
+      if (!project) {
+        return { content: [{ type: 'text', text: projectNotFoundText(db, projectRef) }], isError: true };
+      }
+      const trimmed = category?.trim() || null;
+      db.setProjectCategory(project.id, trimmed);
+      return {
+        content: [{ type: 'text', text: trimmed ? `"${project.name}" classé dans "${trimmed}".` : `"${project.name}" retiré de sa catégorie.` }],
+      };
     }),
   );
 

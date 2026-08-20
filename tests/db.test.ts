@@ -102,6 +102,21 @@ describe('Db.renameProject', () => {
   });
 });
 
+describe('Db.setProjectCategory', () => {
+  it('sets a free-form category, survives a re-upsert, and null clears it', () => {
+    db.upsertProject(makeProject());
+    db.setProjectCategory('proj-test', 'client');
+    expect(db.getProject('proj-test')?.category).toBe('client');
+
+    // A routine re-ingest (upsertProject on conflict) must not silently wipe a manually-set category.
+    db.upsertProject(makeProject());
+    expect(db.getProject('proj-test')?.category).toBe('client');
+
+    db.setProjectCategory('proj-test', null);
+    expect(db.getProject('proj-test')?.category).toBeNull();
+  });
+});
+
 describe('Db.mergeProjects', () => {
   beforeEach(() => {
     db.upsertProject(makeProject({ id: 'proj-source', name: 'Source', canonicalPath: '/tmp/source', aliases: { paths: [], claudeSlugs: ['slug-a'], codexCwds: [] } }));

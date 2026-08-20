@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { Archive, Check, ChevronDown, ChevronRight, FileText, GitMerge, GripVertical, Pencil, StickyNote, Trash2, X } from 'lucide-react';
+import { useEffect, useState, type DragEvent, type ReactNode } from 'react';
+import { Archive, Check, ChevronDown, ChevronRight, FileText, GitMerge, GripVertical, Pencil, StickyNote, Tag, Trash2, X } from 'lucide-react';
 import type { Artifact, Memory, Project, Thread } from '../../types.js';
 import { api } from '../lib/api.js';
 
@@ -39,7 +39,7 @@ function IconButton({ title, onClick, className, children }: { title: string; on
         e.stopPropagation();
         onClick();
       }}
-      className={`ml-1 flex shrink-0 items-center rounded p-1 text-muted-foreground opacity-0 group-hover:opacity-100 ${className}`}
+      className={`ml-1 hidden shrink-0 items-center rounded p-1 text-muted-foreground group-hover:flex ${className}`}
     >
       {children}
     </button>
@@ -71,6 +71,63 @@ function RenamePanel({ project, onConfirm, onCancel }: { project: Project; onCon
       <button title="Annuler" onClick={onCancel} className={panelCancelClass}>
         <X size={14} />
       </button>
+    </div>
+  );
+}
+
+// The minimum set Robin asked for — shown as one-click presets, but the field stays free text so
+// a finer breakdown (a category per client, say) is never blocked by this list.
+const CATEGORY_PRESETS = ['ekonum', 'client', 'perso'];
+
+function CategoryPanel({
+  project,
+  onConfirm,
+  onCancel,
+}: {
+  project: Project;
+  onConfirm: (category: string | null) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(project.category ?? '');
+  return (
+    <div className="mb-1 ml-5 space-y-1" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center gap-1">
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="Catégorie…"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onConfirm(value.trim() || null);
+            else if (e.key === 'Escape') onCancel();
+          }}
+          className={panelInputClass}
+        />
+        <button title="Confirmer" onClick={() => onConfirm(value.trim() || null)} className={panelConfirmClass}>
+          <Check size={14} />
+        </button>
+        <button title="Annuler" onClick={onCancel} className={panelCancelClass}>
+          <X size={14} />
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {CATEGORY_PRESETS.map((preset) => (
+          <button
+            key={preset}
+            onClick={() => setValue(preset)}
+            className={`rounded-full border px-2 py-0.5 text-[11px] ${
+              value === preset ? 'border-accent bg-accent-muted text-accent-muted-foreground' : 'border-border text-muted-foreground hover:bg-muted'
+            }`}
+          >
+            {preset}
+          </button>
+        ))}
+        {project.category && (
+          <button onClick={() => onConfirm(null)} className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted">
+            retirer
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -268,7 +325,7 @@ function ProjectNode({
 }: { project: Project; allProjects: Project[]; draggable: boolean } & Omit<ProjectTreeProps, 'projects'>) {
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<ProjectChildren | null>(null);
-  const [activePanel, setActivePanel] = useState<'rename' | 'merge' | 'archive' | 'delete' | null>(null);
+  const [activePanel, setActivePanel] = useState<'rename' | 'category' | 'merge' | 'archive' | 'delete' | null>(null);
 
   useEffect(() => {
     if (!expanded) return;
@@ -283,16 +340,19 @@ function ProjectNode({
     <div>
       <div className="group flex items-center rounded-md hover:bg-muted">
         {draggable && (
-          <span title="Glisser pour réorganiser" className="shrink-0 cursor-grab px-1 text-muted-foreground opacity-0 group-hover:opacity-100">
+          <span title="Glisser pour réorganiser" className="hidden shrink-0 cursor-grab px-1 text-muted-foreground group-hover:block">
             <GripVertical size={14} />
           </span>
         )}
-        <button onClick={() => setExpanded((e) => !e)} className="flex flex-1 items-center gap-1.5 px-2 py-1.5 text-left text-sm text-foreground">
+        <button onClick={() => setExpanded((e) => !e)} className="flex flex-1 items-center gap-1.5 overflow-hidden px-2 py-1.5 text-left text-sm text-foreground">
           <span className="text-muted-foreground">{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
           <span className="truncate">{project.name}</span>
         </button>
         <IconButton title="Renommer" onClick={() => setActivePanel('rename')} className="hover:bg-muted hover:text-foreground">
           <Pencil size={13} />
+        </IconButton>
+        <IconButton title="Catégoriser" onClick={() => setActivePanel('category')} className="hover:bg-accent-muted hover:text-accent">
+          <Tag size={13} />
         </IconButton>
         <IconButton title="Fusionner dans un autre projet" onClick={() => setActivePanel('merge')} className="hover:bg-accent-muted hover:text-accent">
           <GitMerge size={13} />
@@ -314,6 +374,17 @@ function ProjectNode({
           onConfirm={async (name) => {
             closePanel();
             await api.renameProject(project.id, name);
+            onChanged();
+          }}
+          onCancel={closePanel}
+        />
+      )}
+      {activePanel === 'category' && (
+        <CategoryPanel
+          project={project}
+          onConfirm={async (category) => {
+            closePanel();
+            await api.setProjectCategory(project.id, category);
             onChanged();
           }}
           onCancel={closePanel}
@@ -406,10 +477,91 @@ function ProjectNode({
   );
 }
 
+// The minimum set Robin asked for sorts first, in this order; any other category the user typed
+// follows alphabetically, and uncategorized projects always sort last.
+const CATEGORY_ORDER = ['ekonum', 'client', 'perso'];
+
+function categoryLabel(category: string): string {
+  return category.charAt(0).toUpperCase() + category.slice(1);
+}
+
+interface CategoryGroup {
+  key: string;
+  label: string;
+  projects: Project[];
+}
+
+function groupByCategory(list: Project[]): CategoryGroup[] {
+  const map = new Map<string, Project[]>();
+  for (const p of list) {
+    const key = p.category ?? '';
+    (map.get(key) ?? map.set(key, []).get(key)!).push(p);
+  }
+  const keys = [...map.keys()].sort((a, b) => {
+    if (a === '' || b === '') return a === b ? 0 : a === '' ? 1 : -1;
+    const ia = CATEGORY_ORDER.indexOf(a);
+    const ib = CATEGORY_ORDER.indexOf(b);
+    if (ia !== -1 || ib !== -1) return (ia === -1 ? CATEGORY_ORDER.length : ia) - (ib === -1 ? CATEGORY_ORDER.length : ib);
+    return a.localeCompare(b);
+  });
+  return keys.map((key) => ({ key: key || '__uncategorized__', label: key ? categoryLabel(key) : 'Sans catégorie', projects: map.get(key)! }));
+}
+
+function ProjectRow({
+  project,
+  allProjects,
+  selected,
+  onSelect,
+  refreshToken,
+  onChanged,
+  draggable,
+  isDragOver,
+  isDragging,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
+}: {
+  project: Project;
+  allProjects: Project[];
+  draggable: boolean;
+  isDragOver: boolean;
+  isDragging: boolean;
+  onDragStart: () => void;
+  onDragOver: (e: DragEvent) => void;
+  onDragLeave: () => void;
+  onDrop: (e: DragEvent) => void;
+  onDragEnd: () => void;
+} & Omit<ProjectTreeProps, 'projects'>) {
+  return (
+    <div
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+      className={`border-t-2 ${isDragOver ? 'border-accent' : 'border-transparent'} ${isDragging ? 'opacity-40' : ''}`}
+    >
+      <ProjectNode
+        project={project}
+        allProjects={allProjects}
+        selected={selected}
+        onSelect={onSelect}
+        refreshToken={refreshToken}
+        onChanged={onChanged}
+        draggable={draggable}
+      />
+    </div>
+  );
+}
+
 export function ProjectTree({ projects, selected, onSelect, refreshToken, onChanged }: ProjectTreeProps) {
   const [query, setQuery] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [archived, setArchived] = useState<Project[]>([]);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   // Local, optimistically-reorderable copy of the list — kept in sync with `projects` whenever a
   // fresh fetch/WebSocket update arrives, and mutated immediately on drag for a responsive feel
   // while the reorder persists in the background.
@@ -432,6 +584,16 @@ export function ProjectTree({ projects, selected, onSelect, refreshToken, onChan
   // active so a drag can't silently reshuffle projects the user can't currently see.
   const dragEnabled = query.trim() === '';
   const filtered = order.filter((p) => p.name.toLowerCase().includes(query.toLowerCase()));
+  const groups = groupByCategory(filtered);
+
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const reorder = (droppedId: string, targetId: string) => {
     if (droppedId === targetId) return;
@@ -458,40 +620,56 @@ export function ProjectTree({ projects, selected, onSelect, refreshToken, onChan
         />
       </div>
       <div className="flex-1 overflow-y-auto px-1 pb-2">
-        {filtered.map((p) => (
-          <div
-            key={p.id}
-            draggable={dragEnabled}
-            onDragStart={() => setDraggedId(p.id)}
-            onDragOver={(e) => {
-              if (!draggedId) return;
-              e.preventDefault();
-              if (draggedId !== p.id) setDragOverId(p.id);
-            }}
-            onDragLeave={() => setDragOverId((cur) => (cur === p.id ? null : cur))}
-            onDrop={(e) => {
-              e.preventDefault();
-              if (draggedId) reorder(draggedId, p.id);
-              setDraggedId(null);
-              setDragOverId(null);
-            }}
-            onDragEnd={() => {
-              setDraggedId(null);
-              setDragOverId(null);
-            }}
-            className={`border-t-2 ${dragOverId === p.id ? 'border-accent' : 'border-transparent'} ${draggedId === p.id ? 'opacity-40' : ''}`}
-          >
-            <ProjectNode
-              project={p}
-              allProjects={projects}
-              selected={selected}
-              onSelect={onSelect}
-              refreshToken={refreshToken}
-              onChanged={onChanged}
-              draggable={dragEnabled}
-            />
-          </div>
-        ))}
+        {groups.map((group) => {
+          const isSingleGroup = groups.length === 1 && group.key === '__uncategorized__';
+          const collapsed = collapsedGroups.has(group.key);
+          return (
+            <div key={group.key} className="mb-1">
+              {!isSingleGroup && (
+                <button
+                  onClick={() => toggleGroup(group.key)}
+                  className="flex w-full items-center gap-1 px-2 py-1 text-left text-[11px] font-medium tracking-wide text-muted-foreground uppercase"
+                >
+                  {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                  {group.label}
+                  <span className="text-muted-foreground/60 normal-case">({group.projects.length})</span>
+                </button>
+              )}
+              {!collapsed &&
+                group.projects.map((p) => (
+                  <ProjectRow
+                    key={p.id}
+                    project={p}
+                    allProjects={projects}
+                    selected={selected}
+                    onSelect={onSelect}
+                    refreshToken={refreshToken}
+                    onChanged={onChanged}
+                    draggable={dragEnabled}
+                    isDragOver={dragOverId === p.id}
+                    isDragging={draggedId === p.id}
+                    onDragStart={() => setDraggedId(p.id)}
+                    onDragOver={(e) => {
+                      if (!draggedId) return;
+                      e.preventDefault();
+                      if (draggedId !== p.id) setDragOverId(p.id);
+                    }}
+                    onDragLeave={() => setDragOverId((cur) => (cur === p.id ? null : cur))}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (draggedId) reorder(draggedId, p.id);
+                      setDraggedId(null);
+                      setDragOverId(null);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedId(null);
+                      setDragOverId(null);
+                    }}
+                  />
+                ))}
+            </div>
+          );
+        })}
         {filtered.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">Aucun projet.</p>}
       </div>
       <div className="border-t border-border p-2">

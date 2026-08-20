@@ -148,6 +148,7 @@ function ensureColumn(db: Database.Database, table: string, column: string, defi
 const EXPECTED_COLUMNS: Array<{ table: string; column: string; definition: string }> = [
   { table: 'projects', column: 'archived', definition: 'INTEGER NOT NULL DEFAULT 0' },
   { table: 'projects', column: 'sort_order', definition: 'INTEGER' },
+  { table: 'projects', column: 'category', definition: 'TEXT' },
   { table: 'threads', column: 'source_ref', definition: 'TEXT' },
   { table: 'threads', column: 'source_file_path', definition: 'TEXT' },
 ];
@@ -202,6 +203,11 @@ export class Db {
   /** User-driven display name override — e.g. for a ChatGPT Project with no cached real name. */
   renameProject(id: string, name: string): void {
     this.raw.prepare('UPDATE projects SET name = ? WHERE id = ?').run(name, id);
+  }
+
+  /** Free-form sidebar grouping (e.g. "ekonum", "perso", "client") — explicit only, never guessed. Pass null to ungroup. */
+  setProjectCategory(id: string, category: string | null): void {
+    this.raw.prepare('UPDATE projects SET category = ? WHERE id = ?').run(category, id);
   }
 
   /**
@@ -716,6 +722,7 @@ function rowToProject(row: any): Project {
     lastActiveAt: row.last_active_at,
     archived: !!row.archived,
     sortOrder: row.sort_order,
+    category: row.category,
   };
 }
 

@@ -98,6 +98,7 @@ describe('sync-hub MCP server', () => {
       'merge_projects',
       'rename_project',
       'search_transcripts',
+      'set_project_category',
       'unlink_thread',
     ]);
   });
@@ -272,6 +273,21 @@ describe('sync-hub MCP server', () => {
       expect((result.content as any[])[0].text).toContain('"demo" renommé en "Nouveau nom"');
       expect(db.getProject('proj-demo')?.name).toBe('Nouveau nom');
       expect(db.getProject('proj-demo')?.canonicalPath).toBe('/Users/robin/Projets/demo');
+    });
+
+    it('set_project_category assigns a free-form category, and null clears it', async () => {
+      const assign = await client.callTool({ name: 'set_project_category', arguments: { project: 'proj-demo', category: 'client' } });
+      expect((assign.content as any[])[0].text).toContain('"demo" classé dans "client"');
+      expect(db.getProject('proj-demo')?.category).toBe('client');
+
+      const clear = await client.callTool({ name: 'set_project_category', arguments: { project: 'proj-demo', category: null } });
+      expect((clear.content as any[])[0].text).toContain('"demo" retiré de sa catégorie');
+      expect(db.getProject('proj-demo')?.category).toBeNull();
+    });
+
+    it('set_project_category reports an error for an unknown project', async () => {
+      const result = await client.callTool({ name: 'set_project_category', arguments: { project: 'nope', category: 'perso' } });
+      expect(result.isError).toBe(true);
     });
 
     it('merge_projects moves every thread from source into target and source disappears', async () => {

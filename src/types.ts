@@ -80,6 +80,8 @@ export interface Project {
   archived?: boolean;
   /** User-set manual position in the dashboard's project list (lower sorts first). Unset means "not manually positioned" — falls back to last-activity order. */
   sortOrder?: number | null;
+  /** Free-form grouping label for the sidebar (e.g. "ekonum", "perso", "client") — never guessed, always explicitly set. Unset means ungrouped. */
+  category?: string | null;
 }
 
 /** Sentinel project id for sessions that could not be matched to a registry entry. */
