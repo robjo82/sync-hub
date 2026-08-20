@@ -1,7 +1,9 @@
 node_modules/
 dist/
-data/*.sqlite
-data/*.sqlite-*
+# The whole data dir, not just *.sqlite* — it's real conversation content (the DB, its WAL/SHM
+# files, ad hoc backups like hub.sqlite.backup_reorg, archived-sessions/) and must never end up in
+# a public repo. Nothing under here is meant to be shared or reproduced by a fresh clone.
+data/
 *.log
 .DS_Store
 imports/chatgpt/*
