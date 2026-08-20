@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from 'react';
-import { Settings2, Wrench } from 'lucide-react';
+import { FileText, Mail, MessageSquare, Settings2, Share2, Wrench } from 'lucide-react';
 
 // ChatGPT's export serializes its rich-UI annotations (source citations, product/entity chips,
 // map widgets, generative-UI blocks…) inline as private-use-area-delimited tokens —
@@ -131,6 +131,39 @@ export function MarkdownRenderer({ text }: { text: string }) {
             ))}
           </div>
         </details>,
+      );
+      continue;
+    }
+
+    // :::writing{variant="email"|"chat_message"|"social_post"|"document"|"standard" id="..."} ... :::
+    // — a real, documented Codex fence for a self-contained written artifact (an email draft, a
+    // message to send, a social post…), verified against real output (a full email draft under
+    // variant="chat_message"). Rendered as its own labeled card, not folded — unlike the tool/
+    // thought blocks, the point here is exactly to make this stand out as a distinct piece of
+    // writing, not to hide it.
+    const writingMatch = line.trim().match(/^:::writing\{variant="([a-z_]+)"\s+id="[^"]*"\}$/);
+    if (writingMatch) {
+      const variant = writingMatch[1];
+      i++;
+      const innerLines: string[] = [];
+      while (i < lines.length && lines[i].trim() !== ':::') {
+        innerLines.push(lines[i]);
+        i++;
+      }
+      i++; // skip closing fence
+      const VARIANT_LABEL: Record<string, string> = { email: 'Email', chat_message: 'Message', social_post: 'Publication', document: 'Document' };
+      const VARIANT_ICON: Record<string, typeof Mail> = { email: Mail, chat_message: MessageSquare, social_post: Share2, document: FileText };
+      const Icon = VARIANT_ICON[variant] ?? FileText;
+      blocks.push(
+        <div key={key++} className="my-2 overflow-hidden rounded-lg border border-border">
+          <div className="flex items-center gap-1.5 border-b border-border bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground">
+            <Icon size={13} />
+            {VARIANT_LABEL[variant] ?? 'Document'}
+          </div>
+          <div className="px-3 py-2">
+            <MarkdownRenderer text={innerLines.join('\n')} />
+          </div>
+        </div>,
       );
       continue;
     }
