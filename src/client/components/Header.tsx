@@ -1,3 +1,5 @@
+import { Moon, RefreshCw, Sun } from 'lucide-react';
+
 type Tab = 'projects' | 'coverage' | 'unassigned' | 'search';
 
 interface HeaderProps {
@@ -20,11 +22,11 @@ const TABS: { key: Tab; label: string }[] = [
 
 export function Header({ connected, scanning, onRescan, tab, onTabChange, unassignedCount, theme, onToggleTheme }: HeaderProps) {
   return (
-    <header className="flex items-center gap-4 border-b border-slate-200 bg-white px-4 py-2.5 dark:border-slate-800 dark:bg-slate-950">
+    <header className="flex items-center gap-4 border-b border-border bg-card px-4 py-2.5">
       <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold tracking-tight text-slate-900 dark:text-slate-100">Sync Hub</span>
+        <span className="text-sm font-semibold tracking-tight text-foreground">Sync Hub</span>
         <span
-          className={`inline-block h-2 w-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-amber-500'}`}
+          className={`inline-block h-2 w-2 rounded-full ${connected ? 'bg-success' : 'bg-warning'}`}
           title={connected ? 'Connecté (temps réel)' : 'Reconnexion…'}
         />
       </div>
@@ -35,14 +37,12 @@ export function Header({ connected, scanning, onRescan, tab, onTabChange, unassi
             key={t.key}
             onClick={() => onTabChange(t.key)}
             className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
-              tab === t.key
-                ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100'
-                : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-slate-200'
+              tab === t.key ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
             }`}
           >
             {t.label}
             {t.key === 'unassigned' && unassignedCount > 0 && (
-              <span className="ml-1.5 rounded-full bg-amber-500/20 px-1.5 text-xs text-amber-600 dark:text-amber-400">{unassignedCount}</span>
+              <span className="ml-1.5 rounded-full bg-warning-muted px-1.5 text-xs text-warning-foreground">{unassignedCount}</span>
             )}
           </button>
         ))}
@@ -53,16 +53,17 @@ export function Header({ connected, scanning, onRescan, tab, onTabChange, unassi
       <button
         onClick={onToggleTheme}
         title={theme === 'light' ? 'Passer en thème sombre' : 'Passer en thème clair'}
-        className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900"
+        className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
       >
-        {theme === 'light' ? '🌙' : '☀️'}
+        {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
       </button>
 
       <button
         onClick={onRescan}
         disabled={scanning}
-        className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900"
+        className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
       >
+        <RefreshCw size={14} className={scanning ? 'animate-spin' : ''} />
         {scanning ? 'Scan en cours…' : 'Rescanner'}
       </button>
     </header>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Check } from 'lucide-react';
 import type { EngineType } from '../../types.js';
 import { formatRelative } from '../lib/format.js';
 import { api } from '../lib/api.js';
@@ -27,16 +28,16 @@ export function CoverageView() {
     api.coverage().then(setRows);
   }, []);
 
-  if (!rows) return <div className="p-6 text-sm text-slate-500">Chargement…</div>;
+  if (!rows) return <div className="p-6 text-sm text-muted-foreground">Chargement…</div>;
 
   return (
     <div className="mx-auto max-w-3xl overflow-y-auto p-6">
-      <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Couverture de synchro</h2>
-      <p className="mb-4 text-xs text-slate-500">Ce qui est réellement synchronisé, projet par projet, et depuis combien de temps.</p>
+      <h2 className="mb-1 text-sm font-semibold text-foreground">Couverture de synchro</h2>
+      <p className="mb-4 text-xs text-muted-foreground">Ce qui est réellement synchronisé, projet par projet, et depuis combien de temps.</p>
 
-      <table className="w-full border-collapse overflow-hidden rounded-lg border border-slate-200 text-sm dark:border-slate-800">
+      <table className="w-full border-collapse overflow-hidden rounded-lg border border-border text-sm">
         <thead>
-          <tr className="bg-slate-100 text-left text-xs text-slate-500 dark:bg-slate-900">
+          <tr className="bg-muted text-left text-xs text-muted-foreground">
             <th className="px-3 py-2 font-medium">Projet</th>
             {KNOWN_ENGINES.map((e) => (
               <th key={e.key} className="px-3 py-2 font-medium">
@@ -44,7 +45,7 @@ export function CoverageView() {
               </th>
             ))}
             {BACKLOG_ENGINES.map((label) => (
-              <th key={label} className="px-3 py-2 font-medium text-slate-400 dark:text-slate-600">
+              <th key={label} className="px-3 py-2 font-medium text-muted-foreground/60">
                 {label}
               </th>
             ))}
@@ -52,22 +53,24 @@ export function CoverageView() {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.projectId} className="border-t border-slate-200 dark:border-slate-800">
-              <td className="px-3 py-2 text-slate-800 dark:text-slate-200">{row.projectName}</td>
+            <tr key={row.projectId} className="border-t border-border">
+              <td className="px-3 py-2 text-foreground">{row.projectName}</td>
               {KNOWN_ENGINES.map((e) => {
                 const at = row.engines[e.key];
                 return (
                   <td key={e.key} className="px-3 py-2">
                     {at ? (
-                      <span className="text-emerald-600 dark:text-emerald-400">✓ {formatRelative(at)}</span>
+                      <span className="flex items-center gap-1 text-success">
+                        <Check size={13} /> {formatRelative(at)}
+                      </span>
                     ) : (
-                      <span className="text-slate-400 dark:text-slate-600">— aucune activité</span>
+                      <span className="text-muted-foreground/60">— aucune activité</span>
                     )}
                   </td>
                 );
               })}
               {BACKLOG_ENGINES.map((label) => (
-                <td key={label} className="px-3 py-2 text-slate-400 dark:text-slate-700">
+                <td key={label} className="px-3 py-2 text-muted-foreground/60">
                   pas encore supporté
                 </td>
               ))}
@@ -75,7 +78,7 @@ export function CoverageView() {
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={2 + KNOWN_ENGINES.length + BACKLOG_ENGINES.length} className="px-3 py-4 text-center text-slate-400 dark:text-slate-600">
+              <td colSpan={2 + KNOWN_ENGINES.length + BACKLOG_ENGINES.length} className="px-3 py-4 text-center text-muted-foreground/60">
                 Aucun projet connu pour l'instant.
               </td>
             </tr>

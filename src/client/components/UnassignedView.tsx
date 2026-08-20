@@ -21,19 +21,19 @@ function ThreadRow({ thread, projects, onAssigned }: { thread: Thread; projects:
   };
 
   return (
-    <tr className="border-t border-slate-200 dark:border-slate-800">
-      <td className="px-3 py-2 text-slate-800 dark:text-slate-200">{thread.title}</td>
-      <td className="px-3 py-2 text-slate-500">{ENGINE_LABEL[thread.originEngine] ?? thread.originEngine}</td>
-      <td className="max-w-xs truncate px-3 py-2 font-mono text-xs text-slate-400 dark:text-slate-600" title={thread.sourceRef}>
+    <tr className="border-t border-border">
+      <td className="px-3 py-2 text-foreground">{thread.title}</td>
+      <td className="px-3 py-2 text-muted-foreground">{ENGINE_LABEL[thread.originEngine] ?? thread.originEngine}</td>
+      <td className="max-w-xs truncate px-3 py-2 font-mono text-xs text-muted-foreground/70" title={thread.sourceRef}>
         {thread.sourceRef ?? '—'}
       </td>
-      <td className="px-3 py-2 text-slate-500">{thread.messageCount}</td>
+      <td className="px-3 py-2 text-muted-foreground">{thread.messageCount}</td>
       <td className="px-3 py-2">
         <div className="flex items-center gap-2">
           <select
             value={target}
             onChange={(e) => setTarget(e.target.value)}
-            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+            className="rounded border border-border bg-card px-2 py-1 text-xs text-foreground"
           >
             <option value="">Assigner à…</option>
             {projects.map((p) => (
@@ -45,7 +45,7 @@ function ThreadRow({ thread, projects, onAssigned }: { thread: Thread; projects:
           <button
             onClick={assign}
             disabled={!target || busy}
-            className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs text-emerald-600 disabled:opacity-40 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400"
+            className="rounded border border-accent/30 bg-accent-muted px-2 py-1 text-xs text-accent disabled:opacity-40"
           >
             {busy ? '…' : 'OK'}
           </button>
@@ -67,20 +67,20 @@ export function UnassignedView({ projects }: { projects: Project[] }) {
 
   return (
     <div className="mx-auto max-w-4xl overflow-y-auto p-6">
-      <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Non affecté</h2>
-      <p className="mb-4 text-xs text-slate-500">
+      <h2 className="mb-1 text-sm font-semibold text-foreground">Non affecté</h2>
+      <p className="mb-4 text-xs text-muted-foreground">
         Sessions dont le dossier de travail ne correspond à aucun projet connu (dossiers fantômes générés par les outils, sessions
         lancées à la racine du home…). Assigne-les manuellement — sync-hub retiendra la correspondance pour la prochaine fois.
       </p>
 
       {!threads ? (
-        <p className="text-sm text-slate-500">Chargement…</p>
+        <p className="text-sm text-muted-foreground">Chargement…</p>
       ) : threads.length === 0 ? (
-        <p className="text-sm text-slate-500">Rien à trier pour l'instant.</p>
+        <p className="text-sm text-muted-foreground">Rien à trier pour l'instant.</p>
       ) : (
-        <table className="w-full border-collapse overflow-hidden rounded-lg border border-slate-200 text-sm dark:border-slate-800">
+        <table className="w-full border-collapse overflow-hidden rounded-lg border border-border text-sm">
           <thead>
-            <tr className="bg-slate-100 text-left text-xs text-slate-500 dark:bg-slate-900">
+            <tr className="bg-muted text-left text-xs text-muted-foreground">
               <th className="px-3 py-2 font-medium">Fil</th>
               <th className="px-3 py-2 font-medium">Outil</th>
               <th className="px-3 py-2 font-medium">Source (cwd / slug)</th>

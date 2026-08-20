@@ -2,3 +2,71 @@
 
 /* Class-based dark mode (not just prefers-color-scheme) so the header toggle can override the OS setting. */
 @custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Warm, pastel palette (Claude/Anthropic-leaning, simple like Apple's system palettes) instead of
+ * Tailwind's default cool slate/indigo/emerald grab-bag that was scattered ad hoc across
+ * components. Values live as CSS variables so `.dark` below can swap the whole palette at once —
+ * most components no longer need a paired `dark:` class for color, just the semantic name
+ * (bg-background, text-muted-foreground, border-border, bg-accent…).
+ */
+@theme {
+  --color-background: oklch(98.3% 0.004 85);
+  --color-foreground: oklch(24% 0.01 60);
+  --color-card: oklch(99.5% 0.002 85);
+  --color-card-foreground: oklch(24% 0.01 60);
+  --color-muted: oklch(95.5% 0.006 80);
+  --color-muted-foreground: oklch(52% 0.014 60);
+  --color-border: oklch(90.5% 0.007 70);
+
+  --color-accent: oklch(62% 0.13 40);
+  --color-accent-foreground: oklch(99% 0 0);
+  --color-accent-muted: oklch(93.5% 0.035 50);
+  --color-accent-muted-foreground: oklch(42% 0.1 40);
+
+  --color-destructive: oklch(58% 0.17 25);
+  --color-destructive-foreground: oklch(99% 0 0);
+  --color-destructive-muted: oklch(94.5% 0.035 25);
+
+  --color-warning: oklch(63% 0.12 65);
+  --color-warning-foreground: oklch(99% 0 0);
+  --color-warning-muted: oklch(94.5% 0.04 75);
+
+  --color-success: oklch(60% 0.1 155);
+  --color-success-muted: oklch(94% 0.035 155);
+
+  /* Distinct, muted per-engine identifiers — kept apart from the single UI accent above. */
+  --color-engine-claude: oklch(60% 0.09 320);
+  --color-engine-codex: oklch(64% 0.1 165);
+  --color-engine-antigravity: oklch(64% 0.09 235);
+}
+
+.dark {
+  --color-background: oklch(21% 0.008 60);
+  --color-foreground: oklch(93.5% 0.006 80);
+  --color-card: oklch(25% 0.009 60);
+  --color-card-foreground: oklch(93.5% 0.006 80);
+  --color-muted: oklch(28% 0.009 60);
+  --color-muted-foreground: oklch(66% 0.013 70);
+  --color-border: oklch(33% 0.011 60);
+
+  --color-accent: oklch(70% 0.13 45);
+  --color-accent-foreground: oklch(18% 0.01 40);
+  --color-accent-muted: oklch(32% 0.045 45);
+  --color-accent-muted-foreground: oklch(85% 0.06 50);
+
+  --color-destructive: oklch(68% 0.16 25);
+  --color-destructive-foreground: oklch(15% 0 0);
+  --color-destructive-muted: oklch(30% 0.06 25);
+
+  --color-warning: oklch(75% 0.12 70);
+  --color-warning-foreground: oklch(18% 0.02 70);
+  --color-warning-muted: oklch(32% 0.05 75);
+
+  --color-success: oklch(68% 0.1 155);
+  --color-success-muted: oklch(30% 0.045 155);
+
+  --color-engine-claude: oklch(74% 0.1 320);
+  --color-engine-codex: oklch(74% 0.11 165);
+  --color-engine-antigravity: oklch(74% 0.1 235);
+}

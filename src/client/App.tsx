@@ -90,7 +90,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-200">
+    <div className="flex h-screen flex-col bg-background text-foreground">
       <Header
         connected={connected}
         scanning={scanning}
@@ -116,7 +116,7 @@ export default function App() {
               {selected?.kind === 'thread' && <ChatView threadId={selected.id} />}
               {(selected?.kind === 'memory' || selected?.kind === 'artifact') && <DocumentViewer document={selected} />}
               {!selected && (
-                <div className="flex h-full items-center justify-center text-sm text-slate-500 dark:text-slate-600">
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                   Sélectionne un fil, une mémoire ou un artefact dans l'arbre.
                 </div>
               )}

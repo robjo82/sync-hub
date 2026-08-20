@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from 'react';
+import { Settings2, Wrench } from 'lucide-react';
 
 // ChatGPT's export serializes its rich-UI annotations (source citations, product/entity chips,
 // map widgets, generative-UI blocks…) inline as private-use-area-delimited tokens —
@@ -35,7 +36,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
       nodes.push(<strong key={key}>{token.slice(2, -2)}</strong>);
     } else if (token.startsWith('`')) {
       nodes.push(
-        <code key={key} className="rounded bg-black/5 px-1 py-0.5 font-mono text-[0.85em] dark:bg-black/30">
+        <code key={key} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]">
           {token.slice(1, -1)}
         </code>,
       );
@@ -43,13 +44,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
       const linkMatch = token.match(/^\[([^\]]+)\]\(([^)\s]+)\)$/);
       if (linkMatch) {
         nodes.push(
-          <a
-            key={key}
-            href={linkMatch[2]}
-            target="_blank"
-            rel="noreferrer"
-            className="text-indigo-600 underline decoration-indigo-300 hover:decoration-indigo-500 dark:text-indigo-400 dark:decoration-indigo-700"
-          >
+          <a key={key} href={linkMatch[2]} target="_blank" rel="noreferrer" className="text-accent underline decoration-accent/40 hover:decoration-accent">
             {linkMatch[1]}
           </a>,
         );
@@ -93,7 +88,7 @@ export function MarkdownRenderer({ text }: { text: string }) {
       return /^\[external_agent_tool_call:\s*[^\]]*\]$/.test(t) || /^\[external_agent_tool_result(?::\s*[^\]]*)?\]$/.test(t);
     };
     if (isToolBlockTag(line)) {
-      const items: { label: string; isError: boolean; body: string }[] = [];
+      const items: { label: string; isCall: boolean; isError: boolean; body: string }[] = [];
       while (i < lines.length && isToolBlockTag(lines[i])) {
         const trimmed = lines[i].trim();
         const callM = trimmed.match(/^\[external_agent_tool_call:\s*([^\]]*)\]$/);
@@ -107,7 +102,8 @@ export function MarkdownRenderer({ text }: { text: string }) {
         }
         i++; // skip closing tag
         items.push({
-          label: callM ? `🔧 ${callM[1] || 'outil'}` : `← résultat${resultM?.[1] ? ' (erreur)' : ''}`,
+          label: callM ? callM[1] || 'outil' : `Résultat${resultM?.[1] ? ' (erreur)' : ''}`,
+          isCall: !!callM,
           isError: !!resultM?.[1],
           body: bodyLines.join('\n'),
         });
@@ -115,27 +111,22 @@ export function MarkdownRenderer({ text }: { text: string }) {
         // still collapses into a single summary.
         while (i < lines.length && lines[i].trim() === '' && isToolBlockTag(lines[i + 1] ?? '')) i++;
       }
-      const commandCount = items.filter((it) => it.label.startsWith('🔧')).length || items.length;
+      const commandCount = items.filter((it) => it.isCall).length || items.length;
       const hasError = items.some((it) => it.isError);
       blocks.push(
         <details
           key={key++}
-          className={`my-2 rounded border px-2 py-1 text-xs ${
-            hasError
-              ? 'border-red-300 bg-red-50 dark:border-red-900/60 dark:bg-red-950/30'
-              : 'border-slate-300 bg-black/5 dark:border-slate-700 dark:bg-slate-950/60'
-          }`}
+          className={`my-2 rounded-lg border px-2.5 py-1.5 text-xs ${hasError ? 'border-destructive/30 bg-destructive-muted/60' : 'border-border bg-muted/60'}`}
         >
-          <summary className={`cursor-pointer select-none ${hasError ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}>
-            {commandCount > 1 ? `⚙ Exécuté ${commandCount} commandes` : (items[0]?.label ?? '⚙ Commande')}
+          <summary className={`flex cursor-pointer select-none items-center gap-1.5 ${hasError ? 'text-destructive' : 'text-muted-foreground'}`}>
+            {commandCount > 1 ? <Settings2 size={13} className="shrink-0" /> : <Wrench size={13} className="shrink-0" />}
+            {commandCount > 1 ? `Exécuté ${commandCount} commandes` : (items[0]?.label ?? 'Commande')}
           </summary>
-          <div className="mt-1 space-y-2">
+          <div className="mt-1.5 space-y-2">
             {items.map((it, idx) => (
               <div key={idx}>
-                <div className={`mb-0.5 font-medium ${it.isError ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}>
-                  {it.label}
-                </div>
-                <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-slate-600 dark:text-slate-500">{it.body}</pre>
+                <div className={`mb-0.5 font-medium ${it.isError ? 'text-destructive' : 'text-muted-foreground'}`}>{it.label}</div>
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-muted-foreground/90">{it.body}</pre>
               </div>
             ))}
           </div>
@@ -155,8 +146,8 @@ export function MarkdownRenderer({ text }: { text: string }) {
       }
       i++; // skip closing fence
       blocks.push(
-        <pre key={key++} className="my-2 overflow-x-auto rounded-lg bg-black/5 p-3 text-xs dark:bg-black/40">
-          {lang && <div className="mb-1 text-[10px] uppercase tracking-wide text-slate-500">{lang}</div>}
+        <pre key={key++} className="my-2 overflow-x-auto rounded-lg bg-muted p-3 text-xs">
+          {lang && <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">{lang}</div>}
           <code className="font-mono whitespace-pre">{codeLines.join('\n')}</code>
         </pre>,
       );
@@ -180,7 +171,7 @@ export function MarkdownRenderer({ text }: { text: string }) {
     // Horizontal rule (verified: a very common section divider in real ChatGPT/Codex output —
     // 3900+ occurrences in a 15-shard sample of the real export)
     if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
-      blocks.push(<hr key={key++} className="my-3 border-slate-200 dark:border-slate-800" />);
+      blocks.push(<hr key={key++} className="my-3 border-border" />);
       i++;
       continue;
     }
@@ -217,11 +208,7 @@ export function MarkdownRenderer({ text }: { text: string }) {
             <thead>
               <tr>
                 {headerCells.map((c, ci) => (
-                  <th
-                    key={ci}
-                    style={{ textAlign: align[ci] }}
-                    className="border border-slate-200 bg-slate-100 px-2 py-1 text-left font-medium dark:border-slate-800 dark:bg-slate-900"
-                  >
+                  <th key={ci} style={{ textAlign: align[ci] }} className="border border-border bg-muted px-2 py-1 text-left font-medium">
                     {renderInline(c, `th${key}-${ci}`)}
                   </th>
                 ))}
@@ -231,7 +218,7 @@ export function MarkdownRenderer({ text }: { text: string }) {
               {bodyRows.map((row, ri) => (
                 <tr key={ri}>
                   {row.map((c, ci) => (
-                    <td key={ci} style={{ textAlign: align[ci] }} className="border border-slate-200 px-2 py-1 align-top dark:border-slate-800">
+                    <td key={ci} style={{ textAlign: align[ci] }} className="border border-border px-2 py-1 align-top">
                       {renderInline(c, `td${key}-${ri}-${ci}`)}
                     </td>
                   ))}
@@ -252,7 +239,7 @@ export function MarkdownRenderer({ text }: { text: string }) {
         i++;
       }
       blocks.push(
-        <blockquote key={key++} className="my-2 border-l-2 border-slate-300 pl-3 text-slate-500 italic dark:border-slate-600 dark:text-slate-400">
+        <blockquote key={key++} className="my-2 border-l-2 border-border pl-3 text-muted-foreground italic">
           {quoteLines.join(' ')}
         </blockquote>,
       );

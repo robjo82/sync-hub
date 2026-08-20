@@ -1,8 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { Archive, Check, ChevronDown, ChevronRight, FileText, GitMerge, GripVertical, Pencil, StickyNote, Trash2, X } from 'lucide-react';
 import type { Artifact, Memory, Project, Thread } from '../../types.js';
 import { api } from '../lib/api.js';
 
-const ENGINE_DOT: Record<string, string> = { 'claude-code': 'bg-purple-500', codex: 'bg-emerald-500', antigravity: 'bg-sky-500' };
+const ENGINE_DOT: Record<string, string> = {
+  'claude-code': 'bg-engine-claude',
+  codex: 'bg-engine-codex',
+  antigravity: 'bg-engine-antigravity',
+};
 
 export type SelectedItem = { kind: 'thread'; id: string } | { kind: 'memory'; item: Memory } | { kind: 'artifact'; item: Artifact } | null;
 
@@ -34,12 +39,17 @@ function IconButton({ title, onClick, className, children }: { title: string; on
         e.stopPropagation();
         onClick();
       }}
-      className={`ml-1 shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-500 opacity-0 group-hover:opacity-100 dark:text-slate-600 ${className}`}
+      className={`ml-1 flex shrink-0 items-center rounded p-1 text-muted-foreground opacity-0 group-hover:opacity-100 ${className}`}
     >
       {children}
     </button>
   );
 }
+
+const panelInputClass =
+  'w-0 min-w-0 flex-1 rounded border border-border bg-card px-1.5 py-1 text-xs text-foreground placeholder:text-muted-foreground';
+const panelConfirmClass = 'shrink-0 rounded p-1 text-accent hover:bg-accent-muted disabled:opacity-40';
+const panelCancelClass = 'shrink-0 rounded p-1 text-muted-foreground hover:bg-muted';
 
 function RenamePanel({ project, onConfirm, onCancel }: { project: Project; onConfirm: (name: string) => void; onCancel: () => void }) {
   const [name, setName] = useState(project.name);
@@ -53,18 +63,13 @@ function RenamePanel({ project, onConfirm, onCancel }: { project: Project; onCon
           if (e.key === 'Enter' && name.trim() && name.trim() !== project.name) onConfirm(name.trim());
           else if (e.key === 'Escape') onCancel();
         }}
-        className="w-0 min-w-0 flex-1 rounded border border-slate-300 bg-white px-1 py-0.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+        className={panelInputClass}
       />
-      <button
-        title="Confirmer"
-        disabled={!name.trim() || name.trim() === project.name}
-        onClick={() => onConfirm(name.trim())}
-        className="shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-600 hover:bg-slate-200 disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800"
-      >
-        ✓
+      <button title="Confirmer" disabled={!name.trim() || name.trim() === project.name} onClick={() => onConfirm(name.trim())} className={panelConfirmClass}>
+        <Check size={14} />
       </button>
-      <button title="Annuler" onClick={onCancel} className="shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-200 dark:text-slate-600 dark:hover:bg-slate-800">
-        ✕
+      <button title="Annuler" onClick={onCancel} className={panelCancelClass}>
+        <X size={14} />
       </button>
     </div>
   );
@@ -72,17 +77,13 @@ function RenamePanel({ project, onConfirm, onCancel }: { project: Project; onCon
 
 function ArchivePanel({ title, onConfirm, onCancel }: { title: string; onConfirm: () => void; onCancel: () => void }) {
   return (
-    <div className="mb-1 ml-5 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400" onClick={(e) => e.stopPropagation()}>
+    <div className="mb-1 ml-5 flex items-center gap-2 text-xs text-muted-foreground" onClick={(e) => e.stopPropagation()}>
       <span className="flex-1 truncate">Archiver « {title} » ? Le fichier source est déplacé, jamais supprimé.</span>
-      <button
-        title="Confirmer"
-        onClick={onConfirm}
-        className="shrink-0 rounded px-1.5 py-0.5 text-amber-600 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-950"
-      >
-        ✓
+      <button title="Confirmer" onClick={onConfirm} className="shrink-0 rounded p-1 text-warning hover:bg-warning-muted">
+        <Check size={14} />
       </button>
-      <button title="Annuler" onClick={onCancel} className="shrink-0 rounded px-1.5 py-0.5 text-slate-400 hover:bg-slate-200 dark:text-slate-600 dark:hover:bg-slate-800">
-        ✕
+      <button title="Annuler" onClick={onCancel} className={panelCancelClass}>
+        <X size={14} />
       </button>
     </div>
   );
@@ -113,12 +114,7 @@ function MergeProjectPanel({
   return (
     <div className="mb-1 ml-5 space-y-1" onClick={(e) => e.stopPropagation()}>
       <div className="flex items-center gap-1">
-        <select
-          autoFocus
-          value={targetId}
-          onChange={(e) => setTargetId(e.target.value)}
-          className="w-0 min-w-0 flex-1 rounded border border-slate-300 bg-white px-1 py-0.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-        >
+        <select autoFocus value={targetId} onChange={(e) => setTargetId(e.target.value)} className={panelInputClass}>
           <option value="">Fusionner dans…</option>
           {otherProjects
             .filter((p) => p.id !== project.id)
@@ -128,24 +124,15 @@ function MergeProjectPanel({
               </option>
             ))}
         </select>
-        <button
-          title="Confirmer la fusion"
-          disabled={!targetId}
-          onClick={() => onConfirm(targetId)}
-          className="shrink-0 rounded px-1.5 py-0.5 text-xs text-indigo-600 hover:bg-indigo-100 disabled:opacity-40 dark:text-indigo-400 dark:hover:bg-indigo-950"
-        >
-          ✓
+        <button title="Confirmer la fusion" disabled={!targetId} onClick={() => onConfirm(targetId)} className={panelConfirmClass}>
+          <Check size={14} />
         </button>
-        <button
-          title="Annuler"
-          onClick={onCancel}
-          className="shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-200 dark:text-slate-600 dark:hover:bg-slate-800"
-        >
-          ✕
+        <button title="Annuler" onClick={onCancel} className={panelCancelClass}>
+          <X size={14} />
         </button>
       </div>
       {target && (
-        <p className="text-[11px] text-slate-400 dark:text-slate-600">
+        <p className="text-[11px] text-muted-foreground">
           Fils, mémoires et artefacts déplacés vers « {target.name} », qui conserve son nom. « {project.name} » disparaît de la liste. Aucun
           fichier réel touché.
         </p>
@@ -161,7 +148,7 @@ function DeletePanel({ project, onConfirm, onCancel }: { project: Project; onCon
 
   return (
     <div className="mb-1 ml-5 space-y-1" onClick={(e) => e.stopPropagation()}>
-      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+      <p className="text-[11px] text-muted-foreground">
         Déplace le dossier réel ({project.canonicalPath || 'aucun'}) vers la Corbeille macOS — récupérable tant qu'elle n'est pas vidée. Tape le
         nom du projet pour confirmer :
       </p>
@@ -180,21 +167,21 @@ function DeletePanel({ project, onConfirm, onCancel }: { project: Project; onCon
               else setMismatch(true);
             } else if (e.key === 'Escape') onCancel();
           }}
-          className="w-0 min-w-0 flex-1 rounded border border-slate-300 bg-white px-1 py-0.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+          className={panelInputClass}
         />
         <button
           title="Confirmer la suppression"
           onClick={() => (matches ? onConfirm() : setMismatch(true))}
           disabled={!typed}
-          className="shrink-0 rounded px-1.5 py-0.5 text-xs text-red-600 hover:bg-red-100 disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-950"
+          className="shrink-0 rounded p-1 text-destructive hover:bg-destructive-muted disabled:opacity-40"
         >
-          ✓
+          <Check size={14} />
         </button>
-        <button title="Annuler" onClick={onCancel} className="shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-200 dark:text-slate-600 dark:hover:bg-slate-800">
-          ✕
+        <button title="Annuler" onClick={onCancel} className={panelCancelClass}>
+          <X size={14} />
         </button>
       </div>
-      {mismatch && <p className="text-[11px] text-red-500 dark:text-red-400">Nom incorrect — rien n'a été supprimé.</p>}
+      {mismatch && <p className="text-[11px] text-destructive">Nom incorrect — rien n'a été supprimé.</p>}
     </div>
   );
 }
@@ -206,22 +193,18 @@ function ThreadArchiveButton({ title, onConfirm }: { title: string; onConfirm: (
   if (confirming) {
     return (
       <span className="ml-1 flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()} title={`Archiver « ${title} » ?`}>
-        <button onClick={onConfirm} className="rounded px-1 py-0.5 text-xs text-amber-600 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-950">
-          ✓
+        <button onClick={onConfirm} className="rounded p-1 text-warning hover:bg-warning-muted">
+          <Check size={13} />
         </button>
-        <button onClick={() => setConfirming(false)} className="rounded px-1 py-0.5 text-xs text-slate-400 hover:bg-slate-200 dark:text-slate-600 dark:hover:bg-slate-800">
-          ✕
+        <button onClick={() => setConfirming(false)} className="rounded p-1 text-muted-foreground hover:bg-muted">
+          <X size={13} />
         </button>
       </span>
     );
   }
   return (
-    <IconButton
-      title="Archiver"
-      onClick={() => setConfirming(true)}
-      className="hover:bg-slate-200 hover:text-amber-600 dark:hover:bg-slate-800 dark:hover:text-amber-400"
-    >
-      🗄
+    <IconButton title="Archiver" onClick={() => setConfirming(true)} className="hover:bg-warning-muted hover:text-warning">
+      <Archive size={13} />
     </IconButton>
   );
 }
@@ -246,23 +229,19 @@ function RowDeleteButton({ project, onConfirm }: { project: Project; onConfirm: 
             if (e.key === 'Enter' && matches) onConfirm();
             else if (e.key === 'Escape') setConfirming(false);
           }}
-          className="w-20 rounded border border-slate-300 bg-white px-1 py-0.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+          className="w-20 rounded border border-border bg-card px-1.5 py-1 text-xs text-foreground"
         />
-        <button
-          onClick={onConfirm}
-          disabled={!matches}
-          className="rounded px-1 py-0.5 text-xs text-red-600 hover:bg-red-100 disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-950"
-        >
-          ✓
+        <button onClick={onConfirm} disabled={!matches} className="rounded p-1 text-destructive hover:bg-destructive-muted disabled:opacity-40">
+          <Check size={13} />
         </button>
         <button
           onClick={() => {
             setConfirming(false);
             setTyped('');
           }}
-          className="rounded px-1 py-0.5 text-xs text-slate-400 hover:bg-slate-200 dark:text-slate-600 dark:hover:bg-slate-800"
+          className="rounded p-1 text-muted-foreground hover:bg-muted"
         >
-          ✕
+          <X size={13} />
         </button>
       </span>
     );
@@ -271,9 +250,9 @@ function RowDeleteButton({ project, onConfirm }: { project: Project; onConfirm: 
     <button
       title="Supprimer le projet (déplace le dossier vers la Corbeille)"
       onClick={() => setConfirming(true)}
-      className="rounded px-1.5 py-0.5 text-xs text-slate-500 hover:bg-red-100 hover:text-red-600 dark:text-slate-600 dark:hover:bg-red-950 dark:hover:text-red-400"
+      className="rounded p-1 text-muted-foreground hover:bg-destructive-muted hover:text-destructive"
     >
-      🗑
+      <Trash2 size={13} />
     </button>
   );
 }
@@ -302,42 +281,31 @@ function ProjectNode({
 
   return (
     <div>
-      <div className="group flex items-center rounded hover:bg-slate-100 dark:hover:bg-slate-900">
+      <div className="group flex items-center rounded-md hover:bg-muted">
         {draggable && (
-          <span
-            title="Glisser pour réorganiser"
-            className="shrink-0 cursor-grab px-1 text-slate-300 opacity-0 group-hover:opacity-100 dark:text-slate-700"
-          >
-            ⠿
+          <span title="Glisser pour réorganiser" className="shrink-0 cursor-grab px-1 text-muted-foreground opacity-0 group-hover:opacity-100">
+            <GripVertical size={14} />
           </span>
         )}
-        <button onClick={() => setExpanded((e) => !e)} className="flex flex-1 items-center gap-1.5 px-2 py-1 text-left text-sm text-slate-700 dark:text-slate-300">
-          <span className="w-3 text-slate-400 dark:text-slate-500">{expanded ? '▾' : '▸'}</span>
+        <button onClick={() => setExpanded((e) => !e)} className="flex flex-1 items-center gap-1.5 px-2 py-1.5 text-left text-sm text-foreground">
+          <span className="text-muted-foreground">{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
           <span className="truncate">{project.name}</span>
         </button>
-        <IconButton title="Renommer" onClick={() => setActivePanel('rename')} className="hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-300">
-          ✏️
+        <IconButton title="Renommer" onClick={() => setActivePanel('rename')} className="hover:bg-muted hover:text-foreground">
+          <Pencil size={13} />
         </IconButton>
-        <IconButton
-          title="Fusionner dans un autre projet"
-          onClick={() => setActivePanel('merge')}
-          className="hover:bg-indigo-100 hover:text-indigo-600 dark:hover:bg-indigo-950 dark:hover:text-indigo-400"
-        >
-          🔗
+        <IconButton title="Fusionner dans un autre projet" onClick={() => setActivePanel('merge')} className="hover:bg-accent-muted hover:text-accent">
+          <GitMerge size={13} />
         </IconButton>
-        <IconButton
-          title="Archiver"
-          onClick={() => setActivePanel('archive')}
-          className="hover:bg-slate-200 hover:text-amber-600 dark:hover:bg-slate-800 dark:hover:text-amber-400"
-        >
-          🗄
+        <IconButton title="Archiver" onClick={() => setActivePanel('archive')} className="hover:bg-warning-muted hover:text-warning">
+          <Archive size={13} />
         </IconButton>
         <IconButton
           title="Supprimer le projet (déplace le dossier vers la Corbeille)"
           onClick={() => setActivePanel('delete')}
-          className="hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-950 dark:hover:text-red-400"
+          className="hover:bg-destructive-muted hover:text-destructive"
         >
-          🗑
+          <Trash2 size={13} />
         </IconButton>
       </div>
       {activePanel === 'rename' && (
@@ -386,23 +354,21 @@ function ProjectNode({
         />
       )}
       {expanded && children && (
-        <div className="ml-5 border-l border-slate-200 pl-2 dark:border-slate-800">
+        <div className="ml-5 border-l border-border pl-2">
           {children.threads.length === 0 && children.memories.length === 0 && children.artifacts.length === 0 && (
-            <p className="px-2 py-1 text-xs text-slate-400 dark:text-slate-600">Rien pour l'instant.</p>
+            <p className="px-2 py-1 text-xs text-muted-foreground">Rien pour l'instant.</p>
           )}
           {children.threads.map((t) => (
-            <div key={t.id} className="group flex items-center rounded">
+            <div key={t.id} className="group flex items-center rounded-md">
               <button
                 onClick={() => onSelect({ kind: 'thread', id: t.id })}
-                className={`flex flex-1 items-center gap-1.5 truncate px-2 py-1 text-left text-xs ${
-                  selected?.kind === 'thread' && selected.id === t.id
-                    ? 'bg-slate-200 text-slate-900 dark:bg-slate-800 dark:text-slate-100'
-                    : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-900'
+                className={`flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1 text-left text-xs ${
+                  selected?.kind === 'thread' && selected.id === t.id ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'
                 }`}
               >
-                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${ENGINE_DOT[t.originEngine] ?? 'bg-slate-400 dark:bg-slate-600'}`} />
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${ENGINE_DOT[t.originEngine] ?? 'bg-muted-foreground'}`} />
                 <span className="truncate">{t.title}</span>
-                <span className="ml-auto shrink-0 text-slate-400 dark:text-slate-600">{t.messageCount}</span>
+                <span className="ml-auto shrink-0 text-muted-foreground">{t.messageCount}</span>
               </button>
               <ThreadArchiveButton
                 title={t.title}
@@ -418,9 +384,9 @@ function ProjectNode({
             <button
               key={m.id}
               onClick={() => onSelect({ kind: 'memory', item: m })}
-              className="flex w-full items-center gap-1.5 truncate rounded px-2 py-1 text-left text-xs text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-900"
+              className="flex w-full items-center gap-1.5 truncate rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted"
             >
-              <span>🧠</span>
+              <StickyNote size={12} className="shrink-0" />
               <span className="truncate">{m.filePath.split('/').pop()}</span>
             </button>
           ))}
@@ -428,9 +394,9 @@ function ProjectNode({
             <button
               key={a.id}
               onClick={() => onSelect({ kind: 'artifact', item: a })}
-              className="flex w-full items-center gap-1.5 truncate rounded px-2 py-1 text-left text-xs text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-900"
+              className="flex w-full items-center gap-1.5 truncate rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted"
             >
-              <span>📄</span>
+              <FileText size={12} className="shrink-0" />
               <span className="truncate">{a.title}</span>
             </button>
           ))}
@@ -482,13 +448,13 @@ export function ProjectTree({ projects, selected, onSelect, refreshToken, onChan
   };
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-r border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950">
+    <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-muted/40">
       <div className="p-2">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filtrer les projets…"
-          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 placeholder:text-slate-400 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:placeholder:text-slate-600"
+          className="w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground"
         />
       </div>
       <div className="flex-1 overflow-y-auto px-1 pb-2">
@@ -513,9 +479,7 @@ export function ProjectTree({ projects, selected, onSelect, refreshToken, onChan
               setDraggedId(null);
               setDragOverId(null);
             }}
-            className={`border-t-2 ${dragOverId === p.id ? 'border-indigo-400 dark:border-indigo-600' : 'border-transparent'} ${
-              draggedId === p.id ? 'opacity-40' : ''
-            }`}
+            className={`border-t-2 ${dragOverId === p.id ? 'border-accent' : 'border-transparent'} ${draggedId === p.id ? 'opacity-40' : ''}`}
           >
             <ProjectNode
               project={p}
@@ -528,18 +492,18 @@ export function ProjectTree({ projects, selected, onSelect, refreshToken, onChan
             />
           </div>
         ))}
-        {filtered.length === 0 && <p className="px-3 py-2 text-xs text-slate-400 dark:text-slate-600">Aucun projet.</p>}
+        {filtered.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">Aucun projet.</p>}
       </div>
-      <div className="border-t border-slate-200 p-2 dark:border-slate-800">
-        <label className="flex items-center gap-1.5 px-1 text-xs text-slate-500 dark:text-slate-500">
+      <div className="border-t border-border p-2">
+        <label className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
           Projets archivés
         </label>
         {showArchived && (
           <div className="mt-1 space-y-0.5">
-            {archived.length === 0 && <p className="px-2 py-1 text-xs text-slate-400 dark:text-slate-700">Aucun.</p>}
+            {archived.length === 0 && <p className="px-2 py-1 text-xs text-muted-foreground">Aucun.</p>}
             {archived.map((p) => (
-              <div key={p.id} className="group flex items-center justify-between px-2 py-1 text-xs text-slate-500">
+              <div key={p.id} className="group flex items-center justify-between px-2 py-1 text-xs text-muted-foreground">
                 <span className="truncate">{p.name}</span>
                 <div className="flex shrink-0 items-center gap-1">
                   <button
@@ -547,7 +511,7 @@ export function ProjectTree({ projects, selected, onSelect, refreshToken, onChan
                       await api.unarchiveProject(p.id);
                       onChanged();
                     }}
-                    className="rounded px-1.5 py-0.5 text-emerald-600 hover:bg-slate-200 dark:text-emerald-500 dark:hover:bg-slate-800"
+                    className="rounded px-1.5 py-0.5 text-success hover:bg-success-muted"
                   >
                     Restaurer
                   </button>
