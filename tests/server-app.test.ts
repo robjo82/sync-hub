@@ -146,6 +146,21 @@ describe('sync-hub HTTP API', () => {
   it('returns 404 for an unknown project or thread', async () => {
     expect((await app.inject({ method: 'GET', url: '/api/projects/nope' })).statusCode).toBe(404);
     expect((await app.inject({ method: 'GET', url: '/api/threads/nope/messages' })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: '/api/threads/nope' })).statusCode).toBe(404);
+  });
+
+  it('GET /api/threads/:id returns the thread itself (not just its messages)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/threads/t1' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: 't1', projectId: 'proj-demo', title: 'Fil de test' });
+  });
+
+  it('POST /api/threads/:id/delete removes the thread from sync-hub entirely, not just archives it', async () => {
+    db.insertMessage(message());
+    const res = await app.inject({ method: 'POST', url: '/api/threads/t1/delete' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+    expect((await app.inject({ method: 'GET', url: '/api/threads/t1' })).statusCode).toBe(404);
   });
 
   it('POST /api/projects/:id/assign teaches the registry a new alias — a previously-unassigned cwd now resolves to the real project', async () => {

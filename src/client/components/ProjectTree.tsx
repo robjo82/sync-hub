@@ -1,4 +1,4 @@
-import { useEffect, useState, type DragEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Archive, Check, ChevronDown, ChevronRight, FileText, GitMerge, GripVertical, Pencil, Settings, StickyNote, Tag, Trash2, X } from 'lucide-react';
 import type { Artifact, Category, Memory, Project, Thread } from '../../types.js';
 import { api } from '../lib/api.js';
@@ -17,6 +17,10 @@ interface ProjectTreeProps {
   onSelect: (item: SelectedItem) => void;
   refreshToken: number;
   onChanged: () => void;
+  /** Set (once) to expand + scroll to a thread opened from somewhere other than clicking it in
+   * the tree (e.g. search) — consumed via onFocusHandled so it doesn't re-trigger on every render. */
+  focusThreadId?: string | null;
+  onFocusHandled?: () => void;
 }
 
 interface ProjectChildren {
@@ -451,10 +455,24 @@ function ProjectNode({
   refreshToken,
   onChanged,
   draggable,
-}: { project: Project; allProjects: Project[]; categories: Category[]; draggable: boolean } & Omit<ProjectTreeProps, 'projects'>) {
+  focusProjectId,
+  focusThreadId,
+  onFocusHandled,
+}: {
+  project: Project;
+  allProjects: Project[];
+  categories: Category[];
+  draggable: boolean;
+  focusProjectId?: string | null;
+  focusThreadId?: string | null;
+  onFocusHandled?: () => void;
+} & Omit<ProjectTreeProps, 'projects' | 'focusThreadId' | 'onFocusHandled'>) {
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<ProjectChildren | null>(null);
   const [activePanel, setActivePanel] = useState<'rename' | 'category' | 'merge' | 'archive' | 'delete' | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const threadRefs = useRef(new Map<string, HTMLDivElement>());
+  const isFocusTarget = !!focusProjectId && project.id === focusProjectId;
 
   useEffect(() => {
     if (!expanded) return;
@@ -463,11 +481,25 @@ function ProjectNode({
     );
   }, [expanded, project.id, refreshToken]);
 
+  // Opened from search (or anywhere else outside the tree): expand this project and scroll it
+  // into view, then — once its threads are loaded — scroll to the specific thread row.
+  useEffect(() => {
+    if (!isFocusTarget) return;
+    setExpanded(true);
+    rootRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [isFocusTarget]);
+
+  useEffect(() => {
+    if (!isFocusTarget || !focusThreadId || !children) return;
+    threadRefs.current.get(focusThreadId)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    onFocusHandled?.();
+  }, [isFocusTarget, focusThreadId, children]);
+
   const closePanel = () => setActivePanel(null);
 
   return (
-    <div>
-      <div className="group flex items-center rounded-md hover:bg-muted">
+    <div ref={rootRef}>
+      <div className={`group flex items-center rounded-md hover:bg-muted ${isFocusTarget ? 'bg-accent-muted' : ''}`}>
         {draggable && (
           <span title="Glisser pour réorganiser" className="hidden shrink-0 cursor-grab px-1 text-muted-foreground group-hover:block">
             <GripVertical size={14} />
@@ -560,7 +592,14 @@ function ProjectNode({
             <p className="px-2 py-1 text-xs text-muted-foreground">Rien pour l'instant.</p>
           )}
           {children.threads.map((t) => (
-            <div key={t.id} className="group flex items-center rounded-md">
+            <div
+              key={t.id}
+              ref={(el) => {
+                if (el) threadRefs.current.set(t.id, el);
+                else threadRefs.current.delete(t.id);
+              }}
+              className="group flex items-center rounded-md"
+            >
               <button
                 onClick={() => onSelect({ kind: 'thread', id: t.id })}
                 className={`flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1 text-left text-xs ${
@@ -653,6 +692,9 @@ function ProjectRow({
   onDragLeave,
   onDrop,
   onDragEnd,
+  focusProjectId,
+  focusThreadId,
+  onFocusHandled,
 }: {
   project: Project;
   allProjects: Project[];
@@ -665,6 +707,7 @@ function ProjectRow({
   onDragLeave: () => void;
   onDrop: (e: DragEvent) => void;
   onDragEnd: () => void;
+  focusProjectId?: string | null;
 } & Omit<ProjectTreeProps, 'projects'>) {
   return (
     <div
@@ -678,6 +721,9 @@ function ProjectRow({
     >
       <ProjectNode
         project={project}
+        focusProjectId={focusProjectId}
+        focusThreadId={focusThreadId}
+        onFocusHandled={onFocusHandled}
         allProjects={allProjects}
         categories={categories}
         selected={selected}
@@ -690,7 +736,7 @@ function ProjectRow({
   );
 }
 
-export function ProjectTree({ projects, selected, onSelect, refreshToken, onChanged }: ProjectTreeProps) {
+export function ProjectTree({ projects, selected, onSelect, refreshToken, onChanged, focusThreadId, onFocusHandled }: ProjectTreeProps) {
   const [query, setQuery] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [archived, setArchived] = useState<Project[]>([]);
@@ -698,6 +744,7 @@ export function ProjectTree({ projects, selected, onSelect, refreshToken, onChan
   const [categories, setCategories] = useState<Category[]>([]);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [dragOverGroup, setDragOverGroup] = useState<string | null>(null);
+  const [focusProjectId, setFocusProjectId] = useState<string | null>(null);
   // Local, optimistically-reorderable copy of the list — kept in sync with `projects` whenever a
   // fresh fetch/WebSocket update arrives, and mutated immediately on drag for a responsive feel
   // while the reorder persists in the background.
@@ -713,6 +760,27 @@ export function ProjectTree({ projects, selected, onSelect, refreshToken, onChan
   useEffect(() => {
     setOrder(projects);
   }, [projects]);
+
+  // A thread was opened from outside the tree (search) — look up its project, un-collapse that
+  // project's category group so it's actually visible, then let ProjectNode take over (expand
+  // itself, scroll into view, scroll to the specific thread once loaded).
+  useEffect(() => {
+    if (!focusThreadId) return;
+    api
+      .thread(focusThreadId)
+      .then((t) => {
+        setFocusProjectId(t.projectId);
+        const proj = projects.find((p) => p.id === t.projectId);
+        const groupKey = proj?.category || '__uncategorized__';
+        setCollapsedGroups((prev) => {
+          if (!prev.has(groupKey)) return prev;
+          const next = new Set(prev);
+          next.delete(groupKey);
+          return next;
+        });
+      })
+      .catch(() => onFocusHandled?.());
+  }, [focusThreadId]);
 
   useEffect(() => {
     if (!showArchived) return;
@@ -834,6 +902,9 @@ export function ProjectTree({ projects, selected, onSelect, refreshToken, onChan
                     refreshToken={refreshToken}
                     onChanged={onChanged}
                     draggable={dragEnabled}
+                    focusProjectId={focusProjectId}
+                    focusThreadId={focusThreadId}
+                    onFocusHandled={onFocusHandled}
                     isDragOver={dragOverId === p.id}
                     isDragging={draggedId === p.id}
                     onDragStart={() => setDraggedId(p.id)}

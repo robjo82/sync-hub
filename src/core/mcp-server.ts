@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { Db } from './db.js';
 import type { ProjectRegistry } from './registry.js';
-import { archiveThread, type ArchiveRoots } from './archive.js';
+import { archiveThread, deleteThread, type ArchiveRoots } from './archive.js';
 import { updatePointerFiles } from './pointer-files.js';
 import { UNASSIGNED_PROJECT_ID, type Message, type Project } from '../types.js';
 
@@ -478,6 +478,26 @@ export function createMcpServer(db: Db, registry: ProjectRegistry, archiveRoots:
       const thread = db.getThread(threadId);
       if (!thread) return { content: [{ type: 'text', text: `Aucun fil avec l'id "${threadId}".` }], isError: true };
       const result = archiveThread(db, thread, archiveRoots);
+      return { content: [{ type: 'text', text: `"${thread.title}" — ${result.note}` }] };
+    }),
+  );
+
+  server.registerTool(
+    'delete_thread',
+    {
+      title: 'Supprimer un fil de sync-hub',
+      description:
+        "Retire un fil de sync-hub (base et dashboard) — pas juste masqué comme archive_thread, réellement absent ensuite. " +
+        "Le fichier source réel n'est jamais supprimé (même traitement que archive_thread : déplacé pour ne pas être " +
+        're-ingéré au prochain scan). À utiliser pour un import en doublon ou un fil de test, pas pour du contenu réel.',
+      inputSchema: {
+        threadId: z.string().describe('Id du fil à supprimer'),
+      },
+    },
+    logged(db, 'delete_thread', async ({ threadId }) => {
+      const thread = db.getThread(threadId);
+      if (!thread) return { content: [{ type: 'text', text: `Aucun fil avec l'id "${threadId}".` }], isError: true };
+      const result = deleteThread(db, thread, archiveRoots);
       return { content: [{ type: 'text', text: `"${thread.title}" — ${result.note}` }] };
     }),
   );

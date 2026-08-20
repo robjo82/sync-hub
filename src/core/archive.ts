@@ -73,6 +73,18 @@ export function archiveThread(db: Db, thread: Thread, opts: ArchiveRoots): Archi
   return { ok: true, movedFileTo, note };
 }
 
+/**
+ * Removes a thread from sync-hub's own store entirely (not just hidden, like archiveThread —
+ * actually gone from the dashboard/DB). The real source file gets the exact same safe treatment
+ * as archiveThread first (moved aside, never deleted) so a later full scan can't silently
+ * re-ingest it and undo the deletion.
+ */
+export function deleteThread(db: Db, thread: Thread, opts: ArchiveRoots): ArchiveResult {
+  const { movedFileTo, note } = archiveThread(db, thread, opts);
+  db.deleteThread(thread.id);
+  return { ok: true, movedFileTo, note: `${note} Fil retiré de sync-hub.` };
+}
+
 export interface DeleteProjectResult {
   ok: boolean;
   movedFolderTo?: string;

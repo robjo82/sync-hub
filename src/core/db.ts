@@ -406,6 +406,13 @@ export class Db {
     this.raw.prepare('UPDATE threads SET status = ? WHERE id = ?').run(status, id);
   }
 
+  /** Removes the thread and (via ON DELETE CASCADE) its messages from sync-hub's own store — never
+   * the real source file, which archive.deleteThread moves aside first, the same safe way
+   * archiveThread does. Purely a sync-hub-side purge, e.g. for accidental duplicate imports. */
+  deleteThread(id: string): void {
+    this.raw.prepare('DELETE FROM threads WHERE id = ?').run(id);
+  }
+
   getThreadsForProject(projectId: string): Thread[] {
     const rows = this.raw
       .prepare(

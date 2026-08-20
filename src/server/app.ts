@@ -18,7 +18,7 @@ import { updatePointerFiles } from '../core/pointer-files.js';
 import * as claudeCode from '../core/adapters/claude-code.js';
 import * as codex from '../core/adapters/codex.js';
 import * as antigravity from '../core/adapters/antigravity.js';
-import { archiveThread, deleteProject, type ArchiveRoots } from '../core/archive.js';
+import { archiveThread, deleteProject, deleteThread, type ArchiveRoots } from '../core/archive.js';
 import type { EngineHealth, EngineType, SyncStats, WebSocketEvent } from '../types.js';
 import { UNASSIGNED_PROJECT_ID } from '../types.js';
 
@@ -162,6 +162,12 @@ export function createApp(deps: AppDeps): FastifyInstance {
 
   app.get<{ Params: { id: string } }>('/api/projects/:id/artifacts', async (req) => db.getArtifactsForProject(req.params.id));
 
+  app.get<{ Params: { id: string } }>('/api/threads/:id', async (req, reply) => {
+    const thread = db.getThread(req.params.id);
+    if (!thread) return reply.code(404).send({ error: 'not_found' });
+    return thread;
+  });
+
   app.get<{ Params: { id: string } }>('/api/threads/:id/messages', async (req, reply) => {
     const thread = db.getThread(req.params.id);
     if (!thread) return reply.code(404).send({ error: 'not_found' });
@@ -217,6 +223,17 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const updated = db.getThread(thread.id)!;
     broadcast({ type: 'thread_updated', data: updated });
     return { thread: updated, ...result };
+  });
+
+  // Purges the thread from sync-hub's own store (its real source file is moved aside first, same
+  // as archiveThread — never deleted, never left where a rescan would silently re-ingest it).
+  app.post<{ Params: { id: string } }>('/api/threads/:id/delete', async (req, reply) => {
+    const thread = db.getThread(req.params.id);
+    if (!thread) return reply.code(404).send({ error: 'not_found' });
+
+    const result = deleteThread(db, thread, deps.archiveRoots);
+    broadcast({ type: 'stats_updated', data: computeStats(deps) });
+    return result;
   });
 
   // Project-level archive: hides the project and cascades archiveThread to every one of its

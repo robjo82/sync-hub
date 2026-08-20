@@ -30,6 +30,10 @@ export default function App() {
   const [scanning, setScanning] = useState(false);
   const [tab, setTab] = useState<Tab>('projects');
   const [selected, setSelected] = useState<SelectedItem>(null);
+  // Set when a thread is opened from somewhere other than clicking it directly in the tree (e.g.
+  // search) — tells ProjectTree to expand/scroll to it once, then gets cleared so it doesn't
+  // re-trigger the scroll on every unrelated re-render.
+  const [focusThreadId, setFocusThreadId] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [theme, toggleTheme] = useTheme();
 
@@ -87,6 +91,7 @@ export default function App() {
   const openThread = (threadId: string) => {
     setTab('projects');
     setSelected({ kind: 'thread', id: threadId });
+    setFocusThreadId(threadId);
   };
 
   return (
@@ -111,9 +116,19 @@ export default function App() {
               onSelect={setSelected}
               refreshToken={refreshToken}
               onChanged={refetchProjects}
+              focusThreadId={focusThreadId}
+              onFocusHandled={() => setFocusThreadId(null)}
             />
             <main className="flex-1 overflow-y-auto">
-              {selected?.kind === 'thread' && <ChatView threadId={selected.id} />}
+              {selected?.kind === 'thread' && (
+                <ChatView
+                  key={selected.id}
+                  threadId={selected.id}
+                  allProjects={projects}
+                  onChanged={refetchProjects}
+                  onDeleted={() => setSelected(null)}
+                />
+              )}
               {(selected?.kind === 'memory' || selected?.kind === 'artifact') && <DocumentViewer document={selected} />}
               {!selected && (
                 <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

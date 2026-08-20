@@ -91,6 +91,7 @@ describe('sync-hub MCP server', () => {
       'assign_thread_to_project',
       'create_category',
       'delete_category',
+      'delete_thread',
       'get_project_timeline',
       'get_thread',
       'get_thread_link_updates',
@@ -372,6 +373,17 @@ describe('sync-hub MCP server', () => {
       const result = await client.callTool({ name: 'archive_thread', arguments: { threadId: 't1' } });
       expect((result.content as any[])[0].text).toContain('Fil');
       expect(db.getThread('t1')?.status).toBe('archived');
+    });
+
+    it('delete_thread removes the thread from sync-hub entirely', async () => {
+      const result = await client.callTool({ name: 'delete_thread', arguments: { threadId: 't1' } });
+      expect((result.content as any[])[0].text).toContain('Fil');
+      expect(db.getThread('t1')).toBeUndefined();
+    });
+
+    it('delete_thread reports an error for an unknown thread id', async () => {
+      const result = await client.callTool({ name: 'delete_thread', arguments: { threadId: 'nope' } });
+      expect(result.isError).toBe(true);
     });
 
     it('archive_project archives the project and cascades to its active threads', async () => {

@@ -10,6 +10,7 @@ export const api = {
   stats: () => jsonFetch<SyncStats>('/api/stats'),
   projects: () => jsonFetch<Project[]>('/api/projects'),
   threads: (projectId: string) => jsonFetch<Thread[]>(`/api/projects/${projectId}/threads`),
+  thread: (threadId: string) => jsonFetch<Thread>(`/api/threads/${threadId}`),
   memories: (projectId: string) => jsonFetch<Memory[]>(`/api/projects/${projectId}/memories`),
   artifacts: (projectId: string) => jsonFetch<Artifact[]>(`/api/projects/${projectId}/artifacts`),
   messages: (threadId: string) => jsonFetch<Message[]>(`/api/threads/${threadId}/messages`),
@@ -34,6 +35,8 @@ export const api = {
     jsonFetch<{ thread: Thread; ok: boolean; movedFileTo?: string; note: string }>(`/api/threads/${threadId}/archive`, {
       method: 'POST',
     }),
+  deleteThread: (threadId: string) =>
+    jsonFetch<{ ok: boolean; movedFileTo?: string; note: string }>(`/api/threads/${threadId}/delete`, { method: 'POST' }),
   archiveProject: (projectId: string) =>
     jsonFetch<{ project: Project; threads: unknown[] }>(`/api/projects/${projectId}/archive`, { method: 'POST' }),
   unarchiveProject: (projectId: string) => jsonFetch<Project>(`/api/projects/${projectId}/unarchive`, { method: 'POST' }),

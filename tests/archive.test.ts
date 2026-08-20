@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Db } from '../src/core/db.js';
-import { archiveThread, deleteProject } from '../src/core/archive.js';
+import { archiveThread, deleteProject, deleteThread } from '../src/core/archive.js';
 import type { Project, Thread } from '../src/types.js';
 
 let dir: string;
@@ -115,6 +115,52 @@ describe('archiveThread', () => {
     db.upsertThread({ ...db.getThread('t5')!, sourceFilePath: result.movedFileTo!, status: 'active' });
 
     expect(db.getThread('t5')!.status).toBe('archived');
+  });
+});
+
+describe('deleteThread', () => {
+  it('moves the real source file aside (same as archiveThread) and removes the thread + its messages from sync-hub, never touching the file itself', () => {
+    const sessionsDir = join(dir, 'codex-sessions');
+    mkdirSync(sessionsDir, { recursive: true });
+    const sourcePath = join(sessionsDir, 'rollout-fixture.jsonl');
+    writeFileSync(sourcePath, '{"real":"content"}\n');
+    db.upsertThread(thread({ id: 't-del', originEngine: 'codex', sourceFilePath: sourcePath }));
+    db.insertMessage({
+      id: 'm-del',
+      threadId: 't-del',
+      projectId: 'proj-demo',
+      sourceEngine: 'codex',
+      role: 'user',
+      content: 'x',
+      timestamp: new Date().toISOString(),
+      sequence: 0,
+      hash: 'h-del',
+    });
+
+    const result = deleteThread(db, db.getThread('t-del')!, { syncHubArchiveRoot, codexArchiveRoot });
+
+    expect(result.ok).toBe(true);
+    expect(result.movedFileTo).toBe(join(codexArchiveRoot, 'rollout-fixture.jsonl'));
+    expect(existsSync(sourcePath)).toBe(false); // gone from the active location
+    expect(existsSync(result.movedFileTo!)).toBe(true); // moved, never deleted
+    expect(readFileSync(result.movedFileTo!, 'utf-8')).toBe('{"real":"content"}\n');
+
+    expect(db.getThread('t-del')).toBeUndefined();
+    expect(db.getMessagesForThread('t-del')).toHaveLength(0); // cascaded
+  });
+
+  it('deletes cleanly even with no real source file to move', () => {
+    db.upsertThread(thread({ id: 't-del-nofile', sourceFilePath: undefined }));
+    const result = deleteThread(db, db.getThread('t-del-nofile')!, { syncHubArchiveRoot, codexArchiveRoot });
+    expect(result.ok).toBe(true);
+    expect(db.getThread('t-del-nofile')).toBeUndefined();
+  });
+
+  it('deletes an already-archived thread without trying to move its file again', () => {
+    db.upsertThread(thread({ id: 't-del-archived', status: 'archived' }));
+    const result = deleteThread(db, db.getThread('t-del-archived')!, { syncHubArchiveRoot, codexArchiveRoot });
+    expect(result.note).toContain('Déjà archivé');
+    expect(db.getThread('t-del-archived')).toBeUndefined();
   });
 });
 
