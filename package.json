@@ -8,6 +8,9 @@
   },
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "main": "dist/server/index.js",
   "scripts": {
     "dev:server": "tsx watch src/server/index.ts",

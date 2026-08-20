@@ -1,8 +1,8 @@
 # sync-hub
 
-Un petit démon local qui centralise, **verbatim**, l'historique de tes conversations IA locales
-(Claude Code, Codex CLI, Claude Cowork, imports Claude.ai/ChatGPT) dans une base SQLite unique, et
-l'expose :
+Un petit démon local (macOS uniquement — launchd, ~/Library/...) qui centralise, **verbatim**,
+l'historique de tes conversations IA locales (Claude Code, Codex CLI, Claude Cowork, Antigravity,
+imports Claude.ai/ChatGPT) dans une base SQLite unique, et l'expose :
 
 - via un **dashboard web** (arbre de projets, recherche plein texte, vue chat, couverture de
   synchro, triage des sessions non rattachées) ;
@@ -22,6 +22,9 @@ stockage natif d'un autre outil) — il lit ce qui existe déjà localement et l
 par n'importe quel outil connecté en MCP.
 
 ## Installation
+
+Prérequis : macOS, Node.js ≥ 20 (`better-sqlite3` a un prebuild pour les versions récentes — pas
+besoin d'outils de compilation dans le cas courant).
 
 ```bash
 git clone <url-de-ce-repo>
@@ -57,9 +60,12 @@ command = "node"
 args = ["<repo>/dist/server/mcp-entry.js"]
 ```
 
-Outils exposés : `get_project_timeline`, `get_thread`, `search_transcripts`, `link_threads`,
-`unlink_thread`, `get_thread_link_updates` (continuation explicite entre plusieurs fils, avec
-récupération delta-only des nouveautés).
+Outils exposés :
+- lecture verbatim : `get_project_timeline`, `get_thread`, `search_transcripts`
+- continuité entre fils : `link_threads`, `unlink_thread`, `get_thread_link_updates` (delta-only)
+- gestion de projets (mêmes actions que le dashboard) : `list_projects`, `list_threads`,
+  `rename_project`, `merge_projects`, `assign_thread_to_project`, `archive_thread`,
+  `archive_project`
 
 ## Importer un export Claude.ai / ChatGPT
 
@@ -79,7 +85,7 @@ npm run lint    # typecheck
 - `src/core/db.ts` — schéma SQLite + accès aux données.
 - `src/core/registry.ts` — résolution projet ↔ session (correspondance exacte uniquement, jamais
   de heuristique).
-- `src/core/adapters/` — un adaptateur par source (Claude Code, Codex, Cowork, exports bulk).
+- `src/core/adapters/` — un adaptateur par source (Claude Code, Codex, Cowork, Antigravity, exports bulk).
 - `src/core/watch.ts` — watch temps réel des nouvelles sessions.
 - `src/core/mcp-server.ts` — serveur MCP.
 - `src/server/` — API REST + WebSocket (Fastify).
