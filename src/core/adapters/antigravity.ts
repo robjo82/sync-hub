@@ -8,6 +8,7 @@ import { computeMessageHash } from '../hash.js';
 import { UNASSIGNED_PROJECT_ID, type Message, type MessageRole, type Thread, type ToolCall, type ToolResult } from '../../types.js';
 
 export const ANTIGRAVITY_BRAIN_ROOT = join(homedir(), '.gemini', 'antigravity', 'brain');
+export const ANTIGRAVITY_CLI_BRAIN_ROOT = join(homedir(), '.gemini', 'antigravity-cli', 'brain');
 
 /**
  * Antigravity's real storage was reverse-engineered from Robin's live sessions (Aug 2026): the
@@ -24,11 +25,14 @@ export interface SessionFileRef {
 }
 
 export function discoverSessionFiles(root: string = ANTIGRAVITY_BRAIN_ROOT): SessionFileRef[] {
-  if (!existsSync(root)) return [];
+  const roots = root === ANTIGRAVITY_BRAIN_ROOT ? [ANTIGRAVITY_BRAIN_ROOT, ANTIGRAVITY_CLI_BRAIN_ROOT] : [root];
   const out: SessionFileRef[] = [];
-  for (const sessionId of readdirSync(root)) {
-    const filePath = join(root, sessionId, ...TRANSCRIPT_RELATIVE_PATH);
-    if (existsSync(filePath)) out.push({ filePath, sessionId });
+  for (const r of roots) {
+    if (!existsSync(r)) continue;
+    for (const sessionId of readdirSync(r)) {
+      const filePath = join(r, sessionId, ...TRANSCRIPT_RELATIVE_PATH);
+      if (existsSync(filePath)) out.push({ filePath, sessionId });
+    }
   }
   return out;
 }
@@ -251,5 +255,8 @@ export function ingestAll(db: Db, registry: ProjectRegistry, root: string = ANTI
 }
 
 export function storageRootExists(root: string = ANTIGRAVITY_BRAIN_ROOT): boolean {
+  if (root === ANTIGRAVITY_BRAIN_ROOT) {
+    return existsSync(ANTIGRAVITY_BRAIN_ROOT) || existsSync(ANTIGRAVITY_CLI_BRAIN_ROOT);
+  }
   return existsSync(root);
 }

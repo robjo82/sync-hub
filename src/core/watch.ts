@@ -19,7 +19,7 @@ interface WatchOptions {
   /** Override the watched roots (used by tests; production callers should rely on the defaults). */
   claudeCodeRoot?: string;
   codexRoots?: string[];
-  antigravityRoot?: string;
+  antigravityRoots?: string[];
 }
 
 /**
@@ -85,11 +85,11 @@ function startEngineWatch(
 export function startWatching(db: Db, registry: ProjectRegistry, opts: WatchOptions = {}): WatchHandle {
   const claudeCodeRoot = opts.claudeCodeRoot ?? claudeCode.CLAUDE_CODE_STORAGE_ROOT;
   const codexRoots = opts.codexRoots ?? [codex.CODEX_SESSIONS_ROOT, codex.CODEX_ARCHIVED_SESSIONS_ROOT];
-  const antigravityRoot = opts.antigravityRoot ?? antigravity.ANTIGRAVITY_BRAIN_ROOT;
+  const antigravityRoots = opts.antigravityRoots ?? [antigravity.ANTIGRAVITY_BRAIN_ROOT, antigravity.ANTIGRAVITY_CLI_BRAIN_ROOT];
   const watchers: FSWatcher[] = [
     startEngineWatch('claude-code', [claudeCodeRoot], db, registry, opts),
     startEngineWatch('codex', codexRoots, db, registry, opts),
-    startEngineWatch('antigravity', [antigravityRoot], db, registry, opts),
+    startEngineWatch('antigravity', antigravityRoots, db, registry, opts),
   ];
   const readyPromise = Promise.all(watchers.map((w) => new Promise<void>((resolve) => w.once('ready', () => resolve())))).then(
     () => undefined,
