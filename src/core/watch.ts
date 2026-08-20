@@ -4,6 +4,7 @@ import type { Db } from './db.js';
 import type { ProjectRegistry } from './registry.js';
 import * as claudeCode from './adapters/claude-code.js';
 import * as codex from './adapters/codex.js';
+import * as antigravity from './adapters/antigravity.js';
 import type { EngineType } from '../types.js';
 
 export interface WatchHandle {
@@ -18,6 +19,7 @@ interface WatchOptions {
   /** Override the watched roots (used by tests; production callers should rely on the defaults). */
   claudeCodeRoot?: string;
   codexRoots?: string[];
+  antigravityRoot?: string;
 }
 
 /**
@@ -47,8 +49,15 @@ function startEngineWatch(
     let inserted = 0;
     if (engine === 'claude-code') {
       inserted = claudeCode.ingestSessionFile(db, registry, claudeCode.refFromFilePath(filePath), fromOffset ? { fromOffset } : {});
-    } else {
+    } else if (engine === 'codex') {
       inserted = codex.ingestSessionFile(db, registry, { filePath }, fromOffset ? { fromOffset } : {});
+    } else {
+      // Antigravity's brain/ tree holds many non-transcript files per session (steps, scratch,
+      // uploads) — refFromFilePath returns null for anything but transcript_full.jsonl so those
+      // don't get misread as a session file.
+      const ref = antigravity.refFromFilePath(filePath);
+      if (!ref) return;
+      inserted = antigravity.ingestSessionFile(db, registry, ref, fromOffset ? { fromOffset } : {});
     }
     offsets.set(filePath, size);
     if (inserted > 0) opts.onIngest?.({ engine, filePath, inserted });
@@ -76,9 +85,11 @@ function startEngineWatch(
 export function startWatching(db: Db, registry: ProjectRegistry, opts: WatchOptions = {}): WatchHandle {
   const claudeCodeRoot = opts.claudeCodeRoot ?? claudeCode.CLAUDE_CODE_STORAGE_ROOT;
   const codexRoots = opts.codexRoots ?? [codex.CODEX_SESSIONS_ROOT, codex.CODEX_ARCHIVED_SESSIONS_ROOT];
+  const antigravityRoot = opts.antigravityRoot ?? antigravity.ANTIGRAVITY_BRAIN_ROOT;
   const watchers: FSWatcher[] = [
     startEngineWatch('claude-code', [claudeCodeRoot], db, registry, opts),
     startEngineWatch('codex', codexRoots, db, registry, opts),
+    startEngineWatch('antigravity', [antigravityRoot], db, registry, opts),
   ];
   const readyPromise = Promise.all(watchers.map((w) => new Promise<void>((resolve) => w.once('ready', () => resolve())))).then(
     () => undefined,

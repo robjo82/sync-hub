@@ -10,6 +10,7 @@ import type { WatchHandle } from '../core/watch.js';
 import { updatePointerFiles } from '../core/pointer-files.js';
 import * as claudeCode from '../core/adapters/claude-code.js';
 import * as codex from '../core/adapters/codex.js';
+import * as antigravity from '../core/adapters/antigravity.js';
 import { archiveThread, deleteProject, type ArchiveRoots } from '../core/archive.js';
 import type { EngineHealth, EngineType, SyncStats, WebSocketEvent } from '../types.js';
 import { UNASSIGNED_PROJECT_ID } from '../types.js';
@@ -30,11 +31,21 @@ export interface AppDeps {
 
 export function computeStats(deps: Pick<AppDeps, 'db' | 'watchHandle'>): SyncStats {
   const { db, watchHandle } = deps;
-  const engines: EngineType[] = ['claude-code', 'codex'];
+  const engines: EngineType[] = ['claude-code', 'codex', 'antigravity'];
+  const storageRootExists: Record<EngineType, () => boolean> = {
+    'claude-code': claudeCode.storageRootExists,
+    codex: codex.storageRootExists,
+    antigravity: antigravity.storageRootExists,
+  };
+  const storageRoot: Record<EngineType, string> = {
+    'claude-code': claudeCode.CLAUDE_CODE_STORAGE_ROOT,
+    codex: codex.CODEX_SESSIONS_ROOT,
+    antigravity: antigravity.ANTIGRAVITY_BRAIN_ROOT,
+  };
   const engineHealth: EngineHealth[] = engines.map((engine) => ({
     engine,
-    storageRootExists: engine === 'claude-code' ? claudeCode.storageRootExists() : codex.storageRootExists(),
-    storageRoot: engine === 'claude-code' ? claudeCode.CLAUDE_CODE_STORAGE_ROOT : codex.CODEX_SESSIONS_ROOT,
+    storageRootExists: storageRootExists[engine](),
+    storageRoot: storageRoot[engine],
     watcherActive: watchHandle.isActive(),
     lastIngestAt: db.getLastIngestAt(engine),
     messageCount: db.countMessagesForEngine(engine),

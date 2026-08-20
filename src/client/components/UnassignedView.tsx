@@ -3,7 +3,7 @@ import type { Project, Thread } from '../../types.js';
 import { UNASSIGNED_PROJECT_ID } from '../../types.js';
 import { api } from '../lib/api.js';
 
-const ENGINE_LABEL: Record<string, string> = { 'claude-code': 'Claude Code', codex: 'Codex' };
+const ENGINE_LABEL: Record<string, string> = { 'claude-code': 'Claude Code', codex: 'Codex', antigravity: 'Antigravity' };
 
 function ThreadRow({ thread, projects, onAssigned }: { thread: Thread; projects: Project[]; onAssigned: () => void }) {
   const [target, setTarget] = useState('');

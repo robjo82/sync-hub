@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { Message } from '../../types.js';
 import { api } from '../lib/api.js';
 
-const ENGINE_LABEL: Record<string, string> = { 'claude-code': 'Claude Code', codex: 'Codex' };
+const ENGINE_LABEL: Record<string, string> = { 'claude-code': 'Claude Code', codex: 'Codex', antigravity: 'Antigravity' };
 
 interface SearchResult {
   message: Message;

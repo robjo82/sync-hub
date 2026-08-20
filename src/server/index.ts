@@ -7,6 +7,7 @@ import { updateAllPointerFiles } from '../core/pointer-files.js';
 import * as claudeCode from '../core/adapters/claude-code.js';
 import * as codex from '../core/adapters/codex.js';
 import * as cowork from '../core/adapters/cowork.js';
+import * as antigravity from '../core/adapters/antigravity.js';
 import { ingestAllMemories } from '../core/adapters/memories.js';
 import { ingestClaudeExport } from '../core/adapters/claude-export.js';
 import { ingestChatGptExport } from '../core/adapters/chatgpt-export.js';
@@ -27,6 +28,7 @@ function fullScan(): void {
   claudeCode.ingestAll(db, registry);
   codex.ingestAll(db, registry);
   cowork.ingestAll(db, registry);
+  antigravity.ingestAll(db, registry);
   ingestAllMemories(db, registry);
   ingestClaudeExport(db, join(IMPORTS_DIR, 'claude'));
   ingestChatGptExport(db, join(IMPORTS_DIR, 'chatgpt'));

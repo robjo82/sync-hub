@@ -1,4 +1,4 @@
-export type EngineType = 'claude-code' | 'codex';
+export type EngineType = 'claude-code' | 'codex' | 'antigravity';
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 

@@ -15,9 +15,10 @@ interface CoverageRow {
 const KNOWN_ENGINES: { key: EngineType; label: string }[] = [
   { key: 'claude-code', label: 'Claude Code / Cowork' },
   { key: 'codex', label: 'Codex / ChatGPT' },
+  { key: 'antigravity', label: 'Antigravity' },
 ];
 
-const BACKLOG_ENGINES = ['Antigravity'];
+const BACKLOG_ENGINES: string[] = [];
 
 export function CoverageView() {
   const [rows, setRows] = useState<CoverageRow[] | null>(null);

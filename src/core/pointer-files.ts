@@ -5,7 +5,7 @@ import type { EngineType, Project } from '../types.js';
 
 const BEGIN_MARKER = '<!-- sync-hub:begin -->';
 const END_MARKER = '<!-- sync-hub:end -->';
-const ENGINE_LABEL: Record<EngineType, string> = { 'claude-code': 'Claude Code', codex: 'Codex' };
+const ENGINE_LABEL: Record<EngineType, string> = { 'claude-code': 'Claude Code', codex: 'Codex', antigravity: 'Antigravity' };
 
 function formatRelative(iso: string, now: Date): string {
   const diffMs = now.getTime() - new Date(iso).getTime();

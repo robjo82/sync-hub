@@ -3,7 +3,7 @@ import type { EngineType, Message, ToolCall, ToolResult } from '../../types.js';
 import { api } from '../lib/api.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 
-const ENGINE_LABEL: Record<string, string> = { 'claude-code': 'Claude Code', codex: 'Codex' };
+const ENGINE_LABEL: Record<string, string> = { 'claude-code': 'Claude Code', codex: 'Codex', antigravity: 'Antigravity' };
 
 const USER_CARD_COLLAPSE_LENGTH = 600;
 
