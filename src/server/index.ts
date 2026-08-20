@@ -47,6 +47,7 @@ const app = createApp({
   rescan: fullScan,
   clientDistDir: CLIENT_DIST,
   archiveRoots: { syncHubArchiveRoot: join(DATA_DIR, 'archived-sessions') },
+  importsDir: IMPORTS_DIR,
 });
 
 const address = await app.listen({ port: PORT, host: HOST });

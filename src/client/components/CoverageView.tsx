@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Check } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Check, Loader2, Upload } from 'lucide-react';
 import type { EngineType } from '../../types.js';
 import { formatRelative } from '../lib/format.js';
 import { api } from '../lib/api.js';
@@ -21,11 +21,80 @@ const KNOWN_ENGINES: { key: EngineType; label: string }[] = [
 
 const BACKLOG_ENGINES: string[] = [];
 
+type UploadState = { status: 'idle' } | { status: 'uploading' } | { status: 'done'; message: string } | { status: 'error'; message: string };
+
+function ImportDropZone({ tool, label, onImported }: { tool: 'claude' | 'chatgpt'; label: string; onImported: () => void }) {
+  const [state, setState] = useState<UploadState>({ status: 'idle' });
+  const [dragOver, setDragOver] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const upload = async (file: File) => {
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+      setState({ status: 'error', message: "Attendu : l'archive .zip telle que téléchargée, pas dézippée." });
+      return;
+    }
+    setState({ status: 'uploading' });
+    try {
+      await api.uploadImport(tool, file);
+      setState({ status: 'done', message: `${file.name} importé.` });
+      onImported();
+    } catch (err: any) {
+      setState({ status: 'error', message: err?.message ?? 'Échec de l\'import.' });
+    }
+  };
+
+  return (
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        const file = e.dataTransfer.files[0];
+        if (file) upload(file);
+      }}
+      onClick={() => inputRef.current?.click()}
+      className={`flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed p-4 text-center text-xs transition-colors ${
+        dragOver ? 'border-accent bg-accent-muted' : 'border-border hover:border-accent/40'
+      }`}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".zip"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) upload(file);
+          e.target.value = '';
+        }}
+      />
+      {state.status === 'uploading' ? (
+        <Loader2 size={18} className="animate-spin text-muted-foreground" />
+      ) : (
+        <Upload size={18} className="text-muted-foreground" />
+      )}
+      <span className="font-medium text-foreground">{label}</span>
+      <span className="text-muted-foreground">Glisse l'export .zip ici, ou clique</span>
+      {state.status === 'done' && (
+        <span className="flex items-center gap-1 text-success">
+          <Check size={12} /> {state.message}
+        </span>
+      )}
+      {state.status === 'error' && <span className="text-destructive">{state.message}</span>}
+    </div>
+  );
+}
+
 export function CoverageView() {
   const [rows, setRows] = useState<CoverageRow[] | null>(null);
 
+  const load = () => api.coverage().then(setRows);
   useEffect(() => {
-    api.coverage().then(setRows);
+    load();
   }, []);
 
   if (!rows) return <div className="p-6 text-sm text-muted-foreground">Chargement…</div>;
@@ -85,6 +154,15 @@ export function CoverageView() {
           )}
         </tbody>
       </table>
+
+      <h3 className="mt-6 mb-1 text-sm font-semibold text-foreground">Importer un export</h3>
+      <p className="mb-3 text-xs text-muted-foreground">
+        L'archive .zip telle que fournie par « Exporter mes données » — Claude.ai (Réglages → Compte) ou ChatGPT (Réglages → Données).
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <ImportDropZone tool="claude" label="Claude.ai" onImported={load} />
+        <ImportDropZone tool="chatgpt" label="ChatGPT" onImported={load} />
+      </div>
     </div>
   );
 }

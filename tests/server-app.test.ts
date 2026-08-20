@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -76,6 +77,7 @@ beforeEach(() => {
     rescan,
     archiveRoots: { syncHubArchiveRoot: join(dir, 'sync-hub-archive'), codexArchiveRoot: join(dir, 'codex-archived-sessions') },
     trashRoot: join(dir, 'trash'),
+    importsDir: join(dir, 'imports'),
   });
 });
 
@@ -309,5 +311,48 @@ describe('sync-hub HTTP API', () => {
     const res = await app.inject({ method: 'POST', url: '/api/sync/rescan' });
     expect(res.statusCode).toBe(200);
     expect(rescan).toHaveBeenCalledOnce();
+  });
+
+  describe('POST /api/imports/:tool — uploading an export .zip from the dashboard', () => {
+    function multipartBody(filename: string, content: Buffer): { payload: Buffer; contentType: string } {
+      const boundary = '----sync-hub-test-boundary';
+      const head = Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: application/zip\r\n\r\n`,
+      );
+      const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+      return { payload: Buffer.concat([head, content, tail]), contentType: `multipart/form-data; boundary=${boundary}` };
+    }
+
+    function realZipFixture(): Buffer {
+      const stageDir = mkdtempSync(join(tmpdir(), 'sync-hub-zip-fixture-'));
+      writeFileSync(join(stageDir, 'conversations.json'), '[]');
+      execSync(`zip -q -j fixture.zip conversations.json`, { cwd: stageDir });
+      const zipBytes = readFileSync(join(stageDir, 'fixture.zip'));
+      rmSync(stageDir, { recursive: true, force: true });
+      return zipBytes;
+    }
+
+    it('rejects an unknown tool', async () => {
+      const { payload, contentType } = multipartBody('export.zip', Buffer.from('x'));
+      const res = await app.inject({ method: 'POST', url: '/api/imports/notatool', headers: { 'content-type': contentType }, payload });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toBe('unknown_tool');
+    });
+
+    it('rejects a non-.zip filename', async () => {
+      const { payload, contentType } = multipartBody('export.json', Buffer.from('x'));
+      const res = await app.inject({ method: 'POST', url: '/api/imports/claude', headers: { 'content-type': contentType }, payload });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toBe('zip_required');
+    });
+
+    it('extracts a real .zip into imports/<tool>/ and triggers a rescan', async () => {
+      const { payload, contentType } = multipartBody('export.zip', realZipFixture());
+      const res = await app.inject({ method: 'POST', url: '/api/imports/claude', headers: { 'content-type': contentType }, payload });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().ok).toBe(true);
+      expect(existsSync(join(dir, 'imports', 'claude', 'conversations.json'))).toBe(true);
+      expect(rescan).toHaveBeenCalledOnce();
+    });
   });
 });

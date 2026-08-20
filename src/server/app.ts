@@ -2,7 +2,14 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
-import { existsSync } from 'node:fs';
+import fastifyMultipart from '@fastify/multipart';
+import { createWriteStream, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { WebSocket } from 'ws';
 import type { Db } from '../core/db.js';
 import type { ProjectRegistry } from '../core/registry.js';
@@ -25,9 +32,13 @@ export interface AppDeps {
   archiveRoots: ArchiveRoots;
   /** Where deleteProject moves a project's real folder — defaults to the real ~/.Trash; override in tests. */
   trashRoot?: string;
+  /** Where an uploaded Claude.ai/ChatGPT export .zip is extracted (into <importsDir>/claude or /chatgpt). */
+  importsDir: string;
   clientDistDir?: string;
   corsOrigins?: string[];
 }
+
+const execFileAsync = promisify(execFile);
 
 export function computeStats(deps: Pick<AppDeps, 'db' | 'watchHandle'>): SyncStats {
   const { db, watchHandle } = deps;
@@ -76,6 +87,8 @@ export function createApp(deps: AppDeps): FastifyInstance {
 
   app.register(cors, { origin: deps.corsOrigins ?? true });
   app.register(fastifyWebsocket);
+  // Exports (esp. ChatGPT's, sharded across dozens of files) can run to several hundred MB.
+  app.register(fastifyMultipart, { limits: { fileSize: 2 * 1024 * 1024 * 1024 } });
 
   if (deps.clientDistDir && existsSync(deps.clientDistDir)) {
     app.register(fastifyStatic, { root: deps.clientDistDir });
@@ -245,6 +258,17 @@ export function createApp(deps: AppDeps): FastifyInstance {
     return updatedProject;
   });
 
+  app.post<{ Params: { id: string }; Body: { category?: string | null } }>('/api/projects/:id/category', async (req, reply) => {
+    const project = db.getProject(req.params.id);
+    if (!project) return reply.code(404).send({ error: 'not_found' });
+    const category = req.body?.category?.trim() || null;
+
+    db.setProjectCategory(project.id, category);
+    const updatedProject = db.getProject(project.id)!;
+    broadcast({ type: 'project_updated', data: updatedProject });
+    return updatedProject;
+  });
+
   // Moves the project's real folder to the macOS Trash (never a permanent rm -rf) and removes it
   // from sync-hub's own store. Requires the caller to pass confirm:true as a small extra safety
   // layer beyond the dashboard's own confirmation dialog, given this touches a real folder.
@@ -282,6 +306,40 @@ export function createApp(deps: AppDeps): FastifyInstance {
     broadcast({ type: 'project_updated', data: mergedProject });
     broadcast({ type: 'stats_updated', data: computeStats(deps) });
     return mergedProject;
+  });
+
+  // Onboarding: drop a Claude.ai/ChatGPT "export your data" .zip straight from the dashboard
+  // instead of having to unzip it into imports/<tool>/ by hand. Extracted with the system `unzip`
+  // (macOS-only, already a hard requirement elsewhere) rather than a new zip-parsing dependency.
+  app.post<{ Params: { tool: string } }>('/api/imports/:tool', async (req, reply) => {
+    const { tool } = req.params;
+    if (tool !== 'claude' && tool !== 'chatgpt') return reply.code(400).send({ error: 'unknown_tool' });
+
+    const data = await req.file();
+    if (!data) return reply.code(400).send({ error: 'file_required' });
+    if (!data.filename.toLowerCase().endsWith('.zip')) return reply.code(400).send({ error: 'zip_required' });
+
+    const tmpZipPath = join(tmpdir(), `sync-hub-import-${randomUUID()}.zip`);
+    await pipeline(data.file, createWriteStream(tmpZipPath));
+    if (data.file.truncated) {
+      rmSync(tmpZipPath, { force: true });
+      return reply.code(413).send({ error: 'file_too_large' });
+    }
+
+    const targetDir = join(deps.importsDir, tool);
+    mkdirSync(targetDir, { recursive: true });
+    try {
+      await execFileAsync('/usr/bin/unzip', ['-o', tmpZipPath, '-d', targetDir]);
+    } catch (err: any) {
+      return reply.code(500).send({ error: 'unzip_failed', message: err.message });
+    } finally {
+      rmSync(tmpZipPath, { force: true });
+    }
+
+    rescan();
+    const stats = computeStats(deps);
+    broadcast({ type: 'stats_updated', data: stats });
+    return { ok: true, stats };
   });
 
   app.post('/api/sync/rescan', async () => {

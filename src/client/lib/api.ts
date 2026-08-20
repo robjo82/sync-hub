@@ -43,6 +43,12 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
     }),
+  setProjectCategory: (projectId: string, category: string | null) =>
+    jsonFetch<Project>(`/api/projects/${projectId}/category`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category }),
+    }),
   deleteProject: (projectId: string) =>
     jsonFetch<{ ok: boolean; movedFolderTo?: string; note: string }>(`/api/projects/${projectId}/delete`, {
       method: 'POST',
@@ -61,6 +67,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ orderedIds }),
     }),
+  uploadImport: (tool: 'claude' | 'chatgpt', file: File) => {
+    const body = new FormData();
+    body.append('file', file);
+    return jsonFetch<{ ok: true; stats: SyncStats }>(`/api/imports/${tool}`, { method: 'POST', body });
+  },
 };
 
 export function connectSocket(onEvent: (event: WebSocketEvent) => void): { close: () => void } {
