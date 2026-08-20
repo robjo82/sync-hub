@@ -116,6 +116,38 @@ describe('parseLine — real Codex rollout JSONL schema', () => {
     );
     expect(parsed).not.toBeNull();
   });
+
+  it('strips the "Applications/Files mentioned by the user" preamble Codex injects ahead of an @-mention, keeping only the text after "## My request:" — regression for a real find (the whole preamble was displayed as if Robin had typed it)', () => {
+    const parsed = parseLine(
+      JSON.stringify({
+        type: 'response_item',
+        timestamp: 't',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text:
+                '\n# Applications mentioned by the user:\n\n[@Google Drive](plugin://computer-use@openai-bundled?app=com.google.drivefs)\n\n## My request:\nQu\'est-ce que tu sais du projet à date ?',
+            },
+          ],
+        },
+      }),
+    );
+    expect(parsed).toMatchObject({ role: 'user', content: "Qu'est-ce que tu sais du projet à date ?" });
+  });
+
+  it('leaves an ordinary message with no injected preamble untouched, even if it happens to contain "My request" as plain text', () => {
+    const parsed = parseLine(
+      JSON.stringify({
+        type: 'response_item',
+        timestamp: 't',
+        payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'My request is simple: fix the bug.' }] },
+      }),
+    );
+    expect(parsed).toMatchObject({ role: 'user', content: 'My request is simple: fix the bug.' });
+  });
 });
 
 describe('ingestSessionFile — end to end against a real-shaped Codex fixture', () => {

@@ -105,6 +105,21 @@ function isSyntheticUserNotice(text: string): boolean {
 }
 
 /**
+ * When the user @-mentions an app or attaches a file, Codex prepends a real preamble — "# Applications
+ * mentioned by the user:" / "# Files mentioned by the user:" with plugin/file links — to the *same*
+ * message as the actual typed text, ending with a literal "## My request:" line (verified: 10/902 real
+ * user messages in a 400-session sample). That preamble isn't something Robin typed, so only the text
+ * after the marker is kept as the verbatim message — the rest is Codex's own bookkeeping, same
+ * reasoning as isSyntheticUserNotice above, just for a mixed message instead of a pure-notice one.
+ */
+const MY_REQUEST_MARKER_RE = /^[\s\S]*?\n## My request:\n/;
+
+function stripInjectedRequestPreamble(text: string): string {
+  const match = text.match(MY_REQUEST_MARKER_RE);
+  return match ? text.slice(match[0].length) : text;
+}
+
+/**
  * Parses one raw JSONL line from a Codex rollout file. Returns null for session bookkeeping
  * (session_meta, turn_context, world_state, compacted) and non-conversational event_msg types.
  * `response_item` is the raw, verbatim API-level record and is preferred over the higher-level
@@ -130,9 +145,10 @@ export function parseLine(rawLine: string): ParsedLine | null {
     case 'message': {
       if (payload.role === 'developer') return null; // Codex's own injected permission/system boilerplate.
       const role: MessageRole = payload.role === 'assistant' ? 'assistant' : 'user';
-      const content = textFromContentBlocks(payload.content ?? []);
+      let content = textFromContentBlocks(payload.content ?? []);
       if (!content) return null;
       if (role === 'user' && isSyntheticUserNotice(content)) return null;
+      if (role === 'user') content = stripInjectedRequestPreamble(content);
       return { role, content, timestamp, uuid };
     }
     case 'reasoning': {
