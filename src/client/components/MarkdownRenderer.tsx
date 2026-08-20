@@ -135,15 +135,20 @@ export function MarkdownRenderer({ text }: { text: string }) {
       continue;
     }
 
-    // :::writing{variant="email"|"chat_message"|"social_post"|"document"|"standard" id="..."} ... :::
+    // :::writing{variant="email"|"chat_message"|"social_post"|"document"|"standard" id="..." ...} ... :::
     // — a real, documented Codex fence for a self-contained written artifact (an email draft, a
     // message to send, a social post…), verified against real output (a full email draft under
     // variant="chat_message"). Rendered as its own labeled card, not folded — unlike the tool/
     // thought blocks, the point here is exactly to make this stand out as a distinct piece of
-    // writing, not to hide it.
-    const writingMatch = line.trim().match(/^:::writing\{variant="([a-z_]+)"\s+id="[^"]*"\}$/);
-    if (writingMatch) {
-      const variant = writingMatch[1];
+    // writing, not to hide it. Attributes appear in no fixed order and Codex adds others (seen:
+    // `subject` on email variants) — parse them as a generic key="value" bag rather than matching
+    // a fixed "variant then id" shape, which silently failed to render real messages where id came
+    // first or an extra attribute was present.
+    const writingOpenMatch = line.trim().match(/^:::writing\{([^}]*)\}$/);
+    if (writingOpenMatch) {
+      const attrs: Record<string, string> = {};
+      for (const m of writingOpenMatch[1].matchAll(/([a-zA-Z_]+)="([^"]*)"/g)) attrs[m[1]] = m[2];
+      const variant = attrs.variant ?? 'standard';
       i++;
       const innerLines: string[] = [];
       while (i < lines.length && lines[i].trim() !== ':::') {
@@ -159,6 +164,7 @@ export function MarkdownRenderer({ text }: { text: string }) {
           <div className="flex items-center gap-1.5 border-b border-border bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground">
             <Icon size={13} />
             {VARIANT_LABEL[variant] ?? 'Document'}
+            {attrs.subject && <span className="font-normal text-muted-foreground/80">· {attrs.subject}</span>}
           </div>
           <div className="px-3 py-2">
             <MarkdownRenderer text={innerLines.join('\n')} />
