@@ -1,0 +1,42 @@
+[
+  {
+    "id": "fixture-conv-project-0001",
+    "conversation_id": "fixture-conv-project-0001",
+    "title": "Question client factice",
+    "create_time": 1735689600,
+    "current_node": "user1",
+    "conversation_template_id": "g-p-fixturetest0001",
+    "mapping": {
+      "user1": {
+        "id": "user1",
+        "parent": null,
+        "message": {
+          "id": "user1",
+          "author": { "role": "user" },
+          "content": { "content_type": "text", "parts": ["Bonjour, question pour un client."] },
+          "create_time": 1735689601
+        }
+      }
+    }
+  },
+  {
+    "id": "fixture-conv-unknown-project-0002",
+    "conversation_id": "fixture-conv-unknown-project-0002",
+    "title": "Question sans projet connu",
+    "create_time": 1735689600,
+    "current_node": "user1",
+    "conversation_template_id": "g-p-unknownproject9999",
+    "mapping": {
+      "user1": {
+        "id": "user1",
+        "parent": null,
+        "message": {
+          "id": "user1",
+          "author": { "role": "user" },
+          "content": { "content_type": "text", "parts": ["Question sans nom de projet connu."] },
+          "create_time": 1735689601
+        }
+      }
+    }
+  }
+]

@@ -1,0 +1,14 @@
+{"timestamp":"2026-01-01T09:00:00.000Z","type":"session_meta","payload":{"id":"fixture-session-0002","timestamp":"2026-01-01T09:00:00.000Z","cwd":"/Users/robin/Projets/demo","originator":"Codex CLI","cli_version":"0.999.0","source":"cli","model_provider":"openai"}}
+{"timestamp":"2026-01-01T09:00:01.000Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"<permissions instructions>...</permissions instructions>"}]}}
+{"timestamp":"2026-01-01T09:00:02.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Peux-tu lister les fichiers du dossier ?"}]}}
+{"timestamp":"2026-01-01T09:00:03.000Z","type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":"2026-01-01T09:00:04.000Z","type":"response_item","payload":{"type":"reasoning","summary":[{"type":"summary_text","text":"Je vais lister le dossier avec un outil."}],"content":null,"encrypted_content":"opaque-blob"}}
+{"timestamp":"2026-01-01T09:00:05.000Z","type":"response_item","payload":{"type":"function_call","name":"shell_command","arguments":"{\"command\":\"ls demo/\"}","call_id":"call-1"}}
+{"timestamp":"2026-01-01T09:00:06.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-1","output":"fichier_a.txt\nfichier_b.txt"}}
+{"timestamp":"2026-01-01T09:00:07.000Z","type":"event_msg","payload":{"type":"exec_command_end","exit_code":0}}
+{"timestamp":"2026-01-01T09:00:08.000Z","type":"response_item","payload":{"type":"custom_tool_call","status":"completed","call_id":"call-2","name":"apply_patch","input":"*** Begin Patch\n*** Update File: demo.txt\n*** End Patch"}}
+{"timestamp":"2026-01-01T09:00:09.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call-2","output":"{\"output\":\"Success\"}"}}
+{"timestamp":"2026-01-01T09:00:10.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Le dossier contient fichier_a.txt et fichier_b.txt."}]}}
+{"timestamp":"2026-01-01T09:00:11.000Z","type":"event_msg","payload":{"type":"thread_name_updated","thread_id":"fixture-session-0002","thread_name":"Lister le dossier demo"}}
+{"timestamp":"2026-01-01T09:00:12.000Z","type":"event_msg","payload":{"type":"task_complete"}}
+{"timestamp":"2026-01-01T09:00:02.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Peux-tu lister les fichiers du dossier ?"}]}}

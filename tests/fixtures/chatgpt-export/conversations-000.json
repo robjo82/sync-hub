@@ -1,0 +1,65 @@
+[
+  {
+    "id": "fixture-conv-0001",
+    "conversation_id": "fixture-conv-0001",
+    "title": "Question factice sur les migrations Odoo",
+    "create_time": 1735689600,
+    "current_node": "recap1",
+    "mapping": {
+      "root": { "id": "root", "message": null, "parent": null },
+      "user1": {
+        "id": "user1",
+        "parent": "root",
+        "message": {
+          "id": "user1",
+          "author": { "role": "user" },
+          "content": { "content_type": "text", "parts": ["Comment migrer un module Odoo de la v18 à la v19 ?"] },
+          "create_time": 1735689601
+        }
+      },
+      "abandoned": {
+        "id": "abandoned",
+        "parent": "user1",
+        "message": {
+          "id": "abandoned",
+          "author": { "role": "assistant" },
+          "content": { "content_type": "text", "parts": ["Réponse abandonnée, ne doit jamais apparaître."] },
+          "create_time": 1735689602
+        }
+      },
+      "thoughts1": {
+        "id": "thoughts1",
+        "parent": "user1",
+        "message": {
+          "id": "thoughts1",
+          "author": { "role": "assistant" },
+          "content": {
+            "content_type": "thoughts",
+            "thoughts": [{ "content": "Je réfléchis à la meilleure façon de migrer." }]
+          },
+          "create_time": 1735689603
+        }
+      },
+      "assistant1": {
+        "id": "assistant1",
+        "parent": "thoughts1",
+        "message": {
+          "id": "assistant1",
+          "author": { "role": "assistant" },
+          "content": { "content_type": "text", "parts": ["Voici les étapes principales pour migrer."] },
+          "create_time": 1735689604
+        }
+      },
+      "recap1": {
+        "id": "recap1",
+        "parent": "assistant1",
+        "message": {
+          "id": "recap1",
+          "author": { "role": "assistant" },
+          "content": { "content_type": "reasoning_recap", "content": "Réflexion durant 10s" },
+          "create_time": 1735689605
+        }
+      }
+    }
+  }
+]

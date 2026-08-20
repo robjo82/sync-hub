@@ -1,0 +1,52 @@
+[
+  {
+    "uuid": "fixture-conv-0001",
+    "name": "Question factice sur les migrations Odoo",
+    "created_at": "2026-01-01T09:00:00Z",
+    "updated_at": "2026-01-01T09:05:00Z",
+    "chat_messages": [
+      {
+        "uuid": "fixture-msg-0001",
+        "sender": "human",
+        "text": "Comment migrer un module Odoo de la v18 à la v19 ?",
+        "content": [{ "type": "text", "text": "Comment migrer un module Odoo de la v18 à la v19 ?" }],
+        "created_at": "2026-01-01T09:00:00Z"
+      },
+      {
+        "uuid": "fixture-msg-0002",
+        "sender": "assistant",
+        "text": "",
+        "content": [
+          { "type": "thinking", "text": "Je vais chercher les changements de version." },
+          { "type": "tool_use", "id": "toolu_fixture_1", "name": "web_search", "input": { "query": "Odoo 19 migration changelog" } }
+        ],
+        "created_at": "2026-01-01T09:01:00Z"
+      },
+      {
+        "uuid": "fixture-msg-0003",
+        "sender": "assistant",
+        "text": "",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_fixture_1",
+            "name": "web_search",
+            "content": "Résultat de recherche factice",
+            "is_error": false
+          }
+        ],
+        "created_at": "2026-01-01T09:02:00Z"
+      },
+      {
+        "uuid": "fixture-msg-0004",
+        "sender": "assistant",
+        "text": "Voici les étapes principales pour migrer.",
+        "content": [
+          { "type": "token_budget", "budget": 1000 },
+          { "type": "text", "text": "Voici les étapes principales pour migrer." }
+        ],
+        "created_at": "2026-01-01T09:03:00Z"
+      }
+    ]
+  }
+]
