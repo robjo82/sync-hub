@@ -7,12 +7,14 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Db } from '../core/db.js';
+import { ProjectRegistry } from '../core/registry.js';
 import { createMcpServer } from '../core/mcp-server.js';
 
 const DATA_DIR = process.env.SYNC_HUB_DATA_DIR ?? join(homedir(), 'Projets', 'sync-hub', 'data');
 const db = new Db(join(DATA_DIR, 'hub.sqlite'));
+const registry = new ProjectRegistry(db);
 
-const server = createMcpServer(db);
+const server = createMcpServer(db, registry, { syncHubArchiveRoot: join(DATA_DIR, 'archived-sessions') });
 await server.connect(new StdioServerTransport());
 
 process.on('SIGINT', () => {

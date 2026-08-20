@@ -1,9 +1,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { Db } from './db.js';
-import type { Message, Project } from '../types.js';
+import type { ProjectRegistry } from './registry.js';
+import { archiveThread, type ArchiveRoots } from './archive.js';
+import { updatePointerFiles } from './pointer-files.js';
+import { UNASSIGNED_PROJECT_ID, type Message, type Project } from '../types.js';
 
-const ENGINE_LABEL: Record<string, string> = { 'claude-code': 'Claude Code', codex: 'Codex' };
+const ENGINE_LABEL: Record<string, string> = { 'claude-code': 'Claude Code', codex: 'Codex', antigravity: 'Antigravity' };
 
 function resolveProject(db: Db, projectRef: string): Project | undefined {
   const byId = db.getProject(projectRef);
@@ -64,7 +67,7 @@ function logged<TInput>(db: Db, tool: string, handler: (input: TInput) => Promis
  * session start. Content returned here is never paraphrased; it's read straight from the
  * canonical store built by the adapters.
  */
-export function createMcpServer(db: Db): McpServer {
+export function createMcpServer(db: Db, registry: ProjectRegistry, archiveRoots: ArchiveRoots): McpServer {
   const server = new McpServer({ name: 'sync-hub', version: '0.1.0' });
 
   server.registerTool(
@@ -217,6 +220,196 @@ export function createMcpServer(db: Db): McpServer {
         })
         .join('\n\n');
       return { content: [{ type: 'text', text }] };
+    }),
+  );
+
+  // The tools below let a connected tool perform the same project-management actions as the
+  // dashboard itself (rename, merge, assign, archive) — added because doing this by hand, one
+  // project at a time, doesn't scale once there are hundreds of threads sitting unassigned.
+  // Deliberately excluded: deleting a project (moves its real folder to the macOS Trash) — the
+  // one action here that touches real filesystem state outside sync-hub's own store, left as a
+  // dashboard-only action with its own explicit confirmation UI.
+
+  server.registerTool(
+    'list_projects',
+    {
+      title: 'Lister tous les projets connus',
+      description:
+        "Retourne tous les projets sync-hub (id, nom, chemin réel si connu, nombre de fils, archivé ou non) — y compris le " +
+        'projet spécial "unassigned" ("Non affecté") qui regroupe les fils qu\'aucune règle n\'a pu rattacher automatiquement ' +
+        'à un vrai projet. Point de départ pour toute réorganisation : repère les projets concernés ici avant de lister leurs ' +
+        'fils avec list_threads.',
+      inputSchema: {},
+    },
+    logged(db, 'list_projects', async () => {
+      const projects = db.getProjects();
+      const lines = projects.map((p) => {
+        const count = db.countThreadsForProject(p.id);
+        const path = p.canonicalPath ? ` — ${p.canonicalPath}` : '';
+        const archived = p.archived ? ' [archivé]' : '';
+        return `${p.id} — ${p.name}${path} (${count} fil${count === 1 ? '' : 's'})${archived}`;
+      });
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    }),
+  );
+
+  server.registerTool(
+    'list_threads',
+    {
+      title: "Lister les fils d'un projet (vue compacte, pas le contenu complet)",
+      description:
+        "Liste les fils d'un projet — id, titre, outil d'origine, dates, nombre de messages, et un court extrait verbatim " +
+        "(jamais résumé) du premier message utilisateur pour se repérer sans tout charger. Utilise project=\"unassigned\" " +
+        "pour voir les fils en attente de triage. Pour le contenu complet d'un fil précis, utilise get_thread.",
+      inputSchema: {
+        project: z.string().describe('Id ou nom du projet — "unassigned" pour les fils non affectés'),
+      },
+    },
+    logged(db, 'list_threads', async ({ project: projectRef }) => {
+      const project = resolveProject(db, projectRef);
+      if (!project) {
+        return { content: [{ type: 'text', text: projectNotFoundText(db, projectRef) }], isError: true };
+      }
+      const threads = db.getThreadsForProject(project.id);
+      if (threads.length === 0) {
+        return { content: [{ type: 'text', text: `Aucun fil dans "${project.name}".` }] };
+      }
+      const lines = threads.map((t) => {
+        const firstUser = db.getMessagesForThread(t.id).find((m) => m.role === 'user');
+        const excerpt = firstUser ? firstUser.content.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
+        return (
+          `${t.id} — ${t.title} (${ENGINE_LABEL[t.originEngine] ?? t.originEngine}, ${t.messageCount} messages, maj ${t.updatedAt})` +
+          (excerpt ? `\n  extrait: ${excerpt}` : '')
+        );
+      });
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    }),
+  );
+
+  server.registerTool(
+    'rename_project',
+    {
+      title: 'Renommer un projet',
+      description: 'Change le nom affiché d\'un projet — ne touche ni son chemin réel ni ses fils.',
+      inputSchema: {
+        project: z.string().describe('Id ou nom actuel du projet'),
+        name: z.string().min(1).describe('Nouveau nom'),
+      },
+    },
+    logged(db, 'rename_project', async ({ project: projectRef, name }) => {
+      const project = resolveProject(db, projectRef);
+      if (!project) {
+        return { content: [{ type: 'text', text: projectNotFoundText(db, projectRef) }], isError: true };
+      }
+      db.renameProject(project.id, name.trim());
+      updatePointerFiles(db, db.getProject(project.id)!);
+      return { content: [{ type: 'text', text: `"${project.name}" renommé en "${name.trim()}".` }] };
+    }),
+  );
+
+  server.registerTool(
+    'merge_projects',
+    {
+      title: 'Fusionner un projet dans un autre',
+      description:
+        "Déplace tous les fils, mémoires et artefacts de source vers target (qui conserve son nom), et fait disparaître " +
+        'source de la liste des projets. Fusion pure côté enregistrements sync-hub — aucun fichier réel touché. Irréversible ' +
+        "en un clic (pas de \"dé-fusion\"), donc à utiliser seulement quand source et target sont vraiment le même projet réel.",
+      inputSchema: {
+        source: z.string().describe('Id ou nom du projet à absorber (disparaît après fusion)'),
+        target: z.string().describe('Id ou nom du projet qui reçoit tout et garde son nom'),
+      },
+    },
+    logged(db, 'merge_projects', async ({ source, target }) => {
+      const sourceProject = resolveProject(db, source);
+      const targetProject = resolveProject(db, target);
+      if (!sourceProject) return { content: [{ type: 'text', text: projectNotFoundText(db, source) }], isError: true };
+      if (!targetProject) return { content: [{ type: 'text', text: projectNotFoundText(db, target) }], isError: true };
+      if (sourceProject.id === UNASSIGNED_PROJECT_ID || targetProject.id === UNASSIGNED_PROJECT_ID) {
+        return { content: [{ type: 'text', text: 'Le projet "unassigned" ne peut ni être fusionné ni recevoir de fusion.' }], isError: true };
+      }
+      try {
+        db.mergeProjects(sourceProject.id, targetProject.id);
+      } catch (err: any) {
+        return { content: [{ type: 'text', text: err.message }], isError: true };
+      }
+      updatePointerFiles(db, db.getProject(targetProject.id)!);
+      return { content: [{ type: 'text', text: `"${sourceProject.name}" fusionné dans "${targetProject.name}".` }] };
+    }),
+  );
+
+  server.registerTool(
+    'assign_thread_to_project',
+    {
+      title: 'Rattacher un fil à un projet',
+      description:
+        "Déplace un fil précis vers un autre projet — l'action de triage principale pour les fils \"unassigned\". Si le fil a " +
+        "une référence native connue (slug Claude Code, cwd Codex), sync-hub apprend aussi cette référence pour ce projet, " +
+        'pour que les futurs fils de la même source se rattachent automatiquement sans repasser par un triage manuel.',
+      inputSchema: {
+        threadId: z.string().describe('Id du fil à déplacer'),
+        project: z.string().describe('Id ou nom du projet cible'),
+      },
+    },
+    logged(db, 'assign_thread_to_project', async ({ threadId, project: projectRef }) => {
+      const thread = db.getThread(threadId);
+      if (!thread) return { content: [{ type: 'text', text: `Aucun fil avec l'id "${threadId}".` }], isError: true };
+      const target = resolveProject(db, projectRef);
+      if (!target) return { content: [{ type: 'text', text: projectNotFoundText(db, projectRef) }], isError: true };
+
+      if (thread.sourceRef) {
+        const kind = thread.originEngine === 'claude-code' ? 'claudeSlugs' : thread.originEngine === 'codex' ? 'codexCwds' : null;
+        if (kind) registry.assign(target.id, kind, thread.sourceRef);
+      }
+      db.reassignThread(thread.id, target.id);
+      updatePointerFiles(db, target);
+      return { content: [{ type: 'text', text: `"${thread.title}" rattaché à "${target.name}".` }] };
+    }),
+  );
+
+  server.registerTool(
+    'archive_thread',
+    {
+      title: 'Archiver un fil',
+      description:
+        "Déplace le fichier source réel du fil (jamais supprimé — archive native de l'outil pour Codex, dossier " +
+        "sync-hub sinon) et le masque de la vue par défaut du dashboard. Un fil sans fichier source réel (import en masse) " +
+        "est archivé côté enregistrements sync-hub uniquement.",
+      inputSchema: {
+        threadId: z.string().describe('Id du fil à archiver'),
+      },
+    },
+    logged(db, 'archive_thread', async ({ threadId }) => {
+      const thread = db.getThread(threadId);
+      if (!thread) return { content: [{ type: 'text', text: `Aucun fil avec l'id "${threadId}".` }], isError: true };
+      const result = archiveThread(db, thread, archiveRoots);
+      return { content: [{ type: 'text', text: `"${thread.title}" — ${result.note}` }] };
+    }),
+  );
+
+  server.registerTool(
+    'archive_project',
+    {
+      title: 'Archiver un projet (et tous ses fils actifs)',
+      description:
+        'Masque le projet du dashboard et archive (voir archive_thread) chacun de ses fils encore actifs — au mieux : un ' +
+        'déplacement de fichier en échec pour un fil ne bloque pas les autres.',
+      inputSchema: {
+        project: z.string().describe('Id ou nom du projet à archiver'),
+      },
+    },
+    logged(db, 'archive_project', async ({ project: projectRef }) => {
+      const project = resolveProject(db, projectRef);
+      if (!project) return { content: [{ type: 'text', text: projectNotFoundText(db, projectRef) }], isError: true };
+      if (project.id === UNASSIGNED_PROJECT_ID) {
+        return { content: [{ type: 'text', text: 'Le projet "unassigned" ne peut pas être archivé.' }], isError: true };
+      }
+      const results = db
+        .getThreadsForProject(project.id)
+        .filter((t) => t.status === 'active')
+        .map((t) => archiveThread(db, t, archiveRoots));
+      db.setProjectArchived(project.id, true);
+      return { content: [{ type: 'text', text: `"${project.name}" archivé (${results.length} fil(s) traité(s)).` }] };
     }),
   );
 

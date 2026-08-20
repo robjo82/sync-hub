@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { Artifact, Memory, Project, Thread } from '../../types.js';
 import { api } from '../lib/api.js';
 
-const ENGINE_DOT: Record<string, string> = { 'claude-code': 'bg-purple-500', codex: 'bg-emerald-500' };
+const ENGINE_DOT: Record<string, string> = { 'claude-code': 'bg-purple-500', codex: 'bg-emerald-500', antigravity: 'bg-sky-500' };
 
 export type SelectedItem = { kind: 'thread'; id: string } | { kind: 'memory'; item: Memory } | { kind: 'artifact'; item: Artifact } | null;
 
@@ -20,51 +20,71 @@ interface ProjectChildren {
   artifacts: Artifact[];
 }
 
-function ArchiveButton({ title, onConfirm }: { title: string; onConfirm: () => void }) {
-  return (
-    <button
-      title="Archiver"
-      onClick={(e) => {
-        e.stopPropagation();
-        if (window.confirm(`Archiver « ${title} » ?\n\nLe fichier source est déplacé (jamais supprimé) hors de la liste active de son outil d'origine.`)) {
-          onConfirm();
-        }
-      }}
-      className="ml-1 shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-500 opacity-0 hover:bg-slate-200 hover:text-amber-600 group-hover:opacity-100 dark:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-amber-400"
-    >
-      🗄
-    </button>
-  );
-}
+// Native window.prompt/confirm/alert turned out to be unreliable in practice — silently blocked
+// in some browser/embedding contexts, with no visible error to the user (verified: it throws
+// "prompt() is not supported." in at least one real environment sync-hub runs in). Every
+// destructive/edit action below is an inline panel instead, matching MergeProjectPanel's existing
+// pattern — no dependency on a native dialog actually being allowed to open.
 
-function RenameProjectButton({ project, onConfirm }: { project: Project; onConfirm: (name: string) => void }) {
+function IconButton({ title, onClick, className, children }: { title: string; onClick: () => void; className: string; children: ReactNode }) {
   return (
     <button
-      title="Renommer"
-      onClick={(e) => {
-        e.stopPropagation();
-        const name = window.prompt('Nouveau nom du projet :', project.name)?.trim();
-        if (name && name !== project.name) onConfirm(name);
-      }}
-      className="ml-1 shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-500 opacity-0 hover:bg-slate-200 hover:text-slate-700 group-hover:opacity-100 dark:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
-    >
-      ✏️
-    </button>
-  );
-}
-
-function MergeProjectButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      title="Fusionner dans un autre projet"
+      title={title}
       onClick={(e) => {
         e.stopPropagation();
         onClick();
       }}
-      className="ml-1 shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-500 opacity-0 hover:bg-indigo-100 hover:text-indigo-600 group-hover:opacity-100 dark:text-slate-600 dark:hover:bg-indigo-950 dark:hover:text-indigo-400"
+      className={`ml-1 shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-500 opacity-0 group-hover:opacity-100 dark:text-slate-600 ${className}`}
     >
-      🔗
+      {children}
     </button>
+  );
+}
+
+function RenamePanel({ project, onConfirm, onCancel }: { project: Project; onConfirm: (name: string) => void; onCancel: () => void }) {
+  const [name, setName] = useState(project.name);
+  return (
+    <div className="mb-1 ml-5 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+      <input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && name.trim() && name.trim() !== project.name) onConfirm(name.trim());
+          else if (e.key === 'Escape') onCancel();
+        }}
+        className="w-0 min-w-0 flex-1 rounded border border-slate-300 bg-white px-1 py-0.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+      />
+      <button
+        title="Confirmer"
+        disabled={!name.trim() || name.trim() === project.name}
+        onClick={() => onConfirm(name.trim())}
+        className="shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-600 hover:bg-slate-200 disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800"
+      >
+        ✓
+      </button>
+      <button title="Annuler" onClick={onCancel} className="shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-200 dark:text-slate-600 dark:hover:bg-slate-800">
+        ✕
+      </button>
+    </div>
+  );
+}
+
+function ArchivePanel({ title, onConfirm, onCancel }: { title: string; onConfirm: () => void; onCancel: () => void }) {
+  return (
+    <div className="mb-1 ml-5 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400" onClick={(e) => e.stopPropagation()}>
+      <span className="flex-1 truncate">Archiver « {title} » ? Le fichier source est déplacé, jamais supprimé.</span>
+      <button
+        title="Confirmer"
+        onClick={onConfirm}
+        className="shrink-0 rounded px-1.5 py-0.5 text-amber-600 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-950"
+      >
+        ✓
+      </button>
+      <button title="Annuler" onClick={onCancel} className="shrink-0 rounded px-1.5 py-0.5 text-slate-400 hover:bg-slate-200 dark:text-slate-600 dark:hover:bg-slate-800">
+        ✕
+      </button>
+    </div>
   );
 }
 
@@ -73,7 +93,9 @@ function MergeProjectButton({ onClick }: { onClick: () => void }) {
  * real project was independently discovered under two identities (e.g. a live Codex project and an
  * unrelated-looking ChatGPT Project that turns out to be the same client). Rendered as its own row
  * below the project title rather than squeezed inline — the sidebar is too narrow for a select full
- * of project names plus confirm/cancel buttons to fit next to the title and other icons. */
+ * of project names plus confirm/cancel buttons to fit next to the title and other icons. The
+ * explanation of what a merge does is shown inline (below) rather than gated behind a second,
+ * separate confirm dialog — picking a target and clicking ✓ already is the confirmation step. */
 function MergeProjectPanel({
   project,
   otherProjects,
@@ -86,72 +108,170 @@ function MergeProjectPanel({
   onCancel: () => void;
 }) {
   const [targetId, setTargetId] = useState('');
+  const target = otherProjects.find((p) => p.id === targetId);
 
   return (
-    <div className="mb-1 ml-5 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-      <select
-        autoFocus
-        value={targetId}
-        onChange={(e) => setTargetId(e.target.value)}
-        className="w-0 min-w-0 flex-1 rounded border border-slate-300 bg-white px-1 py-0.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-      >
-        <option value="">Fusionner dans…</option>
-        {otherProjects
-          .filter((p) => p.id !== project.id)
-          .map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-      </select>
-      <button
-        title="Confirmer la fusion"
-        disabled={!targetId}
-        onClick={() => {
-          const target = otherProjects.find((p) => p.id === targetId);
-          if (
-            target &&
-            window.confirm(
-              `Fusionner « ${project.name} » dans « ${target.name} » ?\n\n` +
-                `Tous les fils, mémoires et artefacts de « ${project.name} » sont déplacés vers « ${target.name} », qui conserve son nom. ` +
-                `« ${project.name} » disparaît de la liste des projets. Aucun fichier réel n'est touché — uniquement les enregistrements sync-hub.`,
-            )
-          ) {
-            onConfirm(targetId);
-          } else {
-            onCancel();
-          }
-        }}
-        className="shrink-0 rounded px-1.5 py-0.5 text-xs text-indigo-600 hover:bg-indigo-100 disabled:opacity-40 dark:text-indigo-400 dark:hover:bg-indigo-950"
-      >
-        ✓
-      </button>
-      <button
-        title="Annuler"
-        onClick={onCancel}
-        className="shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-200 dark:text-slate-600 dark:hover:bg-slate-800"
-      >
-        ✕
-      </button>
+    <div className="mb-1 ml-5 space-y-1" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center gap-1">
+        <select
+          autoFocus
+          value={targetId}
+          onChange={(e) => setTargetId(e.target.value)}
+          className="w-0 min-w-0 flex-1 rounded border border-slate-300 bg-white px-1 py-0.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+        >
+          <option value="">Fusionner dans…</option>
+          {otherProjects
+            .filter((p) => p.id !== project.id)
+            .map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+        </select>
+        <button
+          title="Confirmer la fusion"
+          disabled={!targetId}
+          onClick={() => onConfirm(targetId)}
+          className="shrink-0 rounded px-1.5 py-0.5 text-xs text-indigo-600 hover:bg-indigo-100 disabled:opacity-40 dark:text-indigo-400 dark:hover:bg-indigo-950"
+        >
+          ✓
+        </button>
+        <button
+          title="Annuler"
+          onClick={onCancel}
+          className="shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-200 dark:text-slate-600 dark:hover:bg-slate-800"
+        >
+          ✕
+        </button>
+      </div>
+      {target && (
+        <p className="text-[11px] text-slate-400 dark:text-slate-600">
+          Fils, mémoires et artefacts déplacés vers « {target.name} », qui conserve son nom. « {project.name} » disparaît de la liste. Aucun
+          fichier réel touché.
+        </p>
+      )}
     </div>
   );
 }
 
-function DeleteProjectButton({ project, onConfirm }: { project: Project; onConfirm: () => void }) {
+function DeletePanel({ project, onConfirm, onCancel }: { project: Project; onConfirm: () => void; onCancel: () => void }) {
+  const [typed, setTyped] = useState('');
+  const [mismatch, setMismatch] = useState(false);
+  const matches = typed === project.name;
+
+  return (
+    <div className="mb-1 ml-5 space-y-1" onClick={(e) => e.stopPropagation()}>
+      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+        Déplace le dossier réel ({project.canonicalPath || 'aucun'}) vers la Corbeille macOS — récupérable tant qu'elle n'est pas vidée. Tape le
+        nom du projet pour confirmer :
+      </p>
+      <div className="flex items-center gap-1">
+        <input
+          autoFocus
+          value={typed}
+          onChange={(e) => {
+            setTyped(e.target.value);
+            setMismatch(false);
+          }}
+          placeholder={project.name}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              if (matches) onConfirm();
+              else setMismatch(true);
+            } else if (e.key === 'Escape') onCancel();
+          }}
+          className="w-0 min-w-0 flex-1 rounded border border-slate-300 bg-white px-1 py-0.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+        />
+        <button
+          title="Confirmer la suppression"
+          onClick={() => (matches ? onConfirm() : setMismatch(true))}
+          disabled={!typed}
+          className="shrink-0 rounded px-1.5 py-0.5 text-xs text-red-600 hover:bg-red-100 disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-950"
+        >
+          ✓
+        </button>
+        <button title="Annuler" onClick={onCancel} className="shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-400 hover:bg-slate-200 dark:text-slate-600 dark:hover:bg-slate-800">
+          ✕
+        </button>
+      </div>
+      {mismatch && <p className="text-[11px] text-red-500 dark:text-red-400">Nom incorrect — rien n'a été supprimé.</p>}
+    </div>
+  );
+}
+
+/** Self-contained archive icon for a single thread row: swaps itself for an inline confirm/cancel
+ * pair on click, rather than a native confirm() — same reasoning as the panels above. */
+function ThreadArchiveButton({ title, onConfirm }: { title: string; onConfirm: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  if (confirming) {
+    return (
+      <span className="ml-1 flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()} title={`Archiver « ${title} » ?`}>
+        <button onClick={onConfirm} className="rounded px-1 py-0.5 text-xs text-amber-600 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-950">
+          ✓
+        </button>
+        <button onClick={() => setConfirming(false)} className="rounded px-1 py-0.5 text-xs text-slate-400 hover:bg-slate-200 dark:text-slate-600 dark:hover:bg-slate-800">
+          ✕
+        </button>
+      </span>
+    );
+  }
+  return (
+    <IconButton
+      title="Archiver"
+      onClick={() => setConfirming(true)}
+      className="hover:bg-slate-200 hover:text-amber-600 dark:hover:bg-slate-800 dark:hover:text-amber-400"
+    >
+      🗄
+    </IconButton>
+  );
+}
+
+/** Self-contained "type the name to confirm" delete for a single row (used in the archived-projects
+ * list, outside ProjectNode's single-active-panel state) — a compact variant of DeletePanel that
+ * fits inline in a flex row instead of taking a full-width block below the row. */
+function RowDeleteButton({ project, onConfirm }: { project: Project; onConfirm: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const [typed, setTyped] = useState('');
+  const matches = typed === project.name;
+
+  if (confirming) {
+    return (
+      <span className="flex shrink-0 items-center gap-0.5" title={`Tape « ${project.name} » pour confirmer la suppression`}>
+        <input
+          autoFocus
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          placeholder={project.name}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && matches) onConfirm();
+            else if (e.key === 'Escape') setConfirming(false);
+          }}
+          className="w-20 rounded border border-slate-300 bg-white px-1 py-0.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+        />
+        <button
+          onClick={onConfirm}
+          disabled={!matches}
+          className="rounded px-1 py-0.5 text-xs text-red-600 hover:bg-red-100 disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-950"
+        >
+          ✓
+        </button>
+        <button
+          onClick={() => {
+            setConfirming(false);
+            setTyped('');
+          }}
+          className="rounded px-1 py-0.5 text-xs text-slate-400 hover:bg-slate-200 dark:text-slate-600 dark:hover:bg-slate-800"
+        >
+          ✕
+        </button>
+      </span>
+    );
+  }
   return (
     <button
       title="Supprimer le projet (déplace le dossier vers la Corbeille)"
-      onClick={(e) => {
-        e.stopPropagation();
-        const typed = window.prompt(
-          `Supprimer complètement « ${project.name} » ?\n\n` +
-            `Le dossier réel (${project.canonicalPath || 'aucun'}) est déplacé vers la Corbeille macOS — récupérable tant qu'elle n'est pas vidée, jamais supprimé pour de bon par sync-hub.\n\n` +
-            `Tape le nom du projet pour confirmer :`,
-        );
-        if (typed === project.name) onConfirm();
-        else if (typed !== null) window.alert("Nom incorrect — rien n'a été supprimé.");
-      }}
-      className="ml-1 shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-500 opacity-0 hover:bg-red-100 hover:text-red-600 group-hover:opacity-100 dark:text-slate-600 dark:hover:bg-red-950 dark:hover:text-red-400"
+      onClick={() => setConfirming(true)}
+      className="rounded px-1.5 py-0.5 text-xs text-slate-500 hover:bg-red-100 hover:text-red-600 dark:text-slate-600 dark:hover:bg-red-950 dark:hover:text-red-400"
     >
       🗑
     </button>
@@ -169,7 +289,7 @@ function ProjectNode({
 }: { project: Project; allProjects: Project[]; draggable: boolean } & Omit<ProjectTreeProps, 'projects'>) {
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<ProjectChildren | null>(null);
-  const [merging, setMerging] = useState(false);
+  const [activePanel, setActivePanel] = useState<'rename' | 'merge' | 'archive' | 'delete' | null>(null);
 
   useEffect(() => {
     if (!expanded) return;
@@ -177,6 +297,8 @@ function ProjectNode({
       setChildren({ threads, memories, artifacts }),
     );
   }, [expanded, project.id, refreshToken]);
+
+  const closePanel = () => setActivePanel(null);
 
   return (
     <div>
@@ -193,39 +315,74 @@ function ProjectNode({
           <span className="w-3 text-slate-400 dark:text-slate-500">{expanded ? '▾' : '▸'}</span>
           <span className="truncate">{project.name}</span>
         </button>
-        <RenameProjectButton
+        <IconButton title="Renommer" onClick={() => setActivePanel('rename')} className="hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-300">
+          ✏️
+        </IconButton>
+        <IconButton
+          title="Fusionner dans un autre projet"
+          onClick={() => setActivePanel('merge')}
+          className="hover:bg-indigo-100 hover:text-indigo-600 dark:hover:bg-indigo-950 dark:hover:text-indigo-400"
+        >
+          🔗
+        </IconButton>
+        <IconButton
+          title="Archiver"
+          onClick={() => setActivePanel('archive')}
+          className="hover:bg-slate-200 hover:text-amber-600 dark:hover:bg-slate-800 dark:hover:text-amber-400"
+        >
+          🗄
+        </IconButton>
+        <IconButton
+          title="Supprimer le projet (déplace le dossier vers la Corbeille)"
+          onClick={() => setActivePanel('delete')}
+          className="hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-950 dark:hover:text-red-400"
+        >
+          🗑
+        </IconButton>
+      </div>
+      {activePanel === 'rename' && (
+        <RenamePanel
           project={project}
           onConfirm={async (name) => {
+            closePanel();
             await api.renameProject(project.id, name);
             onChanged();
           }}
+          onCancel={closePanel}
         />
-        <MergeProjectButton onClick={() => setMerging(true)} />
-        <ArchiveButton
-          title={project.name}
-          onConfirm={async () => {
-            await api.archiveProject(project.id);
-            onChanged();
-          }}
-        />
-        <DeleteProjectButton
-          project={project}
-          onConfirm={async () => {
-            await api.deleteProject(project.id);
-            onChanged();
-          }}
-        />
-      </div>
-      {merging && (
+      )}
+      {activePanel === 'merge' && (
         <MergeProjectPanel
           project={project}
           otherProjects={allProjects}
           onConfirm={async (targetId) => {
-            setMerging(false);
+            closePanel();
             await api.mergeProject(project.id, targetId);
             onChanged();
           }}
-          onCancel={() => setMerging(false)}
+          onCancel={closePanel}
+        />
+      )}
+      {activePanel === 'archive' && (
+        <ArchivePanel
+          title={project.name}
+          onConfirm={async () => {
+            closePanel();
+            await api.archiveProject(project.id);
+            onChanged();
+          }}
+          onCancel={closePanel}
+        />
+      )}
+      {activePanel === 'delete' && (
+        <DeletePanel
+          project={project}
+          onConfirm={async () => {
+            closePanel();
+            await api.deleteProject(project.id);
+            onChanged();
+          }}
+          onCancel={closePanel}
         />
       )}
       {expanded && children && (
@@ -247,7 +404,7 @@ function ProjectNode({
                 <span className="truncate">{t.title}</span>
                 <span className="ml-auto shrink-0 text-slate-400 dark:text-slate-600">{t.messageCount}</span>
               </button>
-              <ArchiveButton
+              <ThreadArchiveButton
                 title={t.title}
                 onConfirm={async () => {
                   await api.archiveThread(t.id);
@@ -394,7 +551,7 @@ export function ProjectTree({ projects, selected, onSelect, refreshToken, onChan
                   >
                     Restaurer
                   </button>
-                  <DeleteProjectButton
+                  <RowDeleteButton
                     project={p}
                     onConfirm={async () => {
                       await api.deleteProject(p.id);

@@ -5,11 +5,13 @@ import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Db } from '../src/core/db.js';
+import { ProjectRegistry } from '../src/core/registry.js';
 import { createMcpServer } from '../src/core/mcp-server.js';
 import type { Message, Project } from '../src/types.js';
 
 let dir: string;
 let db: Db;
+let registry: ProjectRegistry;
 let client: Client;
 
 function project(overrides: Partial<Project> = {}): Project {
@@ -68,7 +70,8 @@ beforeEach(async () => {
     status: 'active',
   });
 
-  const server = createMcpServer(db);
+  registry = new ProjectRegistry(db);
+  const server = createMcpServer(db, registry, { syncHubArchiveRoot: join(dir, 'archived-sessions') });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   client = new Client({ name: 'test-client', version: '0.0.0' });
   await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
@@ -80,13 +83,20 @@ afterEach(() => {
 });
 
 describe('sync-hub MCP server', () => {
-  it('exposes get_project_timeline, get_thread, link_threads, unlink_thread, get_thread_link_updates and search_transcripts', async () => {
+  it('exposes get_project_timeline, get_thread, link_threads, unlink_thread, get_thread_link_updates, search_transcripts and the project-management tools', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
+      'archive_project',
+      'archive_thread',
+      'assign_thread_to_project',
       'get_project_timeline',
       'get_thread',
       'get_thread_link_updates',
       'link_threads',
+      'list_projects',
+      'list_threads',
+      'merge_projects',
+      'rename_project',
       'search_transcripts',
       'unlink_thread',
     ]);
@@ -232,6 +242,98 @@ describe('sync-hub MCP server', () => {
       await client.callTool({ name: 'link_threads', arguments: { threadIds: ['t1', 't2'] } });
       const tools = db.getRecentMcpCalls().map((c) => c.tool);
       expect(tools).toEqual(['link_threads', 'get_thread']); // newest first
+    });
+  });
+
+  describe('project-management tools — same actions the dashboard exposes, callable by a connected agent', () => {
+    it('list_projects lists every project, including "unassigned", with real thread counts', async () => {
+      const result = await client.callTool({ name: 'list_projects', arguments: {} });
+      const text = (result.content as any[])[0].text as string;
+      expect(text).toContain('proj-demo — demo — /Users/robin/Projets/demo (2 fils)');
+      expect(text).toContain('unassigned — Non affecté (0 fils)');
+    });
+
+    it('list_threads gives a compact per-thread view with a verbatim excerpt, not the full content', async () => {
+      db.insertMessage(message({ id: 'm1', hash: 'h1', sequence: 0, content: 'Peux-tu regarder ce bug précis dans le module facturation ?' }));
+      const result = await client.callTool({ name: 'list_threads', arguments: { project: 'proj-demo' } });
+      const text = (result.content as any[])[0].text as string;
+      expect(text).toContain('t1 — Fil (Claude Code, 1 messages');
+      expect(text).toContain('extrait: Peux-tu regarder ce bug précis dans le module facturation ?');
+      expect(text).toContain('t2 — Fil 2 (Codex');
+    });
+
+    it('list_threads reports an error for an unknown project, never guessing', async () => {
+      const result = await client.callTool({ name: 'list_threads', arguments: { project: 'does-not-exist' } });
+      expect(result.isError).toBe(true);
+    });
+
+    it('rename_project changes the display name only', async () => {
+      const result = await client.callTool({ name: 'rename_project', arguments: { project: 'proj-demo', name: 'Nouveau nom' } });
+      expect((result.content as any[])[0].text).toContain('"demo" renommé en "Nouveau nom"');
+      expect(db.getProject('proj-demo')?.name).toBe('Nouveau nom');
+      expect(db.getProject('proj-demo')?.canonicalPath).toBe('/Users/robin/Projets/demo');
+    });
+
+    it('merge_projects moves every thread from source into target and source disappears', async () => {
+      db.upsertProject(project({ id: 'proj-other', name: 'other', canonicalPath: '/Users/robin/Projets/other' }));
+      const result = await client.callTool({ name: 'merge_projects', arguments: { source: 'proj-demo', target: 'proj-other' } });
+      expect((result.content as any[])[0].text).toContain('"demo" fusionné dans "other"');
+      expect(db.getProject('proj-demo')).toBeUndefined();
+      expect(db.getThread('t1')?.projectId).toBe('proj-other');
+      expect(db.getThread('t2')?.projectId).toBe('proj-other');
+    });
+
+    it('merge_projects refuses to touch the "unassigned" bucket, in either direction', async () => {
+      db.upsertProject(project({ id: 'proj-other', name: 'other', canonicalPath: '/Users/robin/Projets/other' }));
+      const asSource = await client.callTool({ name: 'merge_projects', arguments: { source: 'unassigned', target: 'proj-other' } });
+      expect(asSource.isError).toBe(true);
+      const asTarget = await client.callTool({ name: 'merge_projects', arguments: { source: 'proj-demo', target: 'unassigned' } });
+      expect(asTarget.isError).toBe(true);
+    });
+
+    it('assign_thread_to_project moves a thread and teaches the registry its real source reference', async () => {
+      db.upsertThread({
+        id: 't3',
+        projectId: 'unassigned',
+        title: 'Fil non affecté',
+        originEngine: 'claude-code',
+        engineIds: {},
+        sourceRef: '-Users-robin-Projets-demo2',
+        messageCount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: 'active',
+      });
+      const result = await client.callTool({ name: 'assign_thread_to_project', arguments: { threadId: 't3', project: 'proj-demo' } });
+      expect((result.content as any[])[0].text).toContain('rattaché à "demo"');
+      expect(db.getThread('t3')?.projectId).toBe('proj-demo');
+      expect(registry.resolveByClaudeSlug('-Users-robin-Projets-demo2')).toBe('proj-demo');
+    });
+
+    it('assign_thread_to_project reports an error for an unknown thread or project', async () => {
+      const badThread = await client.callTool({ name: 'assign_thread_to_project', arguments: { threadId: 'nope', project: 'proj-demo' } });
+      expect(badThread.isError).toBe(true);
+      const badProject = await client.callTool({ name: 'assign_thread_to_project', arguments: { threadId: 't1', project: 'nope' } });
+      expect(badProject.isError).toBe(true);
+    });
+
+    it('archive_thread archives sync-hub-side when there is no real source file to move', async () => {
+      const result = await client.callTool({ name: 'archive_thread', arguments: { threadId: 't1' } });
+      expect((result.content as any[])[0].text).toContain('Fil');
+      expect(db.getThread('t1')?.status).toBe('archived');
+    });
+
+    it('archive_project archives the project and cascades to its active threads', async () => {
+      const result = await client.callTool({ name: 'archive_project', arguments: { project: 'proj-demo' } });
+      expect((result.content as any[])[0].text).toContain('"demo" archivé (2 fil(s) traité(s))');
+      expect(db.getProject('proj-demo')?.archived).toBe(true);
+      expect(db.getThread('t1')?.status).toBe('archived');
+      expect(db.getThread('t2')?.status).toBe('archived');
+    });
+
+    it('archive_project refuses to archive the "unassigned" bucket', async () => {
+      const result = await client.callTool({ name: 'archive_project', arguments: { project: 'unassigned' } });
+      expect(result.isError).toBe(true);
     });
   });
 });
