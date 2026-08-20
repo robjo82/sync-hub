@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Search } from 'lucide-react';
-import type { Message } from '../../types.js';
+import { Hash, Search } from 'lucide-react';
+import type { Message, Thread } from '../../types.js';
 import { api } from '../lib/api.js';
 
 const ENGINE_LABEL: Record<string, string> = { 'claude-code': 'Claude Code', codex: 'Codex', antigravity: 'Antigravity' };
@@ -22,17 +22,28 @@ function snippet(content: string, query: string): string {
 export function SearchView({ onOpenThread }: { onOpenThread: (threadId: string) => void }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[] | null>(null);
+  const [idMatch, setIdMatch] = useState<Thread | null>(null);
   const [loading, setLoading] = useState(false);
 
   const runSearch = async (q: string) => {
     setQuery(q);
     if (!q.trim()) {
       setResults(null);
+      setIdMatch(null);
       return;
     }
     setLoading(true);
     try {
-      setResults(await api.search(q));
+      const [textResults, thread] = await Promise.all([
+        api.search(q),
+        // A thread id is an opaque string from whichever engine produced it (Claude Code/Codex
+        // UUID, a ChatGPT template id, a content hash…) — no fixed shape to pattern-match, so
+        // just try the direct lookup alongside the text search rather than guessing what an id
+        // looks like. A 404 here is the expected, common case (most queries aren't an id).
+        api.thread(q.trim()).catch(() => null),
+      ]);
+      setResults(textResults);
+      setIdMatch(thread);
     } finally {
       setLoading(false);
     }
@@ -56,7 +67,19 @@ export function SearchView({ onOpenThread }: { onOpenThread: (threadId: string) 
 
       <div className="mt-4 space-y-2">
         {loading && <p className="text-sm text-muted-foreground">Recherche…</p>}
-        {!loading && results && results.length === 0 && <p className="text-sm text-muted-foreground">Aucun résultat.</p>}
+        {!loading && idMatch && (
+          <button
+            onClick={() => onOpenThread(idMatch.id)}
+            className="flex w-full items-center gap-2 rounded-lg border border-accent/40 bg-accent-muted p-3 text-left hover:border-accent"
+          >
+            <Hash size={14} className="shrink-0 text-accent" />
+            <span className="flex-1 truncate text-sm text-accent-muted-foreground">
+              <span className="font-medium">{idMatch.title}</span> — trouvé directement par id
+            </span>
+            <span className="shrink-0 text-xs text-accent-muted-foreground/70">{ENGINE_LABEL[idMatch.originEngine] ?? idMatch.originEngine}</span>
+          </button>
+        )}
+        {!loading && results && results.length === 0 && !idMatch && <p className="text-sm text-muted-foreground">Aucun résultat.</p>}
         {!loading &&
           results?.map((r) => (
             <button
