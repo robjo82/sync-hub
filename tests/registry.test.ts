@@ -83,6 +83,27 @@ describe('ProjectRegistry', () => {
     expect(db.getProject('proj-accordeon-real')?.canonicalPath).toBe(join(projectsRoot, 'accordeon'));
   });
 
+  it('does not recreate a project whose folder was merged into another project (its path lives in the target\'s aliases.paths, not as anyone\'s canonical_path) — regression for a real find: iverif merged into MGX Controle kept reappearing on every rescan', () => {
+    const projectsRoot = join(dir, 'Projets');
+    mkdirSync(join(projectsRoot, 'iverif'), { recursive: true });
+
+    const now = new Date().toISOString();
+    db.upsertProject({
+      id: 'chatgpt-project-g-p-mgx',
+      name: 'C00063 - MGX Controle',
+      canonicalPath: 'chatgpt-project://g-p-mgx', // not a real folder — merge only ever adds an alias here
+      aliases: { paths: [join(projectsRoot, 'iverif')], claudeSlugs: [], codexCwds: [] },
+      createdAt: now,
+      lastActiveAt: now,
+    });
+
+    const registry = new ProjectRegistry(db);
+    registry.bootstrapFromProjectsRoot(projectsRoot);
+
+    expect(db.getProject('proj-iverif')).toBeUndefined();
+    expect(db.getProject('chatgpt-project-g-p-mgx')?.aliases.paths).toContain(join(projectsRoot, 'iverif'));
+  });
+
   it('assign() teaches the registry a new mapping so future lookups resolve', () => {
     const projectsRoot = join(dir, 'Projets');
     mkdirSync(join(projectsRoot, 'odoo'), { recursive: true });

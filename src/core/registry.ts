@@ -66,12 +66,25 @@ export class ProjectRegistry {
       if (!statSync(fullPath).isDirectory()) continue;
       const id = `proj-${slugifyName(entry)}`;
       if (this.db.getProject(id)) continue; // don't clobber aliases learned since bootstrap
-      // canonical_path is UNIQUE — a project can already claim this exact folder under a
-      // different id (e.g. manually repointed after moving a project into this root), in which
-      // case creating a second row for the same path would crash the whole daemon on every scan.
-      if (this.db.getProjects().some((p) => p.canonicalPath === fullPath)) continue;
+      // A project can already claim this exact folder under a different id — either as its
+      // canonical_path (e.g. manually repointed after moving a project into this root, where a
+      // second row for the same path would also crash on the canonical_path UNIQUE constraint),
+      // or as a *learned alias* after being folded into another project via mergeProjects (which
+      // moves the source's canonicalPath into the target's aliases.paths, never keeping a
+      // canonical_path of its own). Checking canonical_path alone missed that second case — a
+      // folder merged away kept reappearing as a fresh duplicate project on every following scan
+      // (verified: real find, iverif merged into MGX Controle, back within one rescan every time).
+      const claudeSlug = pathToClaudeSlug(fullPath);
+      const alreadyClaimed = this.db.getProjects().some(
+        (p) =>
+          p.canonicalPath === fullPath ||
+          p.aliases.paths.includes(fullPath) ||
+          p.aliases.claudeSlugs.includes(claudeSlug) ||
+          p.aliases.codexCwds.includes(fullPath),
+      );
+      if (alreadyClaimed) continue;
       const aliases = emptyAliases();
-      aliases.claudeSlugs.push(pathToClaudeSlug(fullPath));
+      aliases.claudeSlugs.push(claudeSlug);
       aliases.codexCwds.push(fullPath);
       this.db.upsertProject({
         id,
