@@ -9,8 +9,9 @@ import { DocumentViewer } from './components/DocumentViewer.js';
 import { CoverageView } from './components/CoverageView.js';
 import { UnassignedView } from './components/UnassignedView.js';
 import { SearchView } from './components/SearchView.js';
+import { CostsView } from './components/CostsView.js';
 
-type Tab = 'projects' | 'coverage' | 'unassigned' | 'search';
+type Tab = 'projects' | 'coverage' | 'unassigned' | 'search' | 'costs';
 
 function useTheme(): [ 'light' | 'dark', () => void ] {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('sync-hub-theme') === 'dark' ? 'dark' : 'light'));
@@ -142,6 +143,7 @@ export default function App() {
         {tab === 'coverage' && <CoverageView />}
         {tab === 'unassigned' && <UnassignedView projects={projects} />}
         {tab === 'search' && <SearchView onOpenThread={openThread} />}
+        {tab === 'costs' && <CostsView projects={projects} />}
       </div>
     </div>
   );

@@ -13,6 +13,7 @@ import type {
   Project,
   ProjectAliases,
   Thread,
+  TokenUsage,
 } from '../types.js';
 
 const SCHEMA = `
@@ -161,6 +162,8 @@ const EXPECTED_COLUMNS: Array<{ table: string; column: string; definition: strin
   { table: 'projects', column: 'category', definition: 'TEXT' },
   { table: 'threads', column: 'source_ref', definition: 'TEXT' },
   { table: 'threads', column: 'source_file_path', definition: 'TEXT' },
+  { table: 'messages', column: 'model', definition: 'TEXT' },
+  { table: 'messages', column: 'usage', definition: 'TEXT' },
 ];
 
 const DEFAULT_CATEGORIES = ['ekonum', 'client', 'perso'];
@@ -555,9 +558,9 @@ export class Db {
       this.raw
         .prepare(
           `INSERT INTO messages
-             (id, thread_id, project_id, source_engine, role, content, thought, tool_calls, tool_results, attachments, timestamp, sequence, hash, metadata)
+             (id, thread_id, project_id, source_engine, role, content, thought, tool_calls, tool_results, attachments, timestamp, sequence, hash, metadata, model, usage)
            VALUES
-             (@id, @threadId, @projectId, @sourceEngine, @role, @content, @thought, @toolCalls, @toolResults, @attachments, @timestamp, @sequence, @hash, @metadata)`,
+             (@id, @threadId, @projectId, @sourceEngine, @role, @content, @thought, @toolCalls, @toolResults, @attachments, @timestamp, @sequence, @hash, @metadata, @model, @usage)`,
         )
         .run({
           id: message.id,
@@ -574,10 +577,24 @@ export class Db {
           sequence: message.sequence,
           hash: message.hash,
           metadata: message.metadata ? JSON.stringify(message.metadata) : null,
+          model: message.model ?? null,
+          usage: message.usage ? JSON.stringify(message.usage) : null,
         });
       return true;
     } catch (err: any) {
       if (typeof err?.message === 'string' && err.message.includes('UNIQUE constraint failed: messages.hash')) {
+        // A genuine re-ingestion of the same content (same id, same hash) — but model/usage are
+        // metadata added to the adapters after most messages already existed, and don't factor
+        // into the hash. Without this, an already-ingested message could never pick up model/
+        // usage on a later rescan: SQLite reports the hash conflict before the id conflict even
+        // though id is the primary key (verified), so the "update in place" branch below never
+        // runs for an otherwise-unchanged message. Backfill just these two columns when they're
+        // newly available, leave everything else alone.
+        if (message.model || message.usage) {
+          this.raw
+            .prepare('UPDATE messages SET model = COALESCE(model, @model), usage = COALESCE(usage, @usage) WHERE hash = @hash')
+            .run({ hash: message.hash, model: message.model ?? null, usage: message.usage ? JSON.stringify(message.usage) : null });
+        }
         return false;
       }
       if (typeof err?.message === 'string' && err.message.includes('UNIQUE constraint failed: messages.id')) {
@@ -590,7 +607,8 @@ export class Db {
             `UPDATE messages
                SET thread_id = @threadId, project_id = @projectId, source_engine = @sourceEngine, role = @role,
                    content = @content, thought = @thought, tool_calls = @toolCalls, tool_results = @toolResults,
-                   attachments = @attachments, timestamp = @timestamp, sequence = @sequence, hash = @hash, metadata = @metadata
+                   attachments = @attachments, timestamp = @timestamp, sequence = @sequence, hash = @hash, metadata = @metadata,
+                   model = @model, usage = @usage
              WHERE id = @id`,
           )
           .run({
@@ -608,6 +626,8 @@ export class Db {
             sequence: message.sequence,
             hash: message.hash,
             metadata: message.metadata ? JSON.stringify(message.metadata) : null,
+            model: message.model ?? null,
+            usage: message.usage ? JSON.stringify(message.usage) : null,
           });
         return true;
       }
@@ -620,6 +640,22 @@ export class Db {
       .prepare('SELECT * FROM messages WHERE thread_id = ? ORDER BY sequence ASC')
       .all(threadId) as any[];
     return rows.map(rowToMessage);
+  }
+
+  /** Every message that carries real usage — raw material for cost aggregation (see core/cost.ts). Rows with no model/usage recorded are excluded — nothing to price, not zero-cost. */
+  getUsageRecords(scope: { projectId?: string; threadId?: string } = {}): { model: string; usage: TokenUsage }[] {
+    let sql = 'SELECT model, usage FROM messages WHERE model IS NOT NULL AND usage IS NOT NULL';
+    const params: string[] = [];
+    if (scope.projectId) {
+      sql += ' AND project_id = ?';
+      params.push(scope.projectId);
+    }
+    if (scope.threadId) {
+      sql += ' AND thread_id = ?';
+      params.push(scope.threadId);
+    }
+    const rows = this.raw.prepare(sql).all(...params) as any[];
+    return rows.map((r) => ({ model: r.model as string, usage: JSON.parse(r.usage) as TokenUsage }));
   }
 
   /** Verbatim cross-tool timeline for a project, optionally since a given ISO timestamp. Backs the MCP server. */
@@ -823,6 +859,8 @@ function rowToMessage(row: any): Message {
     sequence: row.sequence,
     hash: row.hash,
     metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+    model: row.model ?? undefined,
+    usage: row.usage ? JSON.parse(row.usage) : undefined,
   };
 }
 

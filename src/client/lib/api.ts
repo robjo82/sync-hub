@@ -1,4 +1,5 @@
 import type { Artifact, Category, Memory, Message, Project, SyncStats, Thread, WebSocketEvent } from '../../types.js';
+import type { CostSummary } from '../../core/cost.js';
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -28,6 +29,13 @@ export const api = {
     }),
   coverage: () =>
     jsonFetch<{ projectId: string; projectName: string; engines: Record<string, string> }[]>('/api/coverage'),
+  costs: (scope?: { projectId?: string; threadId?: string }) => {
+    const params = new URLSearchParams();
+    if (scope?.projectId) params.set('projectId', scope.projectId);
+    if (scope?.threadId) params.set('threadId', scope.threadId);
+    const qs = params.toString();
+    return jsonFetch<CostSummary>(`/api/costs${qs ? `?${qs}` : ''}`);
+  },
   search: (q: string) =>
     jsonFetch<{ message: Message; projectName: string; threadTitle: string }[]>(`/api/search?q=${encodeURIComponent(q)}`),
   rescan: () => jsonFetch<{ ok: true; stats: SyncStats }>('/api/sync/rescan', { method: 'POST' }),

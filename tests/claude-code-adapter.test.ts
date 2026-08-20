@@ -60,6 +60,53 @@ describe('parseLine — real Claude Code JSONL schema', () => {
     expect(parsed?.role).toBe('tool');
     expect(parsed?.toolResults).toEqual([{ toolCallId: 'tool-1', name: 'tool-1', output: 'sortie', status: 'success' }]);
   });
+
+  it('extracts model + usage from a real assistant event, splitting 5m/1h cache writes as reported', () => {
+    const parsed = parseLine(
+      JSON.stringify({
+        type: 'assistant',
+        uuid: 'a1',
+        timestamp: '2026-01-01T00:00:00Z',
+        message: {
+          role: 'assistant',
+          model: 'claude-fable-5',
+          content: [{ type: 'text', text: 'bonjour' }],
+          usage: {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_read_input_tokens: 20,
+            cache_creation: { ephemeral_5m_input_tokens: 5, ephemeral_1h_input_tokens: 15 },
+          },
+        },
+      }),
+    );
+    expect(parsed?.model).toBe('claude-fable-5');
+    expect(parsed?.usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheCreation5mInputTokens: 5,
+      cacheCreation1hInputTokens: 15,
+      cacheReadInputTokens: 20,
+    });
+  });
+
+  it('drops <synthetic> events entirely — never billed, so never kept as a priced model id', () => {
+    const parsed = parseLine(
+      JSON.stringify({
+        type: 'assistant',
+        uuid: 'a1',
+        timestamp: '2026-01-01T00:00:00Z',
+        message: {
+          role: 'assistant',
+          model: '<synthetic>',
+          content: [{ type: 'text', text: 'bonjour' }],
+          usage: { input_tokens: 100, output_tokens: 50 },
+        },
+      }),
+    );
+    expect(parsed?.model).toBeUndefined();
+    expect(parsed?.usage).toBeUndefined();
+  });
 });
 
 describe('ingestSessionFile — end to end against a real-shaped fixture', () => {

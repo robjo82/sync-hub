@@ -290,6 +290,29 @@ describe('Db messages — anti-duplicate hash gate', () => {
     expect(messages[0].hash).toBe('hash-2');
   });
 
+  it('backfills model/usage onto an already-ingested, unchanged message on hash conflict, without touching an already-set value — regression: SQLite reports the hash UNIQUE violation before the id PRIMARY KEY violation, so the id-conflict "update in place" branch never runs for an otherwise-unchanged rescan', () => {
+    expect(db.insertMessage(makeMessage({ id: 'msg-1', hash: 'hash-1' }))).toBe(true);
+    expect(db.getMessagesForThread('thread-1')[0].model).toBeUndefined();
+
+    // Re-ingest of the exact same content, now carrying model/usage an adapter update newly extracts.
+    expect(
+      db.insertMessage(
+        makeMessage({ id: 'msg-1', hash: 'hash-1', model: 'claude-sonnet-5', usage: { inputTokens: 10, outputTokens: 5 } }),
+      ),
+    ).toBe(false);
+    const backfilled = db.getMessagesForThread('thread-1')[0];
+    expect(backfilled.model).toBe('claude-sonnet-5');
+    expect(backfilled.usage).toEqual({ inputTokens: 10, outputTokens: 5 });
+
+    // A further hash-conflicting insert with a *different* model must not overwrite the one already recorded.
+    expect(
+      db.insertMessage(makeMessage({ id: 'msg-1', hash: 'hash-1', model: 'claude-fable-5', usage: { inputTokens: 99, outputTokens: 99 } })),
+    ).toBe(false);
+    const unchanged = db.getMessagesForThread('thread-1')[0];
+    expect(unchanged.model).toBe('claude-sonnet-5');
+    expect(unchanged.usage).toEqual({ inputTokens: 10, outputTokens: 5 });
+  });
+
   it('getProjectTimeline returns verbatim content ordered by timestamp, filterable by since', () => {
     db.insertMessage(makeMessage({ id: 'msg-1', hash: 'hash-1', sequence: 0, timestamp: '2026-01-01T00:00:00Z', content: 'premier' }));
     db.insertMessage(makeMessage({ id: 'msg-2', hash: 'hash-2', sequence: 1, timestamp: '2026-01-02T00:00:00Z', content: 'second' }));

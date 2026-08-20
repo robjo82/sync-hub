@@ -19,6 +19,7 @@ import * as claudeCode from '../core/adapters/claude-code.js';
 import * as codex from '../core/adapters/codex.js';
 import * as antigravity from '../core/adapters/antigravity.js';
 import { archiveThread, deleteProject, deleteThread, type ArchiveRoots } from '../core/archive.js';
+import { computeCostSummary } from '../core/cost.js';
 import type { EngineHealth, EngineType, SyncStats, WebSocketEvent } from '../types.js';
 import { UNASSIGNED_PROJECT_ID } from '../types.js';
 
@@ -145,6 +146,10 @@ export function createApp(deps: AppDeps): FastifyInstance {
       .getProjects()
       .filter((p) => p.id !== UNASSIGNED_PROJECT_ID)
       .map((p) => ({ projectId: p.id, projectName: p.name, engines: db.getLastActivityByEngine(p.id) })),
+  );
+
+  app.get<{ Querystring: { projectId?: string; threadId?: string } }>('/api/costs', async (req) =>
+    computeCostSummary(db, { projectId: req.query.projectId, threadId: req.query.threadId }),
   );
 
   app.get<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {

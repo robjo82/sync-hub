@@ -227,6 +227,46 @@ describe('ingestSessionFile — end to end against a real-shaped Codex fixture',
     rmSync(multiDir, { recursive: true, force: true });
   });
 
+  it('attaches the real model + token usage from turn_context/token_count events to the assistant message that turn produced', () => {
+    const usageDir = mkdtempSync(join(tmpdir(), 'sync-hub-codex-usage-'));
+    const filePath = join(usageDir, 'rollout-usage.jsonl');
+    const lines = [
+      { type: 'session_meta', timestamp: 't0', payload: { id: 'usage-session', cwd: PROJECT_PATH, timestamp: 't0' } },
+      { type: 'turn_context', timestamp: 't1', payload: { model: 'gpt-5.5' } },
+      {
+        type: 'response_item',
+        timestamp: 't2',
+        payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Bonjour' }] },
+      },
+      {
+        type: 'response_item',
+        timestamp: 't3',
+        payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Réponse.' }] },
+      },
+      {
+        type: 'event_msg',
+        timestamp: 't4',
+        payload: {
+          type: 'token_count',
+          info: { last_token_usage: { input_tokens: 18355, output_tokens: 41, cached_input_tokens: 16768, reasoning_output_tokens: 12 } },
+        },
+      },
+    ];
+    writeFileSync(filePath, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+
+    ingestSessionFile(db, registry, { filePath });
+    const messages = db.getMessagesForThread('usage-session');
+    const assistantMsg = messages.find((m) => m.role === 'assistant');
+    expect(assistantMsg?.model).toBe('gpt-5.5');
+    expect(assistantMsg?.usage).toEqual({ inputTokens: 18355, outputTokens: 41, cachedInputTokens: 16768, reasoningOutputTokens: 12 });
+    // The user message from the same turn must not carry usage — only the last ParsedLine per turn does.
+    const userMsg = messages.find((m) => m.role === 'user');
+    expect(userMsg?.model).toBeUndefined();
+    expect(userMsg?.usage).toBeUndefined();
+
+    rmSync(usageDir, { recursive: true, force: true });
+  });
+
   it('resolves a session whose cwd is Codex\'s own ChatGPT-Project cache folder to the matching ChatGPT Project, auto-creating it — regression for a real find (several such sessions sat unassigned)', () => {
     const cacheDir = mkdtempSync(join(tmpdir(), 'sync-hub-codex-cache-cwd-'));
     const cwd = join(cacheDir, '.codex', '.chatgpt-projects', 'g-p-realfindtest0001');

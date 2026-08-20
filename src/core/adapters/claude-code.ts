@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import type { Db } from '../db.js';
 import type { ProjectRegistry } from '../registry.js';
 import { computeMessageHash } from '../hash.js';
-import type { Message, MessageRole, Thread, ToolCall, ToolResult } from '../../types.js';
+import type { Message, MessageRole, Thread, ToolCall, ToolResult, TokenUsage } from '../../types.js';
 
 export const CLAUDE_CODE_STORAGE_ROOT = join(homedir(), '.claude', 'projects');
 
@@ -54,6 +54,29 @@ interface ParsedLine {
   toolResults?: ToolResult[];
   timestamp: string;
   uuid: string;
+  model?: string;
+  usage?: TokenUsage;
+}
+
+/**
+ * Claude Code's own `usage` object on an assistant event, mapped to the shared TokenUsage shape —
+ * verified against real sessions: `cache_creation` already splits 5-minute vs 1-hour writes, so
+ * both are captured exactly rather than assumed. `model: "<synthetic>"` marks an event Claude Code
+ * generated itself (no real API call, no real usage) — never priced, so it's dropped entirely
+ * rather than kept as a model id with no matching price.
+ */
+function usageFromClaudeCodeMessage(message: any): { model?: string; usage?: TokenUsage } {
+  const model = typeof message?.model === 'string' && message.model !== '<synthetic>' ? message.model : undefined;
+  const rawUsage = message?.usage;
+  if (!model || !rawUsage) return { model };
+  const usage: TokenUsage = {
+    inputTokens: rawUsage.input_tokens ?? 0,
+    outputTokens: rawUsage.output_tokens ?? 0,
+    cacheCreation5mInputTokens: rawUsage.cache_creation?.ephemeral_5m_input_tokens || undefined,
+    cacheCreation1hInputTokens: rawUsage.cache_creation?.ephemeral_1h_input_tokens || undefined,
+    cacheReadInputTokens: rawUsage.cache_read_input_tokens || undefined,
+  };
+  return { model, usage };
 }
 
 /** Parses one raw JSONL line. Returns null for non-conversational event types (system/UI bookkeeping). */
@@ -129,6 +152,7 @@ export function parseLine(rawLine: string): ParsedLine | null {
     toolCalls: toolCalls.length ? toolCalls : undefined,
     timestamp,
     uuid,
+    ...usageFromClaudeCodeMessage(event.message),
   };
 }
 
@@ -213,6 +237,8 @@ export function ingestSessionFile(
       timestamp: parsed.timestamp,
       sequence: sequence++,
       hash,
+      model: parsed.model,
+      usage: parsed.usage,
     };
     if (db.insertMessage(message)) inserted++;
     latestTimestamp = parsed.timestamp;

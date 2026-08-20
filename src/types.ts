@@ -23,6 +23,23 @@ export interface Attachment {
   size?: number;
 }
 
+/**
+ * Real token counts as reported by the engine's own API response for the turn that produced this
+ * message — never estimated or reconstructed. The cache/reasoning breakdown fields are each
+ * present only when the source actually reports that field (they differ by provider — Claude
+ * Code separates 5-minute vs 1-hour cache writes; Codex reports one combined cached-input figure
+ * and a reasoning-token count that's already a subset of outputTokens, not additional).
+ */
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreation5mInputTokens?: number;
+  cacheCreation1hInputTokens?: number;
+  cacheReadInputTokens?: number;
+  cachedInputTokens?: number;
+  reasoningOutputTokens?: number;
+}
+
 /** Verbatim, engine-agnostic envelope for one turn of conversation. Never paraphrased. */
 export interface Message {
   id: string;
@@ -40,6 +57,9 @@ export interface Message {
   /** SHA-256 over role+content+toolCalls+toolResults — the anti-duplicate-ingestion key. */
   hash: string;
   metadata?: Record<string, unknown>;
+  /** The exact model id reported by the engine for this turn (e.g. "claude-sonnet-5", "gpt-5.5") — never inferred. */
+  model?: string;
+  usage?: TokenUsage;
 }
 
 export interface Thread {

@@ -6,7 +6,7 @@ import type { Db } from '../db.js';
 import type { ProjectRegistry } from '../registry.js';
 import { computeMessageHash } from '../hash.js';
 import { ensureChatGptProject, loadChatGptProjectNames } from './chatgpt-export.js';
-import type { Message, MessageRole, Thread, ToolCall, ToolResult } from '../../types.js';
+import type { Message, MessageRole, Thread, ToolCall, ToolResult, TokenUsage } from '../../types.js';
 
 export const CODEX_SESSIONS_ROOT = join(homedir(), '.codex', 'sessions');
 export const CODEX_ARCHIVED_SESSIONS_ROOT = join(homedir(), '.codex', 'archived_sessions');
@@ -71,6 +71,8 @@ interface ParsedLine {
   toolResults?: ToolResult[];
   timestamp: string;
   uuid: string;
+  model?: string;
+  usage?: TokenUsage;
 }
 
 function textFromContentBlocks(blocks: any[]): string {
@@ -233,6 +235,58 @@ function mergeReasoningIntoFollowingMessage(parsed: ParsedLine[]): ParsedLine[] 
   return out;
 }
 
+/**
+ * Attaches the real model + token usage Codex reports for each API turn to the ParsedLine(s) that
+ * turn produced — verified against real sessions: `turn_context` events carry the model in use
+ * from that point on, and `event_msg/token_count` events follow *after* the response_item(s) a
+ * turn produced (reasoning, then a message and/or function_call), reporting `last_token_usage` —
+ * the real delta for that turn, not a running total. Neither is attached to a response_item
+ * directly, so this is a stateful pass rather than something parseLine (pure, one line at a time)
+ * can do alone. When a turn produced more than one ParsedLine (e.g. a text reply *and* a tool
+ * call), the usage is attached to only the last one — real tokens were spent producing both, but
+ * attaching to every one of them would double-count that turn's usage in any later cost total.
+ */
+function parseLinesWithUsage(lines: string[]): ParsedLine[] {
+  const out: ParsedLine[] = [];
+  let currentModel: string | undefined;
+  let lastAssistantIndex = -1;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    let event: any;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+
+    if (event.type === 'turn_context') {
+      currentModel = typeof event.payload?.model === 'string' ? event.payload.model : currentModel;
+      continue;
+    }
+    if (event.type === 'event_msg' && event.payload?.type === 'token_count') {
+      const u = event.payload?.info?.last_token_usage;
+      if (u && lastAssistantIndex !== -1) {
+        out[lastAssistantIndex].model = currentModel;
+        out[lastAssistantIndex].usage = {
+          inputTokens: u.input_tokens ?? 0,
+          outputTokens: u.output_tokens ?? 0,
+          cachedInputTokens: u.cached_input_tokens || undefined,
+          reasoningOutputTokens: u.reasoning_output_tokens || undefined,
+        };
+      }
+      continue;
+    }
+
+    const parsed = parseLine(line);
+    if (!parsed) continue;
+    out.push(parsed);
+    if (parsed.role === 'assistant') lastAssistantIndex = out.length - 1;
+  }
+  return out;
+}
+
 interface SessionHeader {
   sessionId: string;
   cwd: string | undefined;
@@ -327,7 +381,7 @@ export function ingestSessionFile(
 
   const body = opts.fromOffset ? raw.slice(opts.fromOffset) : raw;
   const lines = body.split('\n');
-  const parsedLines = mergeReasoningIntoFollowingMessage(lines.map(parseLine).filter((p): p is ParsedLine => p !== null));
+  const parsedLines = mergeReasoningIntoFollowingMessage(parseLinesWithUsage(lines));
 
   let sequence = existingThread ? db.getMessagesForThread(header.sessionId).length : 0;
   let firstUserContent: string | undefined;
@@ -351,6 +405,8 @@ export function ingestSessionFile(
       timestamp: parsed.timestamp,
       sequence: sequence++,
       hash,
+      model: parsed.model,
+      usage: parsed.usage,
     };
     if (db.insertMessage(message)) inserted++;
     latestTimestamp = parsed.timestamp;

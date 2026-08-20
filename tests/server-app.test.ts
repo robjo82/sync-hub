@@ -133,6 +133,15 @@ describe('sync-hub HTTP API', () => {
     expect(rows[0].engines.codex).toBe('2026-01-02T00:00:00Z');
   });
 
+  it('GET /api/costs estimates spend from real per-message model + usage, scoped by projectId when given', async () => {
+    db.insertMessage(message({ model: 'claude-sonnet-5', usage: { inputTokens: 1_000_000, outputTokens: 0 } }));
+    const res = await app.inject({ method: 'GET', url: '/api/costs?projectId=proj-demo' });
+    expect(res.statusCode).toBe(200);
+    const summary = res.json();
+    expect(summary.totalCostUsd).toBeCloseTo(2, 10); // $2/MTok input for claude-sonnet-5
+    expect(summary.byModel).toEqual([{ model: 'claude-sonnet-5', costUsd: 2, inputTokens: 1_000_000, outputTokens: 0, messageCount: 1 }]);
+  });
+
   it('GET /api/projects/:id/threads and /api/threads/:id/messages', async () => {
     db.insertMessage(message());
     const threadsRes = await app.inject({ method: 'GET', url: '/api/projects/proj-demo/threads' });

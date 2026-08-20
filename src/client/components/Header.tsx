@@ -1,6 +1,6 @@
 import { Moon, RefreshCw, Sun } from 'lucide-react';
 
-type Tab = 'projects' | 'coverage' | 'unassigned' | 'search';
+type Tab = 'projects' | 'coverage' | 'unassigned' | 'search' | 'costs';
 
 interface HeaderProps {
   connected: boolean;
@@ -18,6 +18,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'search', label: 'Recherche' },
   { key: 'coverage', label: 'Couverture de synchro' },
   { key: 'unassigned', label: 'Non affecté' },
+  { key: 'costs', label: 'Coûts' },
 ];
 
 export function Header({ connected, scanning, onRescan, tab, onTabChange, unassignedCount, theme, onToggleTheme }: HeaderProps) {
