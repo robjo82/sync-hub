@@ -269,6 +269,33 @@ export function createApp(deps: AppDeps): FastifyInstance {
     return updatedProject;
   });
 
+  app.get('/api/categories', async () => db.listCategories());
+
+  app.post<{ Body: { name?: string } }>('/api/categories', async (req, reply) => {
+    const name = req.body?.name?.trim();
+    if (!name) return reply.code(400).send({ error: 'name_required' });
+    db.createCategory(name);
+    return db.listCategories();
+  });
+
+  app.post<{ Params: { name: string }; Body: { name?: string } }>('/api/categories/:name/rename', async (req, reply) => {
+    const newName = req.body?.name?.trim();
+    if (!newName) return reply.code(400).send({ error: 'name_required' });
+    try {
+      db.renameCategory(req.params.name, newName);
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message });
+    }
+    broadcast({ type: 'stats_updated', data: computeStats(deps) });
+    return db.listCategories();
+  });
+
+  app.post<{ Params: { name: string } }>('/api/categories/:name/delete', async (req) => {
+    const affected = db.deleteCategory(req.params.name);
+    broadcast({ type: 'stats_updated', data: computeStats(deps) });
+    return { ok: true, affected, categories: db.listCategories() };
+  });
+
   // Moves the project's real folder to the macOS Trash (never a permanent rm -rf) and removes it
   // from sync-hub's own store. Requires the caller to pass confirm:true as a small extra safety
   // layer beyond the dashboard's own confirmation dialog, given this touches a real folder.

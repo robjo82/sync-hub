@@ -115,6 +115,59 @@ describe('Db.setProjectCategory', () => {
     db.setProjectCategory('proj-test', null);
     expect(db.getProject('proj-test')?.category).toBeNull();
   });
+
+  it('registers a brand-new category name so it shows up in listCategories even before any other project uses it', () => {
+    db.upsertProject(makeProject());
+    db.setProjectCategory('proj-test', 'recherche');
+    expect(db.listCategories().map((c) => c.name)).toContain('recherche');
+  });
+});
+
+describe('Db categories', () => {
+  it('seeds the minimum set (ekonum, client, perso) on a fresh database, with zero projects each', () => {
+    const names = db.listCategories().map((c) => c.name);
+    expect(names).toEqual(expect.arrayContaining(['ekonum', 'client', 'perso']));
+    expect(db.listCategories().find((c) => c.name === 'perso')?.projectCount).toBe(0);
+  });
+
+  it('createCategory is idempotent', () => {
+    db.createCategory('client');
+    db.createCategory('client');
+    expect(db.listCategories().filter((c) => c.name === 'client')).toHaveLength(1);
+  });
+
+  it('listCategories counts real project usage', () => {
+    db.upsertProject(makeProject({ id: 'proj-a', canonicalPath: '/tmp/a' }));
+    db.upsertProject(makeProject({ id: 'proj-b', canonicalPath: '/tmp/b' }));
+    db.setProjectCategory('proj-a', 'client');
+    db.setProjectCategory('proj-b', 'client');
+    expect(db.listCategories().find((c) => c.name === 'client')?.projectCount).toBe(2);
+  });
+
+  it('renameCategory updates the category itself and every project using it, atomically', () => {
+    db.upsertProject(makeProject({ id: 'proj-a', canonicalPath: '/tmp/a' }));
+    db.setProjectCategory('proj-a', 'client');
+    db.renameCategory('client', 'clients');
+    expect(db.listCategories().map((c) => c.name)).not.toContain('client');
+    expect(db.listCategories().map((c) => c.name)).toContain('clients');
+    expect(db.getProject('proj-a')?.category).toBe('clients');
+  });
+
+  it('renameCategory refuses to collide with an existing different category', () => {
+    expect(() => db.renameCategory('client', 'perso')).toThrow();
+  });
+
+  it('deleteCategory removes it and clears the category on every project that used it, returning the affected count', () => {
+    db.upsertProject(makeProject({ id: 'proj-a', canonicalPath: '/tmp/a' }));
+    db.upsertProject(makeProject({ id: 'proj-b', canonicalPath: '/tmp/b' }));
+    db.setProjectCategory('proj-a', 'client');
+    db.setProjectCategory('proj-b', 'client');
+    const affected = db.deleteCategory('client');
+    expect(affected).toBe(2);
+    expect(db.listCategories().map((c) => c.name)).not.toContain('client');
+    expect(db.getProject('proj-a')?.category).toBeNull();
+    expect(db.getProject('proj-b')?.category).toBeNull();
+  });
 });
 
 describe('Db.mergeProjects', () => {

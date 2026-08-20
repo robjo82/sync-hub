@@ -123,6 +123,16 @@ CREATE TABLE IF NOT EXISTS mcp_call_log (
 );
 CREATE INDEX IF NOT EXISTS idx_mcp_call_log_timestamp ON mcp_call_log(timestamp);
 CREATE INDEX IF NOT EXISTS idx_mcp_call_log_tool ON mcp_call_log(tool, timestamp);
+
+-- The set of known category names, independent of whether any project currently uses one — lets
+-- a category be created ahead of assigning it to anything, renamed everywhere at once (a project
+-- row only stores the string, not a foreign key, so a rename here doesn't cascade automatically —
+-- Db.renameCategory updates both), and listed for the dashboard's picker instead of the caller
+-- having to guess spelling from memory.
+CREATE TABLE IF NOT EXISTS categories (
+  name TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL
+);
 `;
 
 /**
@@ -153,6 +163,8 @@ const EXPECTED_COLUMNS: Array<{ table: string; column: string; definition: strin
   { table: 'threads', column: 'source_file_path', definition: 'TEXT' },
 ];
 
+const DEFAULT_CATEGORIES = ['ekonum', 'client', 'perso'];
+
 export class Db {
   readonly raw: Database.Database;
 
@@ -165,6 +177,9 @@ export class Db {
     for (const { table, column, definition } of EXPECTED_COLUMNS) {
       ensureColumn(this.raw, table, column, definition);
     }
+    // The minimum set asked for — seeded once so they always show up in the picker, even before
+    // any project has been sorted into one yet. createCategory is idempotent (INSERT OR IGNORE).
+    for (const name of DEFAULT_CATEGORIES) this.createCategory(name);
   }
 
   close(): void {
@@ -208,6 +223,49 @@ export class Db {
   /** Free-form sidebar grouping (e.g. "ekonum", "perso", "client") — explicit only, never guessed. Pass null to ungroup. */
   setProjectCategory(id: string, category: string | null): void {
     this.raw.prepare('UPDATE projects SET category = ? WHERE id = ?').run(category, id);
+    if (category) this.createCategory(category);
+  }
+
+  // --- categories ---------------------------------------------------------
+
+  /** Registers a category name even before any project uses it (e.g. from the "manage categories" panel). No-op if it already exists. */
+  createCategory(name: string): void {
+    this.raw.prepare('INSERT OR IGNORE INTO categories (name, created_at) VALUES (?, ?)').run(name, new Date().toISOString());
+  }
+
+  /** Every known category (explicitly created, or in use by at least one project), with how many projects currently use it. */
+  listCategories(): { name: string; projectCount: number }[] {
+    return this.raw
+      .prepare(
+        `SELECT c.name AS name, COUNT(p.id) AS projectCount
+         FROM categories c
+         LEFT JOIN projects p ON p.category = c.name
+         GROUP BY c.name
+         ORDER BY c.name COLLATE NOCASE`,
+      )
+      .all() as { name: string; projectCount: number }[];
+  }
+
+  /** Renames a category everywhere at once — the categories row and every project currently using it. Throws if the new name is already taken by a different category. */
+  renameCategory(oldName: string, newName: string): void {
+    if (oldName === newName) return;
+    const existing = this.raw.prepare('SELECT 1 FROM categories WHERE name = ?').get(newName);
+    if (existing) throw new Error(`renameCategory: "${newName}" existe déjà`);
+    const tx = this.raw.transaction(() => {
+      this.raw.prepare('UPDATE categories SET name = ? WHERE name = ?').run(newName, oldName);
+      this.raw.prepare('UPDATE projects SET category = ? WHERE category = ?').run(newName, oldName);
+    });
+    tx();
+  }
+
+  /** Deletes a category outright — any project using it falls back to uncategorized (never left pointing at a name that no longer exists). Returns how many projects were affected. */
+  deleteCategory(name: string): number {
+    const tx = this.raw.transaction(() => {
+      const result = this.raw.prepare('UPDATE projects SET category = NULL WHERE category = ?').run(name);
+      this.raw.prepare('DELETE FROM categories WHERE name = ?').run(name);
+      return result.changes;
+    });
+    return tx();
   }
 
   /**

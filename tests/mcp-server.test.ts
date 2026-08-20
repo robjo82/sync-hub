@@ -89,13 +89,17 @@ describe('sync-hub MCP server', () => {
       'archive_project',
       'archive_thread',
       'assign_thread_to_project',
+      'create_category',
+      'delete_category',
       'get_project_timeline',
       'get_thread',
       'get_thread_link_updates',
       'link_threads',
+      'list_categories',
       'list_projects',
       'list_threads',
       'merge_projects',
+      'rename_category',
       'rename_project',
       'search_transcripts',
       'set_project_category',
@@ -288,6 +292,37 @@ describe('sync-hub MCP server', () => {
     it('set_project_category reports an error for an unknown project', async () => {
       const result = await client.callTool({ name: 'set_project_category', arguments: { project: 'nope', category: 'perso' } });
       expect(result.isError).toBe(true);
+    });
+
+    it('list_categories includes the seeded minimum set with real counts', async () => {
+      await client.callTool({ name: 'set_project_category', arguments: { project: 'proj-demo', category: 'client' } });
+      const result = await client.callTool({ name: 'list_categories', arguments: {} });
+      const text = (result.content as any[])[0].text as string;
+      expect(text).toContain('client (1 projet)');
+      expect(text).toContain('ekonum (0 projets)');
+    });
+
+    it('create_category registers a name usable before any project is assigned to it', async () => {
+      await client.callTool({ name: 'create_category', arguments: { name: 'recherche' } });
+      const result = await client.callTool({ name: 'list_categories', arguments: {} });
+      expect((result.content as any[])[0].text).toContain('recherche (0 projets)');
+    });
+
+    it('rename_category renames it everywhere, and reports an error on a name collision', async () => {
+      await client.callTool({ name: 'set_project_category', arguments: { project: 'proj-demo', category: 'client' } });
+      const renamed = await client.callTool({ name: 'rename_category', arguments: { name: 'client', newName: 'clients' } });
+      expect((renamed.content as any[])[0].text).toContain('"client" renommée en "clients"');
+      expect(db.getProject('proj-demo')?.category).toBe('clients');
+
+      const collision = await client.callTool({ name: 'rename_category', arguments: { name: 'clients', newName: 'perso' } });
+      expect(collision.isError).toBe(true);
+    });
+
+    it('delete_category clears the category on every affected project and reports the count', async () => {
+      await client.callTool({ name: 'set_project_category', arguments: { project: 'proj-demo', category: 'client' } });
+      const result = await client.callTool({ name: 'delete_category', arguments: { name: 'client' } });
+      expect((result.content as any[])[0].text).toContain('1 projet');
+      expect(db.getProject('proj-demo')?.category).toBeNull();
     });
 
     it('merge_projects moves every thread from source into target and source disappears', async () => {

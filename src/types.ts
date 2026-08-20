@@ -87,6 +87,12 @@ export interface Project {
 /** Sentinel project id for sessions that could not be matched to a registry entry. */
 export const UNASSIGNED_PROJECT_ID = 'unassigned';
 
+/** A known category name, independent of whether any project currently uses it (see Db.createCategory). */
+export interface Category {
+  name: string;
+  projectCount: number;
+}
+
 /** Matches the real `metadata.type` values used by Claude Code's memory files, verbatim. */
 export type MemoryCategory = 'user' | 'project' | 'feedback' | 'reference' | 'other';
 

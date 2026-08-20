@@ -1,4 +1,4 @@
-import type { Artifact, Memory, Message, Project, SyncStats, Thread, WebSocketEvent } from '../../types.js';
+import type { Artifact, Category, Memory, Message, Project, SyncStats, Thread, WebSocketEvent } from '../../types.js';
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -48,6 +48,23 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ category }),
+    }),
+  categories: () => jsonFetch<Category[]>('/api/categories'),
+  createCategory: (name: string) =>
+    jsonFetch<Category[]>('/api/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    }),
+  renameCategory: (name: string, newName: string) =>
+    jsonFetch<Category[]>(`/api/categories/${encodeURIComponent(name)}/rename`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName }),
+    }),
+  deleteCategory: (name: string) =>
+    jsonFetch<{ ok: true; affected: number; categories: Category[] }>(`/api/categories/${encodeURIComponent(name)}/delete`, {
+      method: 'POST',
     }),
   deleteProject: (projectId: string) =>
     jsonFetch<{ ok: boolean; movedFolderTo?: string; note: string }>(`/api/projects/${projectId}/delete`, {

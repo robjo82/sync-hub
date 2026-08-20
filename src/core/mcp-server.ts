@@ -335,6 +335,74 @@ export function createMcpServer(db: Db, registry: ProjectRegistry, archiveRoots:
   );
 
   server.registerTool(
+    'list_categories',
+    {
+      title: 'Lister les catégories connues',
+      description:
+        'Retourne toutes les catégories connues (y compris celles créées via create_category mais pas encore utilisées) avec le ' +
+        "nombre de projets dans chacune — consulte-la avant de catégoriser en masse pour réutiliser l'orthographe exacte plutôt " +
+        "que d'en recréer une variante par erreur (ex. \"Client\" vs \"client\").",
+      inputSchema: {},
+    },
+    logged(db, 'list_categories', async () => {
+      const categories = db.listCategories();
+      if (categories.length === 0) return { content: [{ type: 'text', text: 'Aucune catégorie pour le moment.' }] };
+      return { content: [{ type: 'text', text: categories.map((c) => `${c.name} (${c.projectCount} projet${c.projectCount === 1 ? '' : 's'})`).join('\n') }] };
+    }),
+  );
+
+  server.registerTool(
+    'create_category',
+    {
+      title: 'Créer une catégorie',
+      description: "Enregistre une nouvelle catégorie même avant qu'un projet l'utilise — sans effet si elle existe déjà.",
+      inputSchema: {
+        name: z.string().min(1).describe('Nom de la catégorie'),
+      },
+    },
+    logged(db, 'create_category', async ({ name }) => {
+      db.createCategory(name.trim());
+      return { content: [{ type: 'text', text: `Catégorie "${name.trim()}" prête.` }] };
+    }),
+  );
+
+  server.registerTool(
+    'rename_category',
+    {
+      title: 'Renommer une catégorie',
+      description: 'Renomme une catégorie partout à la fois — elle-même et tous les projets qui l\'utilisent actuellement.',
+      inputSchema: {
+        name: z.string().describe('Nom actuel de la catégorie'),
+        newName: z.string().min(1).describe('Nouveau nom'),
+      },
+    },
+    logged(db, 'rename_category', async ({ name, newName }) => {
+      try {
+        db.renameCategory(name, newName.trim());
+      } catch (err: any) {
+        return { content: [{ type: 'text', text: err.message }], isError: true };
+      }
+      return { content: [{ type: 'text', text: `"${name}" renommée en "${newName.trim()}".` }] };
+    }),
+  );
+
+  server.registerTool(
+    'delete_category',
+    {
+      title: 'Supprimer une catégorie',
+      description:
+        'Supprime une catégorie. Les projets qui l\'utilisaient repassent sans catégorie (jamais rattachés à une autre au hasard).',
+      inputSchema: {
+        name: z.string().describe('Nom de la catégorie à supprimer'),
+      },
+    },
+    logged(db, 'delete_category', async ({ name }) => {
+      const affected = db.deleteCategory(name);
+      return { content: [{ type: 'text', text: `Catégorie "${name}" supprimée (${affected} projet${affected === 1 ? '' : 's'} repassé${affected === 1 ? '' : 's'} sans catégorie).` }] };
+    }),
+  );
+
+  server.registerTool(
     'merge_projects',
     {
       title: 'Fusionner un projet dans un autre',
