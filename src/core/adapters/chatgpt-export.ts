@@ -98,7 +98,7 @@ export const CHATGPT_PROJECTS_CACHE_ROOT = join(homedir(), '.codex', '.chatgpt-p
  * lookup (only covers projects Codex has seen), not exhaustive — an unresolvable id just falls
  * back to being shown as-is rather than guessed at.
  */
-function loadChatGptProjectNames(cacheRoot: string = CHATGPT_PROJECTS_CACHE_ROOT): Map<string, string> {
+export function loadChatGptProjectNames(cacheRoot: string = CHATGPT_PROJECTS_CACHE_ROOT): Map<string, string> {
   const names = new Map<string, string>();
   if (!existsSync(cacheRoot)) return names;
   for (const entry of readdirSync(cacheRoot)) {

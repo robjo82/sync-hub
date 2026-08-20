@@ -214,7 +214,36 @@ describe('ingestSessionFile — end to end against a real-shaped Codex fixture',
 
     const thread = db.getThread('cache-cwd-session');
     expect(thread?.projectId).toBe('chatgpt-project-g-p-realfindtest0001');
-    expect(db.getProject('chatgpt-project-g-p-realfindtest0001')).toBeDefined();
+    expect(db.getProject('chatgpt-project-g-p-realfindtest0001')?.name).toBe('g-p-realfindtest0001'); // no cached name available — falls back to the raw id, not a guess
+
+    rmSync(cacheDir, { recursive: true, force: true });
+  });
+
+  it('uses the real cached ChatGPT Project name (from Codex\'s own AGENTS.md mirror) instead of the raw id — regression for a real find: "C00125 - Acritec" was silently dropped in favor of "g-p-…"', () => {
+    const cacheDir = mkdtempSync(join(tmpdir(), 'sync-hub-codex-cache-cwd-named-'));
+    const projectsCacheRoot = join(cacheDir, '.chatgpt-projects');
+    const cwd = join(cacheDir, '.codex', '.chatgpt-projects', 'g-p-namedtest0002');
+    mkdirSync(cwd, { recursive: true });
+    mkdirSync(join(projectsCacheRoot, 'g-p-namedtest0002'), { recursive: true });
+    writeFileSync(
+      join(projectsCacheRoot, 'g-p-namedtest0002', 'AGENTS.md'),
+      '# ChatGPT project context\n\nThis directory is a local mirror of the ChatGPT project “C00125 - Acritec”.\n',
+    );
+    const filePath = join(cacheDir, 'rollout-cache-cwd-named.jsonl');
+    const lines = [
+      { type: 'session_meta', timestamp: 't0', payload: { id: 'named-cache-cwd-session', cwd, timestamp: 't0' } },
+      {
+        type: 'response_item',
+        timestamp: 't1',
+        payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Fait le point sur ce projet.' }] },
+      },
+    ];
+    writeFileSync(filePath, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+
+    ingestSessionFile(db, registry, { filePath }, { chatGptProjectsCacheRoot: projectsCacheRoot });
+
+    expect(db.getThread('named-cache-cwd-session')?.projectId).toBe('chatgpt-project-g-p-namedtest0002');
+    expect(db.getProject('chatgpt-project-g-p-namedtest0002')?.name).toBe('C00125 - Acritec');
 
     rmSync(cacheDir, { recursive: true, force: true });
   });

@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import type { Db } from '../db.js';
 import type { ProjectRegistry } from '../registry.js';
 import { computeMessageHash } from '../hash.js';
-import { ensureChatGptProject } from './chatgpt-export.js';
+import { ensureChatGptProject, loadChatGptProjectNames } from './chatgpt-export.js';
 import type { Message, MessageRole, Thread, ToolCall, ToolResult } from '../../types.js';
 
 export const CODEX_SESSIONS_ROOT = join(homedir(), '.codex', 'sessions');
@@ -19,11 +19,15 @@ export const CODEX_ARCHIVED_SESSIONS_ROOT = join(homedir(), '.codex', 'archived_
 // project instead — the same real identity, not a guess.
 const CHATGPT_PROJECT_CACHE_CWD = /[/\\]\.codex[/\\]\.chatgpt-projects[/\\](g-p-[a-zA-Z0-9]+)(?:[/\\]|$)/;
 
-function resolveCodexCwd(db: Db, registry: ProjectRegistry, cwd: string): string {
+function resolveCodexCwd(db: Db, registry: ProjectRegistry, cwd: string, chatGptProjectsCacheRoot?: string): string {
   const cacheMatch = cwd.match(CHATGPT_PROJECT_CACHE_CWD);
   if (cacheMatch) {
     const templateId = cacheMatch[1];
-    return ensureChatGptProject(db, templateId, templateId, new Date().toISOString());
+    // Real cached name if Codex has ever synced this ChatGPT Project's AGENTS.md (verified: a
+    // real name like "C00125 - Acritec" was found here and silently dropped in favor of the raw
+    // id before this fix) — same lookup ingestChatGptExport uses, so both paths agree on a name.
+    const name = loadChatGptProjectNames(chatGptProjectsCacheRoot).get(templateId) ?? templateId;
+    return ensureChatGptProject(db, templateId, name, new Date().toISOString());
   }
   return registry.resolveByCodexCwd(cwd);
 }
@@ -256,7 +260,12 @@ function deriveTitle(header: SessionHeader, firstUserContent: string | undefined
   return `Session ${header.sessionId.slice(0, 8)}`;
 }
 
-export function ingestSessionFile(db: Db, registry: ProjectRegistry, ref: SessionFileRef, opts: { fromOffset?: number } = {}): number {
+export function ingestSessionFile(
+  db: Db,
+  registry: ProjectRegistry,
+  ref: SessionFileRef,
+  opts: { fromOffset?: number; chatGptProjectsCacheRoot?: string } = {},
+): number {
   const eventType = opts.fromOffset ? 'watch_tail' : 'full_scan';
   let raw: string;
   try {
@@ -280,7 +289,7 @@ export function ingestSessionFile(db: Db, registry: ProjectRegistry, ref: Sessio
     return 0;
   }
 
-  const projectId = header.cwd ? resolveCodexCwd(db, registry, header.cwd) : 'unassigned';
+  const projectId = header.cwd ? resolveCodexCwd(db, registry, header.cwd, opts.chatGptProjectsCacheRoot) : 'unassigned';
   const existingThread = db.getThread(header.sessionId);
 
   if (!existingThread) {
@@ -360,10 +369,10 @@ export function ingestSessionFile(db: Db, registry: ProjectRegistry, ref: Sessio
   return inserted;
 }
 
-export function ingestAll(db: Db, registry: ProjectRegistry): number {
+export function ingestAll(db: Db, registry: ProjectRegistry, chatGptProjectsCacheRoot?: string): number {
   let total = 0;
   for (const ref of discoverSessionFiles()) {
-    total += ingestSessionFile(db, registry, ref);
+    total += ingestSessionFile(db, registry, ref, { chatGptProjectsCacheRoot });
   }
   return total;
 }
