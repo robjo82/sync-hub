@@ -174,26 +174,8 @@ export function createMcpServer(
     }),
   );
 
-  server.registerTool(
-    'unlink_thread',
-    {
-      title: 'Retirer un fil de son groupe de liaison',
-      description:
-        "Retire threadId de son groupe de fils liés (voir link_threads). Si le groupe tombe à moins de deux fils, il est " +
-        "dissous entièrement. Sans effet si le fil n'était lié à rien.",
-      inputSchema: {
-        threadId: z.string().describe('Id du fil à délier'),
-      },
-    },
-    logged(db, 'unlink_thread', async ({ threadId }) => {
-      if (!db.getThread(threadId)) {
-        return { content: [{ type: 'text', text: `Aucun fil avec l'id "${threadId}".` }], isError: true };
-      }
-      const hadLink = !!db.getThreadLink(threadId);
-      db.unlinkThread(threadId);
-      return { content: [{ type: 'text', text: hadLink ? 'Fil délié.' : "Ce fil n'était lié à rien." }] };
-    }),
-  );
+  // unlink is exposed as manage_thread's `unlink` action (see below) — kept there rather than as
+  // its own tool since it's the same "rarely-used thread admin action" bucket as assign/archive/delete.
 
   server.registerTool(
     'get_thread_link_updates',
@@ -312,244 +294,198 @@ export function createMcpServer(
     }),
   );
 
+  // manage_project / manage_thread bundle every rarely-used admin action (rename, categorize,
+  // merge, archive, assign, delete, unlink) behind one tool per entity, selected by `action` —
+  // real mcp_call_log data showed these 12 actions, split across 12 separate tool definitions,
+  // had NEVER been called even once in production, while their combined JSON schemas made up
+  // roughly a third of the whole server's tool-list context cost paid by every connected session.
+  // Consolidating them costs nothing in practice (nothing was relying on the separate names) and
+  // meaningfully shrinks that fixed per-session overhead. The 7 tools that ARE actually used
+  // (get_thread, list_threads, search_transcripts, link_threads…) stay separate and unbundled —
+  // a clear standalone tool name is worth keeping for the ones a caller actually reaches for.
+  // Deliberately excluded from manage_project: deleting a project (moves its real folder to the
+  // macOS Trash) — the one action here that touches real filesystem state outside sync-hub's own
+  // store, left as a dashboard-only action with its own explicit confirmation UI.
+
   server.registerTool(
-    'rename_project',
+    'manage_project',
     {
-      title: 'Renommer un projet',
-      description: 'Change le nom affiché d\'un projet — ne touche ni son chemin réel ni ses fils.',
+      title: 'Gérer un projet — renommer, catégoriser, fusionner, archiver, gérer les catégories',
+      description:
+        'Un seul outil pour les actions de gestion sur les projets sync-hub — choisis `action`, puis renseigne les champs ' +
+        "pertinents pour cette action (les autres sont ignorés) :\n" +
+        '- rename: project, name — change le nom affiché, ne touche ni le chemin réel ni les fils\n' +
+        '- set_category: project, category (null pour retirer) — catégorie libre pour le regroupement dans le dashboard ' +
+        '("ekonum", "client", "perso" au minimum, mais toute étiquette est acceptée ; jamais deviné, appelle list_categories ' +
+        "avant pour réutiliser l'orthographe exacte plutôt que d'en recréer une variante par erreur)\n" +
+        '- merge: source, target — déplace tous les fils/mémoires/artefacts de source vers target (qui garde son nom) ; ' +
+        'fusion pure côté enregistrements, aucun fichier réel touché, irréversible en un clic\n' +
+        "- archive: project — masque le projet du dashboard et archive chacun de ses fils encore actifs\n" +
+        '- list_categories: (aucun champ) — toutes les catégories connues avec leur nombre de projets\n' +
+        "- create_category: name — enregistre une catégorie même avant qu'un projet l'utilise\n" +
+        "- rename_category: name (actuel), newName — renomme partout à la fois, elle-même et tous les projets qui l'utilisent\n" +
+        '- delete_category: name — les projets qui l\'utilisaient repassent sans catégorie, jamais rattachés à une autre au hasard',
       inputSchema: {
-        project: z.string().describe('Id ou nom actuel du projet'),
-        name: z.string().min(1).describe('Nouveau nom'),
+        action: z
+          .enum(['rename', 'set_category', 'merge', 'archive', 'list_categories', 'create_category', 'rename_category', 'delete_category'])
+          .describe("L'action à effectuer"),
+        project: z.string().optional().describe('Id ou nom du projet — actions rename, set_category, archive'),
+        name: z.string().optional().describe('rename: nouveau nom du projet · create_category: nom de la catégorie · rename_category: son nom actuel'),
+        category: z.string().nullable().optional().describe('set_category: étiquette à assigner, ou null pour retirer'),
+        newName: z.string().optional().describe('rename_category: nouveau nom de la catégorie'),
+        source: z.string().optional().describe('merge: id ou nom du projet à absorber (disparaît après fusion)'),
+        target: z.string().optional().describe('merge: id ou nom du projet qui reçoit tout et garde son nom'),
       },
     },
-    logged(db, 'rename_project', async ({ project: projectRef, name }) => {
-      const project = resolveProject(db, projectRef);
-      if (!project) {
-        return { content: [{ type: 'text', text: projectNotFoundText(db, projectRef) }], isError: true };
+    logged(db, 'manage_project', async (input: any) => {
+      switch (input.action) {
+        case 'rename': {
+          const project = resolveProject(db, input.project ?? '');
+          if (!project) return { content: [{ type: 'text', text: projectNotFoundText(db, input.project ?? '') }], isError: true };
+          if (!input.name?.trim()) return { content: [{ type: 'text', text: 'action rename : `name` est requis.' }], isError: true };
+          db.renameProject(project.id, input.name.trim());
+          updatePointerFiles(db, db.getProject(project.id)!);
+          return { content: [{ type: 'text', text: `"${project.name}" renommé en "${input.name.trim()}".` }] };
+        }
+        case 'set_category': {
+          const project = resolveProject(db, input.project ?? '');
+          if (!project) return { content: [{ type: 'text', text: projectNotFoundText(db, input.project ?? '') }], isError: true };
+          const trimmed = input.category?.trim() || null;
+          db.setProjectCategory(project.id, trimmed);
+          return {
+            content: [{ type: 'text', text: trimmed ? `"${project.name}" classé dans "${trimmed}".` : `"${project.name}" retiré de sa catégorie.` }],
+          };
+        }
+        case 'merge': {
+          if (!input.source || !input.target) {
+            return { content: [{ type: 'text', text: 'action merge : `source` et `target` sont requis.' }], isError: true };
+          }
+          const sourceProject = resolveProject(db, input.source);
+          const targetProject = resolveProject(db, input.target);
+          if (!sourceProject) return { content: [{ type: 'text', text: projectNotFoundText(db, input.source) }], isError: true };
+          if (!targetProject) return { content: [{ type: 'text', text: projectNotFoundText(db, input.target) }], isError: true };
+          if (sourceProject.id === UNASSIGNED_PROJECT_ID || targetProject.id === UNASSIGNED_PROJECT_ID) {
+            return { content: [{ type: 'text', text: 'Le projet "unassigned" ne peut ni être fusionné ni recevoir de fusion.' }], isError: true };
+          }
+          try {
+            db.mergeProjects(sourceProject.id, targetProject.id);
+          } catch (err: any) {
+            return { content: [{ type: 'text', text: err.message }], isError: true };
+          }
+          updatePointerFiles(db, db.getProject(targetProject.id)!);
+          return { content: [{ type: 'text', text: `"${sourceProject.name}" fusionné dans "${targetProject.name}".` }] };
+        }
+        case 'archive': {
+          const project = resolveProject(db, input.project ?? '');
+          if (!project) return { content: [{ type: 'text', text: projectNotFoundText(db, input.project ?? '') }], isError: true };
+          if (project.id === UNASSIGNED_PROJECT_ID) {
+            return { content: [{ type: 'text', text: 'Le projet "unassigned" ne peut pas être archivé.' }], isError: true };
+          }
+          const results = db
+            .getThreadsForProject(project.id)
+            .filter((t) => t.status === 'active')
+            .map((t) => archiveThread(db, t, archiveRoots));
+          db.setProjectArchived(project.id, true);
+          return { content: [{ type: 'text', text: `"${project.name}" archivé (${results.length} fil(s) traité(s)).` }] };
+        }
+        case 'list_categories': {
+          const categories = db.listCategories();
+          if (categories.length === 0) return { content: [{ type: 'text', text: 'Aucune catégorie pour le moment.' }] };
+          return {
+            content: [{ type: 'text', text: categories.map((c) => `${c.name} (${c.projectCount} projet${c.projectCount === 1 ? '' : 's'})`).join('\n') }],
+          };
+        }
+        case 'create_category': {
+          if (!input.name?.trim()) return { content: [{ type: 'text', text: 'action create_category : `name` est requis.' }], isError: true };
+          db.createCategory(input.name.trim());
+          return { content: [{ type: 'text', text: `Catégorie "${input.name.trim()}" prête.` }] };
+        }
+        case 'rename_category': {
+          if (!input.name || !input.newName?.trim()) {
+            return { content: [{ type: 'text', text: 'action rename_category : `name` et `newName` sont requis.' }], isError: true };
+          }
+          try {
+            db.renameCategory(input.name, input.newName.trim());
+          } catch (err: any) {
+            return { content: [{ type: 'text', text: err.message }], isError: true };
+          }
+          return { content: [{ type: 'text', text: `"${input.name}" renommée en "${input.newName.trim()}".` }] };
+        }
+        case 'delete_category': {
+          if (!input.name) return { content: [{ type: 'text', text: 'action delete_category : `name` est requis.' }], isError: true };
+          const affected = db.deleteCategory(input.name);
+          return {
+            content: [
+              { type: 'text', text: `Catégorie "${input.name}" supprimée (${affected} projet${affected === 1 ? '' : 's'} repassé${affected === 1 ? '' : 's'} sans catégorie).` },
+            ],
+          };
+        }
+        default:
+          return { content: [{ type: 'text', text: `action inconnue : "${input.action}".` }], isError: true };
       }
-      db.renameProject(project.id, name.trim());
-      updatePointerFiles(db, db.getProject(project.id)!);
-      return { content: [{ type: 'text', text: `"${project.name}" renommé en "${name.trim()}".` }] };
     }),
   );
 
   server.registerTool(
-    'set_project_category',
+    'manage_thread',
     {
-      title: 'Catégoriser un projet',
+      title: 'Gérer un fil — rattacher, archiver, supprimer, délier',
       description:
-        "Assigne un projet à une catégorie libre pour le regroupement dans le dashboard — au minimum \"ekonum\" (outillage/travaux " +
-        'internes Ekonum), "client" (missions pour un client identifié) et "perso" sont utilisées, mais toute étiquette est ' +
-        'acceptée. Jamais deviné : n\'assigne que ce qui est explicitement demandé. category=null retire le projet de toute catégorie.',
+        'Un seul outil pour les actions de gestion sur un fil précis — choisis `action`, threadId, et project si besoin :\n' +
+        "- assign: threadId, project — l'action de triage principale pour les fils \"unassigned\" ; si le fil a une référence " +
+        'native connue (slug Claude Code, cwd Codex), sync-hub apprend aussi cette référence pour ce projet\n' +
+        "- archive: threadId — déplace le fichier source réel (jamais supprimé) et masque le fil par défaut ; un fil sans " +
+        'fichier source réel (import en masse) est archivé côté enregistrements sync-hub uniquement\n' +
+        '- delete: threadId — retire le fil de sync-hub (base et dashboard), réellement absent ensuite ; le fichier source ' +
+        'réel n\'est jamais supprimé (même traitement que archive) ; pour un import en doublon ou un fil de test\n' +
+        '- unlink: threadId — retire le fil de son groupe de fils liés (voir link_threads) ; dissout le groupe entier si ' +
+        "moins de deux fils restent ; sans effet si le fil n'était lié à rien",
       inputSchema: {
-        project: z.string().describe('Id ou nom du projet'),
-        category: z.string().nullable().describe('Étiquette de catégorie (ex: "ekonum", "client", "perso"), ou null pour retirer'),
+        action: z.enum(['assign', 'archive', 'delete', 'unlink']).describe("L'action à effectuer"),
+        threadId: z.string().describe('Id du fil concerné'),
+        project: z.string().optional().describe('Id ou nom du projet cible — action assign uniquement'),
       },
     },
-    logged(db, 'set_project_category', async ({ project: projectRef, category }) => {
-      const project = resolveProject(db, projectRef);
-      if (!project) {
-        return { content: [{ type: 'text', text: projectNotFoundText(db, projectRef) }], isError: true };
+    logged(db, 'manage_thread', async (input: any) => {
+      switch (input.action) {
+        case 'assign': {
+          const thread = db.getThread(input.threadId);
+          if (!thread) return { content: [{ type: 'text', text: `Aucun fil avec l'id "${input.threadId}".` }], isError: true };
+          if (!input.project) return { content: [{ type: 'text', text: 'action assign : `project` est requis.' }], isError: true };
+          const target = resolveProject(db, input.project);
+          if (!target) return { content: [{ type: 'text', text: projectNotFoundText(db, input.project) }], isError: true };
+
+          if (thread.sourceRef) {
+            const kind = thread.originEngine === 'claude-code' ? 'claudeSlugs' : thread.originEngine === 'codex' ? 'codexCwds' : null;
+            if (kind) registry.assign(target.id, kind, thread.sourceRef);
+          }
+          db.reassignThread(thread.id, target.id);
+          updatePointerFiles(db, target);
+          return { content: [{ type: 'text', text: `"${thread.title}" rattaché à "${target.name}".` }] };
+        }
+        case 'archive': {
+          const thread = db.getThread(input.threadId);
+          if (!thread) return { content: [{ type: 'text', text: `Aucun fil avec l'id "${input.threadId}".` }], isError: true };
+          const result = archiveThread(db, thread, archiveRoots);
+          return { content: [{ type: 'text', text: `"${thread.title}" — ${result.note}` }] };
+        }
+        case 'delete': {
+          const thread = db.getThread(input.threadId);
+          if (!thread) return { content: [{ type: 'text', text: `Aucun fil avec l'id "${input.threadId}".` }], isError: true };
+          const result = deleteThread(db, thread, archiveRoots);
+          return { content: [{ type: 'text', text: `"${thread.title}" — ${result.note}` }] };
+        }
+        case 'unlink': {
+          if (!db.getThread(input.threadId)) {
+            return { content: [{ type: 'text', text: `Aucun fil avec l'id "${input.threadId}".` }], isError: true };
+          }
+          const hadLink = !!db.getThreadLink(input.threadId);
+          db.unlinkThread(input.threadId);
+          return { content: [{ type: 'text', text: hadLink ? 'Fil délié.' : "Ce fil n'était lié à rien." }] };
+        }
+        default:
+          return { content: [{ type: 'text', text: `action inconnue : "${input.action}".` }], isError: true };
       }
-      const trimmed = category?.trim() || null;
-      db.setProjectCategory(project.id, trimmed);
-      return {
-        content: [{ type: 'text', text: trimmed ? `"${project.name}" classé dans "${trimmed}".` : `"${project.name}" retiré de sa catégorie.` }],
-      };
-    }),
-  );
-
-  server.registerTool(
-    'list_categories',
-    {
-      title: 'Lister les catégories connues',
-      description:
-        'Retourne toutes les catégories connues (y compris celles créées via create_category mais pas encore utilisées) avec le ' +
-        "nombre de projets dans chacune — consulte-la avant de catégoriser en masse pour réutiliser l'orthographe exacte plutôt " +
-        "que d'en recréer une variante par erreur (ex. \"Client\" vs \"client\").",
-      inputSchema: {},
-    },
-    logged(db, 'list_categories', async () => {
-      const categories = db.listCategories();
-      if (categories.length === 0) return { content: [{ type: 'text', text: 'Aucune catégorie pour le moment.' }] };
-      return { content: [{ type: 'text', text: categories.map((c) => `${c.name} (${c.projectCount} projet${c.projectCount === 1 ? '' : 's'})`).join('\n') }] };
-    }),
-  );
-
-  server.registerTool(
-    'create_category',
-    {
-      title: 'Créer une catégorie',
-      description: "Enregistre une nouvelle catégorie même avant qu'un projet l'utilise — sans effet si elle existe déjà.",
-      inputSchema: {
-        name: z.string().min(1).describe('Nom de la catégorie'),
-      },
-    },
-    logged(db, 'create_category', async ({ name }) => {
-      db.createCategory(name.trim());
-      return { content: [{ type: 'text', text: `Catégorie "${name.trim()}" prête.` }] };
-    }),
-  );
-
-  server.registerTool(
-    'rename_category',
-    {
-      title: 'Renommer une catégorie',
-      description: 'Renomme une catégorie partout à la fois — elle-même et tous les projets qui l\'utilisent actuellement.',
-      inputSchema: {
-        name: z.string().describe('Nom actuel de la catégorie'),
-        newName: z.string().min(1).describe('Nouveau nom'),
-      },
-    },
-    logged(db, 'rename_category', async ({ name, newName }) => {
-      try {
-        db.renameCategory(name, newName.trim());
-      } catch (err: any) {
-        return { content: [{ type: 'text', text: err.message }], isError: true };
-      }
-      return { content: [{ type: 'text', text: `"${name}" renommée en "${newName.trim()}".` }] };
-    }),
-  );
-
-  server.registerTool(
-    'delete_category',
-    {
-      title: 'Supprimer une catégorie',
-      description:
-        'Supprime une catégorie. Les projets qui l\'utilisaient repassent sans catégorie (jamais rattachés à une autre au hasard).',
-      inputSchema: {
-        name: z.string().describe('Nom de la catégorie à supprimer'),
-      },
-    },
-    logged(db, 'delete_category', async ({ name }) => {
-      const affected = db.deleteCategory(name);
-      return { content: [{ type: 'text', text: `Catégorie "${name}" supprimée (${affected} projet${affected === 1 ? '' : 's'} repassé${affected === 1 ? '' : 's'} sans catégorie).` }] };
-    }),
-  );
-
-  server.registerTool(
-    'merge_projects',
-    {
-      title: 'Fusionner un projet dans un autre',
-      description:
-        "Déplace tous les fils, mémoires et artefacts de source vers target (qui conserve son nom), et fait disparaître " +
-        'source de la liste des projets. Fusion pure côté enregistrements sync-hub — aucun fichier réel touché. Irréversible ' +
-        "en un clic (pas de \"dé-fusion\"), donc à utiliser seulement quand source et target sont vraiment le même projet réel.",
-      inputSchema: {
-        source: z.string().describe('Id ou nom du projet à absorber (disparaît après fusion)'),
-        target: z.string().describe('Id ou nom du projet qui reçoit tout et garde son nom'),
-      },
-    },
-    logged(db, 'merge_projects', async ({ source, target }) => {
-      const sourceProject = resolveProject(db, source);
-      const targetProject = resolveProject(db, target);
-      if (!sourceProject) return { content: [{ type: 'text', text: projectNotFoundText(db, source) }], isError: true };
-      if (!targetProject) return { content: [{ type: 'text', text: projectNotFoundText(db, target) }], isError: true };
-      if (sourceProject.id === UNASSIGNED_PROJECT_ID || targetProject.id === UNASSIGNED_PROJECT_ID) {
-        return { content: [{ type: 'text', text: 'Le projet "unassigned" ne peut ni être fusionné ni recevoir de fusion.' }], isError: true };
-      }
-      try {
-        db.mergeProjects(sourceProject.id, targetProject.id);
-      } catch (err: any) {
-        return { content: [{ type: 'text', text: err.message }], isError: true };
-      }
-      updatePointerFiles(db, db.getProject(targetProject.id)!);
-      return { content: [{ type: 'text', text: `"${sourceProject.name}" fusionné dans "${targetProject.name}".` }] };
-    }),
-  );
-
-  server.registerTool(
-    'assign_thread_to_project',
-    {
-      title: 'Rattacher un fil à un projet',
-      description:
-        "Déplace un fil précis vers un autre projet — l'action de triage principale pour les fils \"unassigned\". Si le fil a " +
-        "une référence native connue (slug Claude Code, cwd Codex), sync-hub apprend aussi cette référence pour ce projet, " +
-        'pour que les futurs fils de la même source se rattachent automatiquement sans repasser par un triage manuel.',
-      inputSchema: {
-        threadId: z.string().describe('Id du fil à déplacer'),
-        project: z.string().describe('Id ou nom du projet cible'),
-      },
-    },
-    logged(db, 'assign_thread_to_project', async ({ threadId, project: projectRef }) => {
-      const thread = db.getThread(threadId);
-      if (!thread) return { content: [{ type: 'text', text: `Aucun fil avec l'id "${threadId}".` }], isError: true };
-      const target = resolveProject(db, projectRef);
-      if (!target) return { content: [{ type: 'text', text: projectNotFoundText(db, projectRef) }], isError: true };
-
-      if (thread.sourceRef) {
-        const kind = thread.originEngine === 'claude-code' ? 'claudeSlugs' : thread.originEngine === 'codex' ? 'codexCwds' : null;
-        if (kind) registry.assign(target.id, kind, thread.sourceRef);
-      }
-      db.reassignThread(thread.id, target.id);
-      updatePointerFiles(db, target);
-      return { content: [{ type: 'text', text: `"${thread.title}" rattaché à "${target.name}".` }] };
-    }),
-  );
-
-  server.registerTool(
-    'archive_thread',
-    {
-      title: 'Archiver un fil',
-      description:
-        "Déplace le fichier source réel du fil (jamais supprimé — archive native de l'outil pour Codex, dossier " +
-        "sync-hub sinon) et le masque de la vue par défaut du dashboard. Un fil sans fichier source réel (import en masse) " +
-        "est archivé côté enregistrements sync-hub uniquement.",
-      inputSchema: {
-        threadId: z.string().describe('Id du fil à archiver'),
-      },
-    },
-    logged(db, 'archive_thread', async ({ threadId }) => {
-      const thread = db.getThread(threadId);
-      if (!thread) return { content: [{ type: 'text', text: `Aucun fil avec l'id "${threadId}".` }], isError: true };
-      const result = archiveThread(db, thread, archiveRoots);
-      return { content: [{ type: 'text', text: `"${thread.title}" — ${result.note}` }] };
-    }),
-  );
-
-  server.registerTool(
-    'delete_thread',
-    {
-      title: 'Supprimer un fil de sync-hub',
-      description:
-        "Retire un fil de sync-hub (base et dashboard) — pas juste masqué comme archive_thread, réellement absent ensuite. " +
-        "Le fichier source réel n'est jamais supprimé (même traitement que archive_thread : déplacé pour ne pas être " +
-        're-ingéré au prochain scan). À utiliser pour un import en doublon ou un fil de test, pas pour du contenu réel.',
-      inputSchema: {
-        threadId: z.string().describe('Id du fil à supprimer'),
-      },
-    },
-    logged(db, 'delete_thread', async ({ threadId }) => {
-      const thread = db.getThread(threadId);
-      if (!thread) return { content: [{ type: 'text', text: `Aucun fil avec l'id "${threadId}".` }], isError: true };
-      const result = deleteThread(db, thread, archiveRoots);
-      return { content: [{ type: 'text', text: `"${thread.title}" — ${result.note}` }] };
-    }),
-  );
-
-  server.registerTool(
-    'archive_project',
-    {
-      title: 'Archiver un projet (et tous ses fils actifs)',
-      description:
-        'Masque le projet du dashboard et archive (voir archive_thread) chacun de ses fils encore actifs — au mieux : un ' +
-        'déplacement de fichier en échec pour un fil ne bloque pas les autres.',
-      inputSchema: {
-        project: z.string().describe('Id ou nom du projet à archiver'),
-      },
-    },
-    logged(db, 'archive_project', async ({ project: projectRef }) => {
-      const project = resolveProject(db, projectRef);
-      if (!project) return { content: [{ type: 'text', text: projectNotFoundText(db, projectRef) }], isError: true };
-      if (project.id === UNASSIGNED_PROJECT_ID) {
-        return { content: [{ type: 'text', text: 'Le projet "unassigned" ne peut pas être archivé.' }], isError: true };
-      }
-      const results = db
-        .getThreadsForProject(project.id)
-        .filter((t) => t.status === 'active')
-        .map((t) => archiveThread(db, t, archiveRoots));
-      db.setProjectArchived(project.id, true);
-      return { content: [{ type: 'text', text: `"${project.name}" archivé (${results.length} fil(s) traité(s)).` }] };
     }),
   );
 

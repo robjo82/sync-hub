@@ -90,28 +90,18 @@ afterEach(() => {
 });
 
 describe('sync-hub MCP server', () => {
-  it('exposes get_project_timeline, get_thread, link_threads, unlink_thread, get_thread_link_updates, search_transcripts and the project-management tools', async () => {
+  it('exposes the actually-used tools separately, and bundles the rarely-used admin actions behind manage_project/manage_thread', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
-      'archive_project',
-      'archive_thread',
-      'assign_thread_to_project',
-      'create_category',
-      'delete_category',
-      'delete_thread',
       'get_project_timeline',
       'get_thread',
       'get_thread_link_updates',
       'link_threads',
-      'list_categories',
       'list_projects',
       'list_threads',
-      'merge_projects',
-      'rename_category',
-      'rename_project',
+      'manage_project',
+      'manage_thread',
       'search_transcripts',
-      'set_project_category',
-      'unlink_thread',
     ]);
   });
 
@@ -239,23 +229,23 @@ describe('sync-hub MCP server', () => {
       expect(result.isError).toBe(true);
     });
 
-    it('unlink_thread removes a thread from its group, and get_thread_link_updates then reports it as unlinked', async () => {
+    it('manage_thread action=unlink removes a thread from its group, and get_thread_link_updates then reports it as unlinked', async () => {
       await client.callTool({ name: 'link_threads', arguments: { threadIds: ['t1', 't2'] } });
-      const unlinkResult = await client.callTool({ name: 'unlink_thread', arguments: { threadId: 't1' } });
+      const unlinkResult = await client.callTool({ name: 'manage_thread', arguments: { action: 'unlink', threadId: 't1' } });
       expect((unlinkResult.content as any[])[0].text).toContain('délié');
 
       const after = await client.callTool({ name: 'get_thread_link_updates', arguments: { threadId: 't1' } });
       expect((after.content as any[])[0].text).toContain('aucun groupe');
     });
 
-    it('unlink_thread on a thread that was never linked says so without erroring', async () => {
-      const result = await client.callTool({ name: 'unlink_thread', arguments: { threadId: 't1' } });
+    it('manage_thread action=unlink on a thread that was never linked says so without erroring', async () => {
+      const result = await client.callTool({ name: 'manage_thread', arguments: { action: 'unlink', threadId: 't1' } });
       expect(result.isError).toBeFalsy();
       expect((result.content as any[])[0].text).toContain("n'était lié à rien");
     });
 
-    it('unlink_thread reports an error for an unknown thread id', async () => {
-      const result = await client.callTool({ name: 'unlink_thread', arguments: { threadId: 'does-not-exist' } });
+    it('manage_thread action=unlink reports an error for an unknown thread id', async () => {
+      const result = await client.callTool({ name: 'manage_thread', arguments: { action: 'unlink', threadId: 'does-not-exist' } });
       expect(result.isError).toBe(true);
     });
   });
@@ -303,77 +293,77 @@ describe('sync-hub MCP server', () => {
       expect(result.isError).toBe(true);
     });
 
-    it('rename_project changes the display name only', async () => {
-      const result = await client.callTool({ name: 'rename_project', arguments: { project: 'proj-demo', name: 'Nouveau nom' } });
+    it('manage_project action=rename changes the display name only', async () => {
+      const result = await client.callTool({ name: 'manage_project', arguments: { action: 'rename', project: 'proj-demo', name: 'Nouveau nom' } });
       expect((result.content as any[])[0].text).toContain('"demo" renommé en "Nouveau nom"');
       expect(db.getProject('proj-demo')?.name).toBe('Nouveau nom');
       expect(db.getProject('proj-demo')?.canonicalPath).toBe('/Users/robin/Projets/demo');
     });
 
-    it('set_project_category assigns a free-form category, and null clears it', async () => {
-      const assign = await client.callTool({ name: 'set_project_category', arguments: { project: 'proj-demo', category: 'client' } });
+    it('manage_project action=set_category assigns a free-form category, and null clears it', async () => {
+      const assign = await client.callTool({ name: 'manage_project', arguments: { action: 'set_category', project: 'proj-demo', category: 'client' } });
       expect((assign.content as any[])[0].text).toContain('"demo" classé dans "client"');
       expect(db.getProject('proj-demo')?.category).toBe('client');
 
-      const clear = await client.callTool({ name: 'set_project_category', arguments: { project: 'proj-demo', category: null } });
+      const clear = await client.callTool({ name: 'manage_project', arguments: { action: 'set_category', project: 'proj-demo', category: null } });
       expect((clear.content as any[])[0].text).toContain('"demo" retiré de sa catégorie');
       expect(db.getProject('proj-demo')?.category).toBeNull();
     });
 
-    it('set_project_category reports an error for an unknown project', async () => {
-      const result = await client.callTool({ name: 'set_project_category', arguments: { project: 'nope', category: 'perso' } });
+    it('manage_project action=set_category reports an error for an unknown project', async () => {
+      const result = await client.callTool({ name: 'manage_project', arguments: { action: 'set_category', project: 'nope', category: 'perso' } });
       expect(result.isError).toBe(true);
     });
 
-    it('list_categories includes the seeded minimum set with real counts', async () => {
-      await client.callTool({ name: 'set_project_category', arguments: { project: 'proj-demo', category: 'client' } });
-      const result = await client.callTool({ name: 'list_categories', arguments: {} });
+    it('manage_project action=list_categories includes the seeded minimum set with real counts', async () => {
+      await client.callTool({ name: 'manage_project', arguments: { action: 'set_category', project: 'proj-demo', category: 'client' } });
+      const result = await client.callTool({ name: 'manage_project', arguments: { action: 'list_categories' } });
       const text = (result.content as any[])[0].text as string;
       expect(text).toContain('client (1 projet)');
       expect(text).toContain('ekonum (0 projets)');
     });
 
-    it('create_category registers a name usable before any project is assigned to it', async () => {
-      await client.callTool({ name: 'create_category', arguments: { name: 'recherche' } });
-      const result = await client.callTool({ name: 'list_categories', arguments: {} });
+    it('manage_project action=create_category registers a name usable before any project is assigned to it', async () => {
+      await client.callTool({ name: 'manage_project', arguments: { action: 'create_category', name: 'recherche' } });
+      const result = await client.callTool({ name: 'manage_project', arguments: { action: 'list_categories' } });
       expect((result.content as any[])[0].text).toContain('recherche (0 projets)');
     });
 
-    it('rename_category renames it everywhere, and reports an error on a name collision', async () => {
-      await client.callTool({ name: 'set_project_category', arguments: { project: 'proj-demo', category: 'client' } });
-      const renamed = await client.callTool({ name: 'rename_category', arguments: { name: 'client', newName: 'clients' } });
+    it('manage_project action=rename_category renames it everywhere, and reports an error on a name collision', async () => {
+      await client.callTool({ name: 'manage_project', arguments: { action: 'set_category', project: 'proj-demo', category: 'client' } });
+      const renamed = await client.callTool({ name: 'manage_project', arguments: { action: 'rename_category', name: 'client', newName: 'clients' } });
       expect((renamed.content as any[])[0].text).toContain('"client" renommée en "clients"');
       expect(db.getProject('proj-demo')?.category).toBe('clients');
 
-      const collision = await client.callTool({ name: 'rename_category', arguments: { name: 'clients', newName: 'perso' } });
+      const collision = await client.callTool({ name: 'manage_project', arguments: { action: 'rename_category', name: 'clients', newName: 'perso' } });
       expect(collision.isError).toBe(true);
     });
 
-    it('delete_category clears the category on every affected project and reports the count', async () => {
-      await client.callTool({ name: 'set_project_category', arguments: { project: 'proj-demo', category: 'client' } });
-      const result = await client.callTool({ name: 'delete_category', arguments: { name: 'client' } });
+    it('manage_project action=delete_category clears the category on every affected project and reports the count', async () => {
+      await client.callTool({ name: 'manage_project', arguments: { action: 'set_category', project: 'proj-demo', category: 'client' } });
+      const result = await client.callTool({ name: 'manage_project', arguments: { action: 'delete_category', name: 'client' } });
       expect((result.content as any[])[0].text).toContain('1 projet');
       expect(db.getProject('proj-demo')?.category).toBeNull();
     });
 
-    it('merge_projects moves every thread from source into target and source disappears', async () => {
+    it('manage_project action=merge moves every thread from source into target and source disappears', async () => {
       db.upsertProject(project({ id: 'proj-other', name: 'other', canonicalPath: '/Users/robin/Projets/other' }));
-      const result = await client.callTool({ name: 'merge_projects', arguments: { source: 'proj-demo', target: 'proj-other' } });
+      const result = await client.callTool({ name: 'manage_project', arguments: { action: 'merge', source: 'proj-demo', target: 'proj-other' } });
       expect((result.content as any[])[0].text).toContain('"demo" fusionné dans "other"');
       expect(db.getProject('proj-demo')).toBeUndefined();
       expect(db.getThread('t1')?.projectId).toBe('proj-other');
       expect(db.getThread('t2')?.projectId).toBe('proj-other');
     });
 
-    it('merge_projects refuses to touch the "unassigned" bucket, in either direction', async () => {
+    it('manage_project action=merge refuses to touch the "unassigned" bucket, in either direction', async () => {
       db.upsertProject(project({ id: 'proj-other', name: 'other', canonicalPath: '/Users/robin/Projets/other' }));
-      const asSource = await client.callTool({ name: 'merge_projects', arguments: { source: 'unassigned', target: 'proj-other' } });
+      const asSource = await client.callTool({ name: 'manage_project', arguments: { action: 'merge', source: 'unassigned', target: 'proj-other' } });
       expect(asSource.isError).toBe(true);
-      const asTarget = await client.callTool({ name: 'merge_projects', arguments: { source: 'proj-demo', target: 'unassigned' } });
+      const asTarget = await client.callTool({ name: 'manage_project', arguments: { action: 'merge', source: 'proj-demo', target: 'unassigned' } });
       expect(asTarget.isError).toBe(true);
     });
 
-    it('assign_thread_to_project moves a thread and teaches the registry its real source reference', async () => {
+    it('manage_thread action=assign moves a thread and teaches the registry its real source reference', async () => {
       db.upsertThread({
         id: 't3',
         projectId: 'unassigned',
@@ -386,46 +376,46 @@ describe('sync-hub MCP server', () => {
         updatedAt: new Date().toISOString(),
         status: 'active',
       });
-      const result = await client.callTool({ name: 'assign_thread_to_project', arguments: { threadId: 't3', project: 'proj-demo' } });
+      const result = await client.callTool({ name: 'manage_thread', arguments: { action: 'assign', threadId: 't3', project: 'proj-demo' } });
       expect((result.content as any[])[0].text).toContain('rattaché à "demo"');
       expect(db.getThread('t3')?.projectId).toBe('proj-demo');
       expect(registry.resolveByClaudeSlug('-Users-robin-Projets-demo2')).toBe('proj-demo');
     });
 
-    it('assign_thread_to_project reports an error for an unknown thread or project', async () => {
-      const badThread = await client.callTool({ name: 'assign_thread_to_project', arguments: { threadId: 'nope', project: 'proj-demo' } });
+    it('manage_thread action=assign reports an error for an unknown thread or project', async () => {
+      const badThread = await client.callTool({ name: 'manage_thread', arguments: { action: 'assign', threadId: 'nope', project: 'proj-demo' } });
       expect(badThread.isError).toBe(true);
-      const badProject = await client.callTool({ name: 'assign_thread_to_project', arguments: { threadId: 't1', project: 'nope' } });
+      const badProject = await client.callTool({ name: 'manage_thread', arguments: { action: 'assign', threadId: 't1', project: 'nope' } });
       expect(badProject.isError).toBe(true);
     });
 
-    it('archive_thread archives sync-hub-side when there is no real source file to move', async () => {
-      const result = await client.callTool({ name: 'archive_thread', arguments: { threadId: 't1' } });
+    it('manage_thread action=archive archives sync-hub-side when there is no real source file to move', async () => {
+      const result = await client.callTool({ name: 'manage_thread', arguments: { action: 'archive', threadId: 't1' } });
       expect((result.content as any[])[0].text).toContain('Fil');
       expect(db.getThread('t1')?.status).toBe('archived');
     });
 
-    it('delete_thread removes the thread from sync-hub entirely', async () => {
-      const result = await client.callTool({ name: 'delete_thread', arguments: { threadId: 't1' } });
+    it('manage_thread action=delete removes the thread from sync-hub entirely', async () => {
+      const result = await client.callTool({ name: 'manage_thread', arguments: { action: 'delete', threadId: 't1' } });
       expect((result.content as any[])[0].text).toContain('Fil');
       expect(db.getThread('t1')).toBeUndefined();
     });
 
-    it('delete_thread reports an error for an unknown thread id', async () => {
-      const result = await client.callTool({ name: 'delete_thread', arguments: { threadId: 'nope' } });
+    it('manage_thread action=delete reports an error for an unknown thread id', async () => {
+      const result = await client.callTool({ name: 'manage_thread', arguments: { action: 'delete', threadId: 'nope' } });
       expect(result.isError).toBe(true);
     });
 
-    it('archive_project archives the project and cascades to its active threads', async () => {
-      const result = await client.callTool({ name: 'archive_project', arguments: { project: 'proj-demo' } });
+    it('manage_project action=archive archives the project and cascades to its active threads', async () => {
+      const result = await client.callTool({ name: 'manage_project', arguments: { action: 'archive', project: 'proj-demo' } });
       expect((result.content as any[])[0].text).toContain('"demo" archivé (2 fil(s) traité(s))');
       expect(db.getProject('proj-demo')?.archived).toBe(true);
       expect(db.getThread('t1')?.status).toBe('archived');
       expect(db.getThread('t2')?.status).toBe('archived');
     });
 
-    it('archive_project refuses to archive the "unassigned" bucket', async () => {
-      const result = await client.callTool({ name: 'archive_project', arguments: { project: 'unassigned' } });
+    it('manage_project action=archive refuses to archive the "unassigned" bucket', async () => {
+      const result = await client.callTool({ name: 'manage_project', arguments: { action: 'archive', project: 'unassigned' } });
       expect(result.isError).toBe(true);
     });
   });
