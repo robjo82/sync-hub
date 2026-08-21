@@ -732,13 +732,28 @@ export class Db {
     }
     if (titleMessages.length >= limit) return titleMessages;
 
+    // Over-fetch so the per-thread cap below still has enough candidates left to reach `limit`
+    // distinct results — a real find: one chatty thread alone contributed 6 of the top 50 results
+    // for "Odoo migration", crowding out other relevant conversations entirely.
     const contentClause = words.map(() => 'content LIKE ?').join(' AND ');
     const contentRows = this.raw
       .prepare(`SELECT * FROM messages WHERE ${contentClause} ORDER BY timestamp DESC LIMIT ?`)
-      .all(...params, limit) as any[];
-    const contentMessages = contentRows.map(rowToMessage).filter((m) => !seenThreadIds.has(m.threadId));
+      .all(...params, Math.min(limit * 10, 2000)) as any[];
 
-    return [...titleMessages, ...contentMessages].slice(0, limit);
+    const MAX_CONTENT_HITS_PER_THREAD = 3;
+    const perThreadCount = new Map<string, number>();
+    const contentMessages: Message[] = [];
+    for (const row of contentRows) {
+      const message = rowToMessage(row);
+      if (seenThreadIds.has(message.threadId)) continue;
+      const count = perThreadCount.get(message.threadId) ?? 0;
+      if (count >= MAX_CONTENT_HITS_PER_THREAD) continue;
+      perThreadCount.set(message.threadId, count + 1);
+      contentMessages.push(message);
+      if (titleMessages.length + contentMessages.length >= limit) break;
+    }
+
+    return [...titleMessages, ...contentMessages];
   }
 
   // --- memories & artifacts -------------------------------------------------

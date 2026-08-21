@@ -494,6 +494,39 @@ describe('Db.searchTranscripts', () => {
     expect(db.searchTranscripts('Ekonum mot-absent-du-tout')).toEqual([]);
   });
 
+  it('caps content-match results per thread so one chatty conversation cannot crowd out other relevant threads — regression for a real find: one thread contributed 6 of the top 50 results for a real query', () => {
+    db.upsertThread({
+      id: 'thread-chatty',
+      projectId: 'proj-test',
+      title: 'Fil très bavard',
+      originEngine: 'claude-code',
+      engineIds: {},
+      messageCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'active',
+    });
+    for (let i = 0; i < 10; i++) {
+      db.insertMessage(
+        makeMessage({
+          id: `chatty-${i}`,
+          hash: `chatty-${i}`,
+          threadId: 'thread-chatty',
+          timestamp: `2026-01-01T00:00:${String(i).padStart(2, '0')}Z`,
+          content: `Migration Odoo, étape ${i}.`,
+        }),
+      );
+    }
+    db.insertMessage(
+      makeMessage({ id: 'other-thread-hit', hash: 'other-thread-hit', threadId: 'thread-1', content: 'Une autre conversation sur la migration Odoo.' }),
+    );
+
+    const results = db.searchTranscripts('Migration Odoo', 5);
+    const fromChattyThread = results.filter((m) => m.threadId === 'thread-chatty');
+    expect(fromChattyThread.length).toBeLessThanOrEqual(3);
+    expect(results.map((m) => m.id)).toContain('other-thread-hit'); // room was left for the other conversation
+  });
+
   it('falls back to the thread title when no message content matches, surfacing one representative message', () => {
     db.upsertThread({
       id: 'thread-2',
