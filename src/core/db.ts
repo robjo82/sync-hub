@@ -670,11 +670,43 @@ export class Db {
     return rows.map(rowToMessage);
   }
 
+  /**
+   * Matches every word of `query` independently (each must appear somewhere in the content,
+   * in any order) rather than the query as one exact contiguous phrase — a real find: "Processus
+   * mise à jour Ekonum" found nothing under exact-phrase matching even though the real thread
+   * says "...notre process...nos mises à jour...Ekonum..." (words present, just not contiguous
+   * or in that order). Also checks the thread's title, not just message content, since recalling
+   * a conversation by its gist is closer to a title than to a verbatim excerpt — surfaced as one
+   * representative message per title-matching thread so a single busy thread can't flood the
+   * results. Still requires each word's exact spelling: "processus" won't match "process" (no
+   * stemming) — a real, separate limit from the phrase-matching one this fixes.
+   */
   searchTranscripts(query: string, limit = 50): Message[] {
-    const rows = this.raw
-      .prepare('SELECT * FROM messages WHERE content LIKE ? ORDER BY timestamp DESC LIMIT ?')
-      .all(`%${query}%`, limit) as any[];
-    return rows.map(rowToMessage);
+    const words = query.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return [];
+    const params = words.map((w) => `%${w}%`);
+
+    const contentClause = words.map(() => 'content LIKE ?').join(' AND ');
+    const contentRows = this.raw
+      .prepare(`SELECT * FROM messages WHERE ${contentClause} ORDER BY timestamp DESC LIMIT ?`)
+      .all(...params, limit) as any[];
+    const contentMessages = contentRows.map(rowToMessage);
+    if (contentMessages.length >= limit) return contentMessages;
+
+    const titleClause = words.map(() => 'title LIKE ?').join(' AND ');
+    const titleRows = this.raw
+      .prepare(`SELECT id FROM threads WHERE ${titleClause} ORDER BY updated_at DESC LIMIT ?`)
+      .all(...params, limit) as any[];
+    const seenThreadIds = new Set(contentMessages.map((m) => m.threadId));
+    const titleMessages: Message[] = [];
+    for (const { id: threadId } of titleRows as { id: string }[]) {
+      if (seenThreadIds.has(threadId) || contentMessages.length + titleMessages.length >= limit) continue;
+      seenThreadIds.add(threadId);
+      const messages = this.getMessagesForThread(threadId);
+      const representative = messages.find((m) => m.role === 'user') ?? messages[0];
+      if (representative) titleMessages.push(representative);
+    }
+    return [...contentMessages, ...titleMessages];
   }
 
   // --- memories & artifacts -------------------------------------------------

@@ -428,6 +428,72 @@ describe('Db thread links', () => {
   });
 });
 
+describe('Db.searchTranscripts', () => {
+  beforeEach(() => {
+    db.upsertProject(makeProject());
+    db.upsertThread({
+      id: 'thread-1',
+      projectId: 'proj-test',
+      title: 'Fil de test',
+      originEngine: 'claude-code',
+      engineIds: {},
+      messageCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'active',
+    });
+  });
+
+  it('matches every word regardless of order, not just the exact contiguous phrase — regression for a real find', () => {
+    // Real shape: the actual text says "...notre process...nos mises à jour...Ekonum...", scattered
+    // and non-contiguous — an exact-phrase search for "mise à jour Ekonum" used to find nothing.
+    db.insertMessage(
+      makeMessage({
+        id: 'm1',
+        hash: 'h1',
+        content: "Notre process n'est pas assez bon, on rate des choses. On a un souci sur les mises à jour Ekonum.",
+      }),
+    );
+    expect(db.searchTranscripts('mise à jour Ekonum').map((m) => m.id)).toEqual(['m1']);
+    expect(db.searchTranscripts('Ekonum mise').map((m) => m.id)).toEqual(['m1']); // word order doesn't matter
+  });
+
+  it('still requires every word to be present — not an OR match', () => {
+    db.insertMessage(makeMessage({ id: 'm1', hash: 'h1', content: 'Question sur Ekonum uniquement.' }));
+    expect(db.searchTranscripts('Ekonum mot-absent-du-tout')).toEqual([]);
+  });
+
+  it('falls back to the thread title when no message content matches, surfacing one representative message', () => {
+    db.upsertThread({
+      id: 'thread-2',
+      projectId: 'proj-test',
+      title: 'Processus de mise à jour Ekonum',
+      originEngine: 'codex',
+      engineIds: {},
+      messageCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'active',
+    });
+    db.insertMessage(makeMessage({ id: 'm1', hash: 'h1', threadId: 'thread-2', role: 'user', content: 'Bonjour' }));
+    db.insertMessage(makeMessage({ id: 'm2', hash: 'h2', threadId: 'thread-2', role: 'assistant', content: 'Salut' }));
+
+    const results = db.searchTranscripts('Processus Ekonum');
+    expect(results.map((m) => m.id)).toEqual(['m1']); // the first user message stands in for the thread
+  });
+
+  it('does not duplicate a thread already found via content match when its title also matches', () => {
+    db.insertMessage(makeMessage({ id: 'm1', hash: 'h1', content: 'Ekonum processus verbatim ici' }));
+    const results = db.searchTranscripts('Ekonum processus');
+    expect(results.map((m) => m.id)).toEqual(['m1']);
+  });
+
+  it('returns an empty array for an empty or whitespace-only query', () => {
+    expect(db.searchTranscripts('')).toEqual([]);
+    expect(db.searchTranscripts('   ')).toEqual([]);
+  });
+});
+
 describe('Db MCP call log', () => {
   it('records a call with its verbatim params and returns it newest-first', () => {
     db.logMcpCall('get_thread', { threadId: 't1' }, false, 'Fil : Test', '2026-01-01T00:00:00Z');
