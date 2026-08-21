@@ -346,6 +346,7 @@ export function ChatView({
 }) {
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [thread, setThread] = useState<Thread | null>(null);
+  const [idCopied, setIdCopied] = useState(false);
 
   useEffect(() => {
     setMessages(null);
@@ -353,6 +354,12 @@ export function ChatView({
     api.messages(threadId).then(setMessages);
     api.thread(threadId).then(setThread);
   }, [threadId]);
+
+  useEffect(() => {
+    if (!idCopied) return;
+    const timer = setTimeout(() => setIdCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [idCopied]);
 
   const items = useMemo(() => (messages ? groupMessages(messages) : []), [messages]);
 
@@ -389,9 +396,21 @@ export function ChatView({
               onDeleted();
             }}
           />
-          <button onClick={() => navigator.clipboard.writeText(threadId)} className={actionButtonClass}>
-            <Copy size={12} />
-            Copier l'id du fil
+          <button
+            onClick={async () => {
+              // Clipboard writes can fail silently (permission denied, insecure context) — only
+              // claim success once the browser actually confirms it, rather than assuming it worked.
+              try {
+                await navigator.clipboard.writeText(threadId);
+                setIdCopied(true);
+              } catch {
+                // no feedback shown — a false "copied" would be worse than none
+              }
+            }}
+            className={actionButtonClass}
+          >
+            {idCopied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+            {idCopied ? 'Copié' : "Copier l'id du fil"}
           </button>
         </div>
       </div>
