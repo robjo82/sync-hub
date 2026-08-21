@@ -163,6 +163,36 @@ function deriveTitle(firstUserContent: string | undefined, sessionId: string): s
 }
 
 /**
+ * Claude Code lets a session carry a real title distinct from the raw first prompt — an
+ * AI-suggested one (`ai-title` events) and, when the user explicitly renames the conversation in
+ * the Claude Code UI, a `custom-title` event that overrides it. Both are re-emitted repeatedly
+ * across the file (verified on real sessions — dozens of identical repeats), so only the last of
+ * each matters; custom (user-authored) wins over ai-suggested when both are present. These events
+ * used to be skipped purely as non-conversational, with sync-hub deriving its own title from the
+ * first ~80 chars of the raw first prompt instead — discarding a title the user may have
+ * deliberately set. Real find: "Processus mise à jour Ekonum" (set via custom-title) was never
+ * used; the derived title was a mangled prefix of an unrelated instruction paragraph, and search
+ * for the real title then found nothing.
+ */
+function extractRealTitle(lines: string[]): string | undefined {
+  let aiTitle: string | undefined;
+  let customTitle: string | undefined;
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    let event: any;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (event.type === 'ai-title' && typeof event.aiTitle === 'string' && event.aiTitle.trim()) aiTitle = event.aiTitle.trim();
+    else if (event.type === 'custom-title' && typeof event.customTitle === 'string' && event.customTitle.trim()) customTitle = event.customTitle.trim();
+  }
+  return customTitle ?? aiTitle;
+}
+
+/**
  * Full ingestion of one session file: resolves its project via the Claude-Code-native slug
  * (never guessed), upserts the thread, and inserts every message (hash-deduped, so re-running
  * this on an already-ingested file is a no-op).
@@ -248,7 +278,7 @@ export function ingestSessionFile(
   db.upsertThread({
     id: ref.sessionId,
     projectId,
-    title: existingThread?.title ?? deriveTitle(firstUserContent, ref.sessionId),
+    title: extractRealTitle(lines) ?? existingThread?.title ?? deriveTitle(firstUserContent, ref.sessionId),
     originEngine: 'claude-code',
     engineIds: { 'claude-code': ref.sessionId },
     sourceRef: ref.slug,

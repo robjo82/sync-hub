@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Db } from '../src/core/db.js';
@@ -160,6 +160,59 @@ describe('ingestSessionFile — end to end against a real-shaped fixture', () =>
     const secondPass = ingestSessionFile(db, registry, refs[0]);
     expect(secondPass).toBe(0);
     expect(db.getMessagesForThread('session-fixture-0001')).toHaveLength(4);
+  });
+
+  it('prefers the real custom-title over the auto-derived one, even though custom-title carries no conversational content — regression: a user-set title ("Processus mise à jour Ekonum") was discarded in favor of a mangled prefix of the first prompt', () => {
+    const slugDir = join(dir, 'claude-root', pathToClaudeSlug(PROJECT_PATH));
+    mkdirSync(slugDir, { recursive: true });
+    const lines = [
+      { type: 'user', uuid: 'u1', timestamp: '2026-01-01T00:00:00Z', message: { role: 'user', content: 'Un très long premier message qui ne dit rien du sujet réel de la conversation, juste du contexte en vrac.' } },
+      { type: 'ai-title', aiTitle: 'Titre suggéré par le modèle', sessionId: 'title-session' },
+      { type: 'custom-title', customTitle: 'Processus mise à jour Ekonum', sessionId: 'title-session' },
+    ];
+    writeFileSync(join(slugDir, 'title-session.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+
+    ingestSessionFile(db, registry, { filePath: join(slugDir, 'title-session.jsonl'), slug: pathToClaudeSlug(PROJECT_PATH), sessionId: 'title-session' });
+    expect(db.getThread('title-session')?.title).toBe('Processus mise à jour Ekonum');
+  });
+
+  it('falls back to the ai-suggested title when there is no custom-title', () => {
+    const slugDir = join(dir, 'claude-root', pathToClaudeSlug(PROJECT_PATH));
+    mkdirSync(slugDir, { recursive: true });
+    const lines = [
+      { type: 'user', uuid: 'u1', timestamp: '2026-01-01T00:00:00Z', message: { role: 'user', content: 'Bonjour' } },
+      { type: 'ai-title', aiTitle: 'Titre suggéré par le modèle', sessionId: 'ai-title-session' },
+    ];
+    writeFileSync(join(slugDir, 'ai-title-session.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+
+    ingestSessionFile(db, registry, {
+      filePath: join(slugDir, 'ai-title-session.jsonl'),
+      slug: pathToClaudeSlug(PROJECT_PATH),
+      sessionId: 'ai-title-session',
+    });
+    expect(db.getThread('ai-title-session')?.title).toBe('Titre suggéré par le modèle');
+  });
+
+  it('picks up a real title on a later rescan even though the thread was already ingested without one', () => {
+    const slugDir = join(dir, 'claude-root', pathToClaudeSlug(PROJECT_PATH));
+    mkdirSync(slugDir, { recursive: true });
+    const filePath = join(slugDir, 'renamed-session.jsonl');
+    const ref = { filePath, slug: pathToClaudeSlug(PROJECT_PATH), sessionId: 'renamed-session' };
+
+    writeFileSync(filePath, JSON.stringify({ type: 'user', uuid: 'u1', timestamp: '2026-01-01T00:00:00Z', message: { role: 'user', content: 'Bonjour' } }) + '\n');
+    ingestSessionFile(db, registry, ref);
+    expect(db.getThread('renamed-session')?.title).toBe('Bonjour');
+
+    // The user renames the conversation later — Claude Code appends a custom-title event.
+    writeFileSync(
+      filePath,
+      JSON.stringify({ type: 'user', uuid: 'u1', timestamp: '2026-01-01T00:00:00Z', message: { role: 'user', content: 'Bonjour' } }) +
+        '\n' +
+        JSON.stringify({ type: 'custom-title', customTitle: 'Nom choisi après coup', sessionId: 'renamed-session' }) +
+        '\n',
+    );
+    ingestSessionFile(db, registry, ref);
+    expect(db.getThread('renamed-session')?.title).toBe('Nom choisi après coup');
   });
 
   it('routes an unregistered project slug to the unassigned bucket, never guessing', () => {
