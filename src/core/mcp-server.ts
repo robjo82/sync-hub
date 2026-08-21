@@ -4,6 +4,7 @@ import type { Db } from './db.js';
 import type { ProjectRegistry } from './registry.js';
 import { archiveThread, deleteThread, type ArchiveRoots } from './archive.js';
 import { updatePointerFiles } from './pointer-files.js';
+import { tryIngestMissingThread, type IngestSingleRoots } from './ingest-single.js';
 import { UNASSIGNED_PROJECT_ID, type Message, type Project } from '../types.js';
 
 const ENGINE_LABEL: Record<string, string> = { 'claude-code': 'Claude Code', codex: 'Codex', antigravity: 'Antigravity' };
@@ -67,7 +68,12 @@ function logged<TInput>(db: Db, tool: string, handler: (input: TInput) => Promis
  * session start. Content returned here is never paraphrased; it's read straight from the
  * canonical store built by the adapters.
  */
-export function createMcpServer(db: Db, registry: ProjectRegistry, archiveRoots: ArchiveRoots): McpServer {
+export function createMcpServer(
+  db: Db,
+  registry: ProjectRegistry,
+  archiveRoots: ArchiveRoots,
+  ingestSingleRoots: IngestSingleRoots = {},
+): McpServer {
   const server = new McpServer({ name: 'sync-hub', version: '0.1.0' });
 
   server.registerTool(
@@ -129,22 +135,41 @@ export function createMcpServer(db: Db, registry: ProjectRegistry, archiveRoots:
         "Déclare explicitement que plusieurs fils (potentiellement dans des outils différents — Claude Code, Codex, un import " +
         "ChatGPT…) forment une seule continuation de conversation, plutôt que des fils indépendants. Jamais déduit " +
         "automatiquement — chaque id doit être fourni explicitement (visible via « Copier l'id du fil » dans le dashboard). " +
-        "Un fil tout juste créé n'existe dans sync-hub qu'une fois son premier message ingéré (quelques secondes) — attends " +
-        "ce moment avant de le lier. Relier un troisième fil à une paire déjà liée les regroupe tous les trois. Une fois liés, " +
-        "utilise get_thread_link_updates depuis n'importe quel fil du groupe pour récupérer, à la demande, uniquement ce qui " +
-        "s'est passé de nouveau ailleurs dans le groupe — jamais tout l'historique à chaque fois.",
+        "Si un id fourni (ex. le fil courant, tout juste créé) n'est pas encore connu, une ingestion ciblée de ce fil précis " +
+        "est tentée automatiquement avant d'échouer — inutile d'attendre exprès avant d'appeler cet outil. Relier un troisième " +
+        "fil à une paire déjà liée les regroupe tous les trois. Une fois liés, appelle get_thread_link_updates depuis " +
+        "n'importe quel fil du groupe — systématiquement en début de tour tant que le fil est actif — pour récupérer, à la " +
+        "demande, uniquement ce qui s'est passé de nouveau ailleurs dans le groupe, jamais tout l'historique à chaque fois.",
       inputSchema: {
         threadIds: z.array(z.string()).min(2).describe('Au moins deux ids de fils existants à lier ensemble'),
       },
     },
     logged(db, 'link_threads', async ({ threadIds }) => {
+      for (const id of threadIds) {
+        if (!db.getThread(id)) tryIngestMissingThread(db, registry, id, ingestSingleRoots);
+      }
       try {
         const linkId = db.linkThreads(threadIds);
         const link = db.getThreadLink(threadIds[0])!;
         const titles = link.threadIds.map((id) => db.getThread(id)?.title ?? id).join(' · ');
-        return { content: [{ type: 'text', text: `Lien "${linkId}" : ${link.threadIds.length} fils liés — ${titles}` }] };
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                `Lien "${linkId}" : ${link.threadIds.length} fils liés — ${titles}\n` +
+                'Pense à appeler get_thread_link_updates(threadId=<ton id>) en début de tour à partir de maintenant pour ' +
+                'connaître les nouveautés des autres fils de ce groupe, sans tout relire.',
+            },
+          ],
+        };
       } catch (err: any) {
-        return { content: [{ type: 'text', text: err.message }], isError: true };
+        const hint =
+          /unknown thread id/.test(err.message)
+            ? " Une ingestion ciblée de ce fil vient d'être tentée sans succès — s'il vient tout juste d'être créé, son " +
+              'premier message n\'est peut-être pas encore écrit sur disque : réessaie dans quelques secondes.'
+            : '';
+        return { content: [{ type: 'text', text: err.message + hint }], isError: true };
       }
     }),
   );

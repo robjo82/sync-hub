@@ -33,7 +33,10 @@ function buildBlock(summary: string): string {
     `${BEGIN_MARKER}\n` +
     `**Sync-hub** — ${summary} Interroge le serveur MCP \`sync-hub\` ` +
     '(`get_project_timeline`, `search_transcripts`) pour consulter le détail verbatim des échanges dans les autres outils ' +
-    "avant de repartir de zéro sur un sujet déjà traité ailleurs.\n" +
+    "avant de repartir de zéro sur un sujet déjà traité ailleurs. Si ce fil est la suite d'un travail commencé dans un " +
+    'autre outil, lie-le avec `link_threads` (une fois), puis appelle `get_thread_link_updates` en début de tour tant que ' +
+    "le fil est actif — ça renvoie uniquement ce qui s'est passé de nouveau ailleurs dans le groupe, jamais tout " +
+    "l'historique à chaque fois.\n" +
     `${END_MARKER}`
   );
 }

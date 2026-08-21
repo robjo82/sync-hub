@@ -413,6 +413,19 @@ describe('Db thread links', () => {
   it('getThreadLinkDelta returns an empty array for an unlinked thread', () => {
     expect(db.getThreadLinkDelta('thread-solo')).toEqual([]);
   });
+
+  it('when the calling thread itself spoke last in the group, the next check returns nothing — its own new activity is never mistaken for "news from elsewhere"', () => {
+    db.linkThreads(['thread-a', 'thread-b']);
+    db.insertMessage(makeMessage({ id: 'm-b1', threadId: 'thread-b', hash: 'h-b1', timestamp: '2026-01-01T00:00:00Z', content: 'depuis B' }));
+    expect(db.getThreadLinkDelta('thread-a').map((m) => m.content)).toEqual(['depuis B']); // consumes it, watermark advances
+
+    // thread-a keeps talking on its own — several new messages, all on thread-a, none on thread-b.
+    db.insertMessage(makeMessage({ id: 'm-a1', threadId: 'thread-a', hash: 'h-a1', timestamp: '2026-01-02T00:00:00Z', content: 'A continue' }));
+    db.insertMessage(makeMessage({ id: 'm-a2', threadId: 'thread-a', hash: 'h-a2', timestamp: '2026-01-03T00:00:00Z', content: 'A encore' }));
+
+    // thread-a is now the last to have spoken in the group as a whole — nothing new from anyone else.
+    expect(db.getThreadLinkDelta('thread-a')).toEqual([]);
+  });
 });
 
 describe('Db MCP call log', () => {

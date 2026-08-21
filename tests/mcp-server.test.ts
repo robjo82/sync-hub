@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -71,7 +71,14 @@ beforeEach(async () => {
   });
 
   registry = new ProjectRegistry(db);
-  const server = createMcpServer(db, registry, { syncHubArchiveRoot: join(dir, 'archived-sessions') });
+  // Empty-but-real temp roots — keeps link_threads' targeted-ingestion attempt hermetic (it would
+  // otherwise scan the real ~/.claude, ~/.codex, ~/.gemini on whatever machine runs this suite).
+  const server = createMcpServer(
+    db,
+    registry,
+    { syncHubArchiveRoot: join(dir, 'archived-sessions') },
+    { claudeCodeRoot: join(dir, 'claude-root'), codexRoots: [join(dir, 'codex-root')], antigravityRoot: join(dir, 'antigravity-root') },
+  );
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   client = new Client({ name: 'test-client', version: '0.0.0' });
   await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
@@ -179,6 +186,29 @@ describe('sync-hub MCP server', () => {
     it('reports an error for an unknown thread id — never guesses a match', async () => {
       const result = await client.callTool({ name: 'link_threads', arguments: { threadIds: ['t1', 'does-not-exist'] } });
       expect(result.isError).toBe(true);
+      // The targeted-ingestion retry was attempted and still found nothing — the error says so
+      // rather than looking identical to a plain "you typed the id wrong".
+      expect((result.content as any[])[0].text).toContain('ingestion ciblée');
+    });
+
+    it('self-heals a real race: an id not yet in the db but already on disk (own thread just created) gets ingested on the fly and the link succeeds', async () => {
+      const slugDir = join(dir, 'claude-root', '-Users-robin-Projets-demo');
+      mkdirSync(slugDir, { recursive: true });
+      writeFileSync(
+        join(slugDir, 'race-session.jsonl'),
+        JSON.stringify({ type: 'user', uuid: 'u1', timestamp: '2026-01-01T00:00:00Z', message: { role: 'user', content: 'Bonjour' } }) + '\n',
+      );
+      expect(db.getThread('race-session')).toBeUndefined();
+
+      const result = await client.callTool({ name: 'link_threads', arguments: { threadIds: ['t1', 'race-session'] } });
+      expect(result.isError).toBeFalsy();
+      expect((result.content as any[])[0].text).toContain('2 fils liés');
+      expect(db.getThread('race-session')).toBeDefined();
+    });
+
+    it('a successful link reminds the caller to poll get_thread_link_updates going forward', async () => {
+      const result = await client.callTool({ name: 'link_threads', arguments: { threadIds: ['t1', 't2'] } });
+      expect((result.content as any[])[0].text).toContain('get_thread_link_updates');
     });
 
     it('get_thread_link_updates says so for an unlinked thread, rather than erroring or guessing', async () => {
