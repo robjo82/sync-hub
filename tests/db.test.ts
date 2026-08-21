@@ -458,6 +458,37 @@ describe('Db.searchTranscripts', () => {
     expect(db.searchTranscripts('Ekonum mise').map((m) => m.id)).toEqual(['m1']); // word order doesn't matter
   });
 
+  it('a title match still surfaces even when common-word content matches alone would already fill the result limit — regression for a real find: searching the exact real title "Processus mise à jour Ekonum" returned 50 coincidental content hits (all sharing only the near-universal "à") and never reached the title fallback', () => {
+    db.upsertThread({
+      id: 'thread-title-match',
+      projectId: 'proj-test',
+      title: 'Processus mise à jour Ekonum',
+      originEngine: 'claude-code',
+      engineIds: {},
+      messageCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'active',
+    });
+    db.insertMessage(
+      makeMessage({ id: 'm-title-thread', hash: 'h-title-thread', threadId: 'thread-title-match', role: 'user', content: 'Bonjour' }),
+    );
+    // Flood the store with a low limit's worth of unrelated messages that each merely contain "à"
+    // plus the other query words scattered with no real relation to the target conversation.
+    for (let i = 0; i < 5; i++) {
+      db.insertMessage(
+        makeMessage({
+          id: `noise-${i}`,
+          hash: `noise-${i}`,
+          content: `Un message sans rapport, mais qui mentionne quand même à un endroit un mot comme processus, mise, jour, ou Ekonum : bruit numéro ${i}.`,
+        }),
+      );
+    }
+
+    const results = db.searchTranscripts('Processus mise à jour Ekonum', 5);
+    expect(results.map((m) => m.id)).toContain('m-title-thread');
+  });
+
   it('still requires every word to be present — not an OR match', () => {
     db.insertMessage(makeMessage({ id: 'm1', hash: 'h1', content: 'Question sur Ekonum uniquement.' }));
     expect(db.searchTranscripts('Ekonum mot-absent-du-tout')).toEqual([]);

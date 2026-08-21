@@ -671,42 +671,74 @@ export class Db {
   }
 
   /**
-   * Matches every word of `query` independently (each must appear somewhere in the content,
-   * in any order) rather than the query as one exact contiguous phrase — a real find: "Processus
-   * mise à jour Ekonum" found nothing under exact-phrase matching even though the real thread
-   * says "...notre process...nos mises à jour...Ekonum..." (words present, just not contiguous
-   * or in that order). Also checks the thread's title, not just message content, since recalling
-   * a conversation by its gist is closer to a title than to a verbatim excerpt — surfaced as one
-   * representative message per title-matching thread so a single busy thread can't flood the
-   * results. Still requires each word's exact spelling: "processus" won't match "process" (no
+   * Common short French function words — excluded from the AND clause because their near-zero
+   * selectivity is actively harmful, not just unhelpful: a query containing "à" alone can make
+   * the content match fill its entire `limit` with messages that just happen to contain "à" plus
+   * every other word somewhere, unrelated to what was actually meant — which then starved out the
+   * title fallback below entirely (a real find: searching the exact real title "Processus mise à
+   * jour Ekonum" returned 50 coincidental content hits and never got to check titles, even though
+   * the target thread's title matched exactly). Filtered independently for content and title
+   * matching; if filtering empties the word list (e.g. the query was only stopwords), the
+   * original words are used as-is rather than matching everything.
+   */
+  private static STOPWORDS = new Set([
+    'à', 'de', 'du', 'des', 'le', 'la', 'les', 'un', 'une', 'et', 'ou', 'en', 'au', 'aux', 'ce', 'se', 'sa', 'son',
+    'ses', 'que', 'qui', 'sur', 'pour', 'dans', 'par', 'est', 'sont', 'on', 'tu', 'il', 'elle', 'ne', 'pas', 'ça',
+    'ces', 'cet', 'cette', 'avec', 'sans',
+  ]);
+
+  private static significantWords(query: string): string[] {
+    const words = query.trim().split(/\s+/).filter(Boolean);
+    const significant = words.filter((w) => w.length >= 2 && !Db.STOPWORDS.has(w.toLowerCase()));
+    return significant.length > 0 ? significant : words;
+  }
+
+  /**
+   * Matches every (significant) word of `query` independently — each must appear somewhere in the
+   * content, in any order — rather than the query as one exact contiguous phrase: a real find,
+   * "Processus mise à jour Ekonum" found nothing under exact-phrase matching even though the real
+   * thread says "...notre process...nos mises à jour...Ekonum..." (words present, just not
+   * contiguous or in that order).
+   *
+   * Title matches are queried FIRST and unconditionally, not as a fallback gated behind "content
+   * matches are scarce" — an earlier version gated it that way and that gating was itself a real
+   * bug: across a 140k-message real corpus, "Processus mise à jour Ekonum" alone coincidentally
+   * matched 186 unrelated messages on content (each merely containing all 5 words somewhere,
+   * scattered, unrelated to each other) — enough to fill the result limit on its own and starve
+   * out the title fallback entirely, even though a thread's title matched the query exactly. A
+   * title match is a stronger, more deliberate relevance signal than a coincidental content hit
+   * from a large corpus, so it's fetched first and content only fills remaining slots — surfaced
+   * as one representative message per title-matching thread so a single busy thread can't flood
+   * the results. Still requires each word's exact spelling: "processus" won't match "process" (no
    * stemming) — a real, separate limit from the phrase-matching one this fixes.
    */
   searchTranscripts(query: string, limit = 50): Message[] {
-    const words = query.trim().split(/\s+/).filter(Boolean);
+    const words = Db.significantWords(query);
     if (words.length === 0) return [];
     const params = words.map((w) => `%${w}%`);
-
-    const contentClause = words.map(() => 'content LIKE ?').join(' AND ');
-    const contentRows = this.raw
-      .prepare(`SELECT * FROM messages WHERE ${contentClause} ORDER BY timestamp DESC LIMIT ?`)
-      .all(...params, limit) as any[];
-    const contentMessages = contentRows.map(rowToMessage);
-    if (contentMessages.length >= limit) return contentMessages;
 
     const titleClause = words.map(() => 'title LIKE ?').join(' AND ');
     const titleRows = this.raw
       .prepare(`SELECT id FROM threads WHERE ${titleClause} ORDER BY updated_at DESC LIMIT ?`)
-      .all(...params, limit) as any[];
-    const seenThreadIds = new Set(contentMessages.map((m) => m.threadId));
+      .all(...params, limit) as { id: string }[];
+    const seenThreadIds = new Set<string>();
     const titleMessages: Message[] = [];
-    for (const { id: threadId } of titleRows as { id: string }[]) {
-      if (seenThreadIds.has(threadId) || contentMessages.length + titleMessages.length >= limit) continue;
+    for (const { id: threadId } of titleRows) {
+      if (seenThreadIds.has(threadId) || titleMessages.length >= limit) continue;
       seenThreadIds.add(threadId);
       const messages = this.getMessagesForThread(threadId);
       const representative = messages.find((m) => m.role === 'user') ?? messages[0];
       if (representative) titleMessages.push(representative);
     }
-    return [...contentMessages, ...titleMessages];
+    if (titleMessages.length >= limit) return titleMessages;
+
+    const contentClause = words.map(() => 'content LIKE ?').join(' AND ');
+    const contentRows = this.raw
+      .prepare(`SELECT * FROM messages WHERE ${contentClause} ORDER BY timestamp DESC LIMIT ?`)
+      .all(...params, limit) as any[];
+    const contentMessages = contentRows.map(rowToMessage).filter((m) => !seenThreadIds.has(m.threadId));
+
+    return [...titleMessages, ...contentMessages].slice(0, limit);
   }
 
   // --- memories & artifacts -------------------------------------------------
