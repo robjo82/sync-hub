@@ -132,6 +132,15 @@ describe('sync-hub MCP server', () => {
     expect((result.content as any[])[0].text).toContain('via nom');
   });
 
+  it('resolves a project by its real canonical path — a connected tool typically knows its own cwd, not the sync-hub id, and a real call failed on exactly this before the fix', async () => {
+    db.insertMessage(message({ id: 'm1', hash: 'h1', sequence: 0, content: 'via chemin' }));
+    const result = await client.callTool({ name: 'get_project_timeline', arguments: { project: '/Users/robin/Projets/demo' } });
+    expect((result.content as any[])[0].text).toContain('via chemin');
+    // A trailing slash shouldn't matter either.
+    const withSlash = await client.callTool({ name: 'get_project_timeline', arguments: { project: '/Users/robin/Projets/demo/' } });
+    expect((withSlash.content as any[])[0].text).toContain('via chemin');
+  });
+
   it('reports an error with the list of known projects when the project is unknown', async () => {
     const result = await client.callTool({ name: 'get_project_timeline', arguments: { project: 'ne-existe-pas' } });
     expect(result.isError).toBe(true);

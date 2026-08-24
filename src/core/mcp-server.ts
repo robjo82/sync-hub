@@ -9,11 +9,25 @@ import { UNASSIGNED_PROJECT_ID, type Message, type Project } from '../types.js';
 
 const ENGINE_LABEL: Record<string, string> = { 'claude-code': 'Claude Code', codex: 'Codex', antigravity: 'Antigravity' };
 
+/** Strips a trailing slash so "/Users/robin/Projets/odoo/" and "/Users/robin/Projets/odoo" compare equal. */
+function normalizePath(path: string): string {
+  return path.trim().replace(/\/+$/, '');
+}
+
 function resolveProject(db: Db, projectRef: string): Project | undefined {
   const byId = db.getProject(projectRef);
   if (byId) return byId;
   const needle = projectRef.trim().toLowerCase();
-  return db.getProjects().find((p) => p.name.toLowerCase() === needle);
+  const byName = db.getProjects().find((p) => p.name.toLowerCase() === needle);
+  if (byName) return byName;
+  // A connected tool typically knows its own cwd, not sync-hub's id/name for it — real find:
+  // get_project_timeline called with project: "/Users/robin/Projets/odoo" failed even though
+  // that's exactly proj-odoo's canonical path (and every project's cwd is shown in list_projects,
+  // so a caller reasonably tries the path it already knows before or instead of the sync-hub id).
+  const normalizedRef = normalizePath(projectRef);
+  return db
+    .getProjects()
+    .find((p) => normalizePath(p.canonicalPath) === normalizedRef || p.aliases.paths.some((path) => normalizePath(path) === normalizedRef));
 }
 
 function formatMessage(m: Message): string {
