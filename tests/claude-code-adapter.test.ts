@@ -215,6 +215,50 @@ describe('ingestSessionFile — end to end against a real-shaped fixture', () =>
     expect(db.getThread('renamed-session')?.title).toBe('Nom choisi après coup');
   });
 
+  it('resolves a session whose slug is Codex\'s own ChatGPT-Project cache folder to the matching ChatGPT Project, auto-creating it — regression for a real find (Claude Code launched inside ~/.codex/.chatgpt-projects/<id> landed in "unassigned")', () => {
+    const slugDir = join(dir, 'claude-root', '-Users-robin--codex--chatgpt-projects-g-p-realfindtest0001');
+    mkdirSync(slugDir, { recursive: true });
+    writeFileSync(
+      join(slugDir, 'cache-slug-session.jsonl'),
+      JSON.stringify({ type: 'user', uuid: 'u1', timestamp: '2026-01-01T00:00:00Z', message: { role: 'user', content: 'Fait le point sur ce projet.' } }) + '\n',
+    );
+
+    ingestSessionFile(db, registry, {
+      filePath: join(slugDir, 'cache-slug-session.jsonl'),
+      slug: '-Users-robin--codex--chatgpt-projects-g-p-realfindtest0001',
+      sessionId: 'cache-slug-session',
+    });
+
+    const thread = db.getThread('cache-slug-session');
+    expect(thread?.projectId).toBe('chatgpt-project-g-p-realfindtest0001');
+    expect(db.getProject('chatgpt-project-g-p-realfindtest0001')?.name).toBe('g-p-realfindtest0001'); // no cached name available — falls back to the raw id, not a guess
+  });
+
+  it('uses the real cached ChatGPT Project name for a Claude Code session in the cache slug, same lookup Codex uses', () => {
+    const projectsCacheRoot = join(dir, 'chatgpt-projects-cache');
+    mkdirSync(join(projectsCacheRoot, 'g-p-namedtest0002'), { recursive: true });
+    writeFileSync(
+      join(projectsCacheRoot, 'g-p-namedtest0002', 'AGENTS.md'),
+      '# ChatGPT project context\n\nThis directory is a local mirror of the ChatGPT project “C00125 - Acritec”.\n',
+    );
+    const slugDir = join(dir, 'claude-root', '-Users-robin--codex--chatgpt-projects-g-p-namedtest0002');
+    mkdirSync(slugDir, { recursive: true });
+    writeFileSync(
+      join(slugDir, 'named-cache-slug-session.jsonl'),
+      JSON.stringify({ type: 'user', uuid: 'u1', timestamp: '2026-01-01T00:00:00Z', message: { role: 'user', content: 'Fait le point sur ce projet.' } }) + '\n',
+    );
+
+    ingestSessionFile(
+      db,
+      registry,
+      { filePath: join(slugDir, 'named-cache-slug-session.jsonl'), slug: '-Users-robin--codex--chatgpt-projects-g-p-namedtest0002', sessionId: 'named-cache-slug-session' },
+      { chatGptProjectsCacheRoot: projectsCacheRoot },
+    );
+
+    expect(db.getThread('named-cache-slug-session')?.projectId).toBe('chatgpt-project-g-p-namedtest0002');
+    expect(db.getProject('chatgpt-project-g-p-namedtest0002')?.name).toBe('C00125 - Acritec');
+  });
+
   it('routes an unregistered project slug to the unassigned bucket, never guessing', () => {
     const refs = discoverSessionFiles(FIXTURE_ROOT);
     db.raw.prepare('DELETE FROM projects WHERE id = ?').run('proj-demo');

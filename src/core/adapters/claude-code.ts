@@ -5,9 +5,30 @@ import { homedir } from 'node:os';
 import type { Db } from '../db.js';
 import type { ProjectRegistry } from '../registry.js';
 import { computeMessageHash } from '../hash.js';
+import { ensureChatGptProject, loadChatGptProjectNames } from './chatgpt-export.js';
 import type { Message, MessageRole, Thread, ToolCall, ToolResult, TokenUsage } from '../../types.js';
 
 export const CLAUDE_CODE_STORAGE_ROOT = join(homedir(), '.claude', 'projects');
+
+// Claude Code can be launched directly inside Codex's own ChatGPT-Project cache mirror
+// (~/.codex/.chatgpt-projects/g-p-<id>/) — real find: a session there landed in "unassigned"
+// because Claude Code's own slug encoding turns BOTH "/" and a leading "." into "-" (so
+// ".codex/.chatgpt-projects/" becomes "--codex--chatgpt-projects-", not the single-dash form
+// sync-hub's own pathToClaudeSlug produces for a path with no dots in it — the two only diverge
+// when a path segment starts with ".", which no real registered project path does, so this went
+// unnoticed elsewhere). Detected directly off the slug rather than fixing pathToClaudeSlug's
+// general transform, since only this one dotted-path case is confirmed to actually occur.
+const CHATGPT_PROJECT_CACHE_SLUG = /--codex--chatgpt-projects-(g-p-[a-zA-Z0-9]+)(?:-|$)/;
+
+function resolveClaudeSlug(db: Db, registry: ProjectRegistry, slug: string, chatGptProjectsCacheRoot?: string): string {
+  const cacheMatch = slug.match(CHATGPT_PROJECT_CACHE_SLUG);
+  if (cacheMatch) {
+    const templateId = cacheMatch[1];
+    const name = loadChatGptProjectNames(chatGptProjectsCacheRoot).get(templateId) ?? templateId;
+    return ensureChatGptProject(db, templateId, name, new Date().toISOString());
+  }
+  return registry.resolveByClaudeSlug(slug);
+}
 
 export interface SessionFileRef {
   filePath: string;
@@ -201,7 +222,7 @@ export function ingestSessionFile(
   db: Db,
   registry: ProjectRegistry,
   ref: SessionFileRef,
-  opts: { fromOffset?: number; projectIdOverride?: string } = {},
+  opts: { fromOffset?: number; projectIdOverride?: string; chatGptProjectsCacheRoot?: string } = {},
 ): number {
   let raw: string;
   try {
@@ -222,7 +243,7 @@ export function ingestSessionFile(
   const lines = body.split('\n');
   // Cowork sessions pass an override here: their slug is derived from a VM-sandboxed cwd and is
   // meaningless for project resolution — the real signal is the user-selected folder, if any.
-  const projectId = opts.projectIdOverride ?? registry.resolveByClaudeSlug(ref.slug);
+  const projectId = opts.projectIdOverride ?? resolveClaudeSlug(db, registry, ref.slug, opts.chatGptProjectsCacheRoot);
 
   const existingThread = db.getThread(ref.sessionId);
   let sequence = existingThread ? db.getMessagesForThread(ref.sessionId).length : 0;
@@ -303,10 +324,15 @@ export function ingestSessionFile(
   return inserted;
 }
 
-export function ingestAll(db: Db, registry: ProjectRegistry, root: string = CLAUDE_CODE_STORAGE_ROOT): number {
+export function ingestAll(
+  db: Db,
+  registry: ProjectRegistry,
+  root: string = CLAUDE_CODE_STORAGE_ROOT,
+  chatGptProjectsCacheRoot?: string,
+): number {
   let total = 0;
   for (const ref of discoverSessionFiles(root)) {
-    total += ingestSessionFile(db, registry, ref);
+    total += ingestSessionFile(db, registry, ref, { chatGptProjectsCacheRoot });
   }
   return total;
 }
