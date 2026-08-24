@@ -556,6 +556,92 @@ describe('Db.searchTranscripts', () => {
     expect(db.searchTranscripts('')).toEqual([]);
     expect(db.searchTranscripts('   ')).toEqual([]);
   });
+
+  it('pasting a thread\'s exact title finds it, even among many other threads whose titles merely share some of the same words', () => {
+    db.upsertThread({
+      id: 'thread-exact',
+      projectId: 'proj-test',
+      title: 'Migration Odoo v19 pour le client Sannitec',
+      originEngine: 'codex',
+      engineIds: {},
+      messageCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'active',
+    });
+    db.insertMessage(makeMessage({ id: 'm-exact', hash: 'h-exact', threadId: 'thread-exact', role: 'user', content: 'Bonjour' }));
+
+    // Decoys sharing individual words with the title above, but never the exact phrase.
+    const decoyTitles = [
+      'Migration Odoo v18 chez Acritec',
+      'Client Sannitec — facturation en retard',
+      'Odoo v19 : notes de version',
+      'Migration base de données pour un autre client',
+    ];
+    decoyTitles.forEach((title, i) => {
+      db.upsertThread({
+        id: `thread-decoy-${i}`,
+        projectId: 'proj-test',
+        title,
+        originEngine: 'codex',
+        engineIds: {},
+        messageCount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: 'active',
+      });
+      db.insertMessage(makeMessage({ id: `m-decoy-${i}`, hash: `h-decoy-${i}`, threadId: `thread-decoy-${i}`, role: 'user', content: 'Bonjour' }));
+    });
+
+    const results = db.searchTranscripts('Migration Odoo v19 pour le client Sannitec');
+    expect(results[0]?.threadId).toBe('thread-exact'); // the exact-phrase match ranks first
+  });
+
+  it('a unique sentence is not buried among many messages that merely share its individual words', () => {
+    db.insertMessage(
+      makeMessage({
+        id: 'm-unique',
+        hash: 'h-unique',
+        content: "La clé API Ekonum pour la base Sannitec a été régénérée le 18 août et rangée dans le coffre-fort partagé.",
+      }),
+    );
+    // 20 unrelated messages, each sharing a couple of the same words in a different context.
+    for (let i = 0; i < 20; i++) {
+      db.insertMessage(
+        makeMessage({
+          id: `m-noise-${i}`,
+          hash: `h-noise-${i}`,
+          timestamp: `2026-01-01T00:00:${String(i).padStart(2, '0')}Z`,
+          content: `Message ${i} : la clé du problème n'est pas claire, il faudra une base de données propre et un coffre à outils Ekonum.`,
+        }),
+      );
+    }
+
+    const results = db.searchTranscripts("La clé API Ekonum pour la base Sannitec a été régénérée le 18 août et rangée dans le coffre-fort partagé.");
+    expect(results[0]?.id).toBe('m-unique'); // the exact sentence ranks first, not lost among the 20 near-misses
+  });
+
+  it('folds accents both at index time and query time — "cafe" finds "café" and vice versa', () => {
+    db.insertMessage(makeMessage({ id: 'm1', hash: 'h1', content: 'On se retrouve au café du coin.' }));
+    expect(db.searchTranscripts('cafe').map((m) => m.id)).toEqual(['m1']);
+
+    db.insertMessage(makeMessage({ id: 'm2', hash: 'h2', content: 'Sans accent: cafe du coin.' }));
+    expect(db.searchTranscripts('café').map((m) => m.id).sort()).toEqual(['m1', 'm2']);
+  });
+
+  it('deleteThread removes the thread from search results too — the FTS5 index is a standalone table the thread/message foreign-key cascade never reaches', () => {
+    db.insertMessage(makeMessage({ id: 'm1', hash: 'h1', content: 'Contenu unique à supprimer bientôt.' }));
+    expect(db.searchTranscripts('unique à supprimer')).toHaveLength(1);
+    db.deleteThread('thread-1');
+    expect(db.searchTranscripts('unique à supprimer')).toEqual([]);
+  });
+
+  it('deleteProject removes every one of its threads from search results too', () => {
+    db.insertMessage(makeMessage({ id: 'm1', hash: 'h1', content: 'Contenu unique lié au projet supprimé.' }));
+    expect(db.searchTranscripts('unique lié au projet supprimé')).toHaveLength(1);
+    db.deleteProject('proj-test');
+    expect(db.searchTranscripts('unique lié au projet supprimé')).toEqual([]);
+  });
 });
 
 describe('Db MCP call log', () => {
@@ -630,6 +716,45 @@ describe('Db schema migration', () => {
         status: 'active',
       }),
     ).not.toThrow();
+
+    migrated.close();
+    rmSync(migDir, { recursive: true, force: true });
+  });
+
+  it('backfills messages_fts/threads_fts for a database that predates the FTS5 search index, so pre-existing content is searchable without a full re-ingest', () => {
+    const migDir = mkdtempSync(join(tmpdir(), 'sync-hub-fts-backfill-'));
+    const filePath = join(migDir, 'hub.sqlite');
+
+    const legacy = new BetterSqlite3(filePath);
+    legacy.exec(`
+      CREATE TABLE projects (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, canonical_path TEXT NOT NULL UNIQUE,
+        aliases TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, last_active_at TEXT NOT NULL
+      );
+      CREATE TABLE threads (
+        id TEXT PRIMARY KEY, project_id TEXT NOT NULL, title TEXT NOT NULL, origin_engine TEXT NOT NULL,
+        engine_ids TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active'
+      );
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, project_id TEXT NOT NULL, source_engine TEXT NOT NULL,
+        role TEXT NOT NULL, content TEXT NOT NULL, thought TEXT, tool_calls TEXT, tool_results TEXT, attachments TEXT,
+        timestamp TEXT NOT NULL, sequence INTEGER NOT NULL, hash TEXT NOT NULL UNIQUE, metadata TEXT
+      );
+    `);
+    legacy.prepare('INSERT INTO projects (id, name, canonical_path, created_at, last_active_at) VALUES (?, ?, ?, ?, ?)').run(
+      'proj-legacy', 'Legacy', '/tmp/legacy-fts', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z',
+    );
+    legacy.prepare(
+      'INSERT INTO threads (id, project_id, title, origin_engine, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run('t-legacy', 'proj-legacy', 'Fil déjà existant avant la recherche FTS5', 'claude-code', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+    legacy.prepare(
+      'INSERT INTO messages (id, thread_id, project_id, source_engine, role, content, timestamp, sequence, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    ).run('m-legacy', 't-legacy', 'proj-legacy', 'claude-code', 'user', 'Contenu ingéré avant que messages_fts existe.', '2026-01-01T00:00:00Z', 0, 'hash-legacy');
+    legacy.close();
+
+    const migrated = new Db(filePath);
+    expect(migrated.searchTranscripts('avant que messages_fts existe').map((m) => m.id)).toEqual(['m-legacy']);
+    expect(migrated.searchTranscripts('Fil déjà existant avant la recherche FTS5').length).toBeGreaterThan(0);
 
     migrated.close();
     rmSync(migDir, { recursive: true, force: true });

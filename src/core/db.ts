@@ -134,6 +134,24 @@ CREATE TABLE IF NOT EXISTS categories (
   name TEXT PRIMARY KEY,
   created_at TEXT NOT NULL
 );
+
+-- Full-text indexes backing searchTranscripts — standalone (not "external content") FTS5 tables,
+-- kept in sync manually at each write site rather than via SQLite triggers, matching how every
+-- other write in this file already works. remove_diacritics 2 folds accents at index AND query
+-- time ("a" matches "à"), which plain LIKE never did — real find: a query for the literal typed
+-- title of a thread still failed to find it because LIKE requires byte-exact substrings, and FTS5
+-- phrase queries ("...") give an exact-phrase match real priority over scattered-word coincidences,
+-- via bm25() relevance ranking instead of ordering by recency alone.
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+  content,
+  message_id UNINDEXED,
+  tokenize = 'unicode61 remove_diacritics 2'
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS threads_fts USING fts5(
+  title,
+  thread_id UNINDEXED,
+  tokenize = 'unicode61 remove_diacritics 2'
+);
 `;
 
 /**
@@ -183,6 +201,24 @@ export class Db {
     // The minimum set asked for — seeded once so they always show up in the picker, even before
     // any project has been sorted into one yet. createCategory is idempotent (INSERT OR IGNORE).
     for (const name of DEFAULT_CATEGORIES) this.createCategory(name);
+    this.backfillFts();
+  }
+
+  /**
+   * Populates messages_fts/threads_fts for any row that predates the FTS5 tables (a brand-new
+   * database has none of either, and this fills the whole corpus once) — safe to call on every
+   * startup since the NOT IN subquery is a no-op once caught up. insertMessage/upsertThread keep
+   * both indexes current incrementally from then on; this only ever catches a one-time gap.
+   */
+  private backfillFts(): void {
+    this.raw.exec(`
+      INSERT INTO messages_fts (content, message_id)
+      SELECT content, id FROM messages WHERE id NOT IN (SELECT message_id FROM messages_fts);
+    `);
+    this.raw.exec(`
+      INSERT INTO threads_fts (title, thread_id)
+      SELECT title, id FROM threads WHERE id NOT IN (SELECT thread_id FROM threads_fts);
+    `);
   }
 
   close(): void {
@@ -314,6 +350,15 @@ export class Db {
    */
   deleteProject(id: string): void {
     const tx = this.raw.transaction(() => {
+      // Same standalone-FTS5-table gap as deleteThread — the cascade from projects through
+      // threads to messages never reaches messages_fts/threads_fts on its own.
+      const messageIds = this.raw.prepare('SELECT id FROM messages WHERE project_id = ?').all(id) as { id: string }[];
+      const deleteFromMessagesFts = this.raw.prepare('DELETE FROM messages_fts WHERE message_id = ?');
+      for (const { id: messageId } of messageIds) deleteFromMessagesFts.run(messageId);
+      const threadIds = this.raw.prepare('SELECT id FROM threads WHERE project_id = ?').all(id) as { id: string }[];
+      const deleteFromThreadsFts = this.raw.prepare('DELETE FROM threads_fts WHERE thread_id = ?');
+      for (const { id: threadId } of threadIds) deleteFromThreadsFts.run(threadId);
+
       this.raw.prepare('DELETE FROM memories WHERE project_id = ?').run(id);
       this.raw.prepare('DELETE FROM artifacts WHERE project_id = ?').run(id);
       this.raw.prepare('DELETE FROM projects WHERE id = ?').run(id);
@@ -403,6 +448,8 @@ export class Db {
         updatedAt: thread.updatedAt,
         status: thread.status,
       });
+    this.raw.prepare('DELETE FROM threads_fts WHERE thread_id = ?').run(thread.id);
+    this.raw.prepare('INSERT INTO threads_fts (title, thread_id) VALUES (?, ?)').run(thread.title, thread.id);
   }
 
   setThreadStatus(id: string, status: 'active' | 'archived'): void {
@@ -413,6 +460,13 @@ export class Db {
    * the real source file, which archive.deleteThread moves aside first, the same safe way
    * archiveThread does. Purely a sync-hub-side purge, e.g. for accidental duplicate imports. */
   deleteThread(id: string): void {
+    // messages_fts/threads_fts are standalone FTS5 tables — the messages.thread_id FK's ON DELETE
+    // CASCADE cleans up `messages` itself but has no way to reach a separate virtual table, so
+    // these would otherwise dangle forever and keep surfacing deleted content in search.
+    const messageIds = this.raw.prepare('SELECT id FROM messages WHERE thread_id = ?').all(id) as { id: string }[];
+    const deleteFromFts = this.raw.prepare('DELETE FROM messages_fts WHERE message_id = ?');
+    for (const { id: messageId } of messageIds) deleteFromFts.run(messageId);
+    this.raw.prepare('DELETE FROM threads_fts WHERE thread_id = ?').run(id);
     this.raw.prepare('DELETE FROM threads WHERE id = ?').run(id);
   }
 
@@ -580,6 +634,7 @@ export class Db {
           model: message.model ?? null,
           usage: message.usage ? JSON.stringify(message.usage) : null,
         });
+      this.syncMessageFts(message.id, message.content);
       return true;
     } catch (err: any) {
       if (typeof err?.message === 'string' && err.message.includes('UNIQUE constraint failed: messages.hash')) {
@@ -629,10 +684,17 @@ export class Db {
             model: message.model ?? null,
             usage: message.usage ? JSON.stringify(message.usage) : null,
           });
+        this.syncMessageFts(message.id, message.content);
         return true;
       }
       throw err;
     }
+  }
+
+  /** Standalone (non-"external content") FTS5 index, so kept in sync manually here rather than via triggers — delete-then-insert is simplest and correct for both a fresh row and an update-in-place. */
+  private syncMessageFts(id: string, content: string): void {
+    this.raw.prepare('DELETE FROM messages_fts WHERE message_id = ?').run(id);
+    this.raw.prepare('INSERT INTO messages_fts (content, message_id) VALUES (?, ?)').run(content, id);
   }
 
   getMessagesForThread(threadId: string): Message[] {
@@ -693,67 +755,109 @@ export class Db {
     return significant.length > 0 ? significant : words;
   }
 
+  /** Wraps text as one FTS5 phrase token — doubling embedded `"` is the only escaping FTS5's
+   * query syntax needs, and quoting sidesteps every other special character (hyphens, colons,
+   * reserved words like AND/OR/NOT/NEAR) being parsed as an operator instead of literal text. */
+  private static ftsPhrase(text: string): string {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+
+  /** Space-separated quoted-prefix tokens are implicitly ANDed by FTS5 — the tokenized,
+   * relevance-ranked equivalent of the old "every word present somewhere" LIKE matching. The
+   * trailing `*` (FTS5 prefix-query syntax, valid on a quoted phrase) restores the substring-like
+   * leniency plain LIKE had for free — a real regression without it: "mise" as an exact token
+   * stopped matching "mises" (FTS5 has no stemming, so a bare exact-token match is stricter than
+   * `LIKE '%mise%'` ever was for ordinary singular/plural and conjugation variants). */
+  private static ftsAndQuery(words: string[]): string {
+    return words.map((w) => `${Db.ftsPhrase(w)}*`).join(' ');
+  }
+
   /**
-   * Matches every (significant) word of `query` independently — each must appear somewhere in the
-   * content, in any order — rather than the query as one exact contiguous phrase: a real find,
-   * "Processus mise à jour Ekonum" found nothing under exact-phrase matching even though the real
-   * thread says "...notre process...nos mises à jour...Ekonum..." (words present, just not
-   * contiguous or in that order).
+   * Two real complaints drove this design: pasting a thread's exact title often didn't find it,
+   * and a sentence known to be unique got buried among many loosely-related results. Both traced
+   * to the same root cause — plain substring/LIKE matching has no notion of relevance, so an exact
+   * match ranked no higher than a coincidental one, and ordering was by recency alone.
    *
-   * Title matches are queried FIRST and unconditionally, not as a fallback gated behind "content
-   * matches are scarce" — an earlier version gated it that way and that gating was itself a real
-   * bug: across a 140k-message real corpus, "Processus mise à jour Ekonum" alone coincidentally
-   * matched 186 unrelated messages on content (each merely containing all 5 words somewhere,
-   * scattered, unrelated to each other) — enough to fill the result limit on its own and starve
-   * out the title fallback entirely, even though a thread's title matched the query exactly. A
-   * title match is a stronger, more deliberate relevance signal than a coincidental content hit
-   * from a large corpus, so it's fetched first and content only fills remaining slots — surfaced
-   * as one representative message per title-matching thread so a single busy thread can't flood
-   * the results. Still requires each word's exact spelling: "processus" won't match "process" (no
-   * stemming) — a real, separate limit from the phrase-matching one this fixes.
+   * Now runs FTS5 MATCH queries in four tiers, filling `limit` in order and never letting a lower
+   * tier touch a thread a higher tier already placed:
+   *   1. title, exact phrase   2. content, exact phrase (bm25-ranked, capped per thread)
+   *   3. title, AND-of-words   4. content, AND-of-words (bm25-ranked, capped per thread)
+   * An exact phrase — the strongest, most deliberate signal (a pasted title, a sentence known to
+   * be unique) — is tried before any looser word-scatter matching gets a chance to bury it, and
+   * bm25 relevance replaces plain recency ordering for the fallback tiers. remove_diacritics on
+   * both FTS5 tables (see SCHEMA) also means "a" now matches "à", unlike the old LIKE approach.
+   * Still requires each word's exact spelling: "processus" won't match "process" (no stemming).
    */
   searchTranscripts(query: string, limit = 50): Message[] {
-    const words = Db.significantWords(query);
-    if (words.length === 0) return [];
-    const params = words.map((w) => `%${w}%`);
+    const trimmed = query.trim();
+    if (!trimmed) return [];
+    const words = Db.significantWords(trimmed);
+    const phraseQuery = Db.ftsPhrase(trimmed);
+    const andQuery = words.length > 0 ? Db.ftsAndQuery(words) : null;
 
-    const titleClause = words.map(() => 'title LIKE ?').join(' AND ');
-    const titleRows = this.raw
-      .prepare(`SELECT id FROM threads WHERE ${titleClause} ORDER BY updated_at DESC LIMIT ?`)
-      .all(...params, limit) as { id: string }[];
-    const seenThreadIds = new Set<string>();
-    const titleMessages: Message[] = [];
-    for (const { id: threadId } of titleRows) {
-      if (seenThreadIds.has(threadId) || titleMessages.length >= limit) continue;
-      seenThreadIds.add(threadId);
-      const messages = this.getMessagesForThread(threadId);
-      const representative = messages.find((m) => m.role === 'user') ?? messages[0];
-      if (representative) titleMessages.push(representative);
+    const results: Message[] = [];
+    const titledThreadIds = new Set<string>();
+    const contentCounts = new Map<string, number>();
+    const seenMessageIds = new Set<string>();
+    const MAX_CONTENT_PER_THREAD = 3;
+
+    const addTitleMatches = (matchQuery: string) => {
+      if (results.length >= limit) return;
+      let rows: { thread_id: string }[];
+      try {
+        rows = this.raw
+          .prepare('SELECT thread_id FROM threads_fts WHERE threads_fts MATCH ? ORDER BY bm25(threads_fts) LIMIT ?')
+          .all(matchQuery, limit) as { thread_id: string }[];
+      } catch {
+        return; // a malformed FTS5 query should never crash a search — just contributes nothing
+      }
+      for (const { thread_id: threadId } of rows) {
+        if (results.length >= limit) break;
+        if (titledThreadIds.has(threadId) || contentCounts.has(threadId)) continue;
+        titledThreadIds.add(threadId);
+        const messages = this.getMessagesForThread(threadId);
+        const representative = messages.find((m) => m.role === 'user') ?? messages[0];
+        if (representative) results.push(representative);
+      }
+    };
+
+    const addContentMatches = (matchQuery: string) => {
+      if (results.length >= limit) return;
+      let rows: any[];
+      try {
+        rows = this.raw
+          .prepare(
+            `SELECT m.* FROM messages m JOIN messages_fts ON messages_fts.message_id = m.id
+             WHERE messages_fts MATCH ? ORDER BY bm25(messages_fts) LIMIT ?`,
+          )
+          .all(matchQuery, Math.min(limit * 10, 2000)) as any[];
+      } catch {
+        return;
+      }
+      for (const row of rows) {
+        if (results.length >= limit) break;
+        const message = rowToMessage(row);
+        // The same message can satisfy both the phrase tier and the AND-of-words tier (a phrase
+        // match trivially also satisfies "every word present") — without this, it could be
+        // pushed into results twice, since the per-thread count alone doesn't dedupe by message.
+        if (seenMessageIds.has(message.id)) continue;
+        if (titledThreadIds.has(message.threadId)) continue;
+        const count = contentCounts.get(message.threadId) ?? 0;
+        if (count >= MAX_CONTENT_PER_THREAD) continue;
+        contentCounts.set(message.threadId, count + 1);
+        seenMessageIds.add(message.id);
+        results.push(message);
+      }
+    };
+
+    addTitleMatches(phraseQuery);
+    addContentMatches(phraseQuery);
+    if (andQuery) {
+      addTitleMatches(andQuery);
+      addContentMatches(andQuery);
     }
-    if (titleMessages.length >= limit) return titleMessages;
 
-    // Over-fetch so the per-thread cap below still has enough candidates left to reach `limit`
-    // distinct results — a real find: one chatty thread alone contributed 6 of the top 50 results
-    // for "Odoo migration", crowding out other relevant conversations entirely.
-    const contentClause = words.map(() => 'content LIKE ?').join(' AND ');
-    const contentRows = this.raw
-      .prepare(`SELECT * FROM messages WHERE ${contentClause} ORDER BY timestamp DESC LIMIT ?`)
-      .all(...params, Math.min(limit * 10, 2000)) as any[];
-
-    const MAX_CONTENT_HITS_PER_THREAD = 3;
-    const perThreadCount = new Map<string, number>();
-    const contentMessages: Message[] = [];
-    for (const row of contentRows) {
-      const message = rowToMessage(row);
-      if (seenThreadIds.has(message.threadId)) continue;
-      const count = perThreadCount.get(message.threadId) ?? 0;
-      if (count >= MAX_CONTENT_HITS_PER_THREAD) continue;
-      perThreadCount.set(message.threadId, count + 1);
-      contentMessages.push(message);
-      if (titleMessages.length + contentMessages.length >= limit) break;
-    }
-
-    return [...titleMessages, ...contentMessages];
+    return results;
   }
 
   // --- memories & artifacts -------------------------------------------------
