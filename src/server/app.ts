@@ -20,7 +20,7 @@ import * as codex from '../core/adapters/codex.js';
 import * as antigravity from '../core/adapters/antigravity.js';
 import { archiveThread, deleteProject, deleteThread, type ArchiveRoots } from '../core/archive.js';
 import { computeCostSummary } from '../core/cost.js';
-import type { EngineHealth, EngineType, SyncStats, WebSocketEvent } from '../types.js';
+import type { EngineHealth, EngineType, PushBatch, PushResult, SyncStats, WebSocketEvent } from '../types.js';
 import { UNASSIGNED_PROJECT_ID } from '../types.js';
 
 export interface AppDeps {
@@ -37,6 +37,9 @@ export interface AppDeps {
   importsDir: string;
   clientDistDir?: string;
   corsOrigins?: string[];
+  /** Shared secret guarding POST /api/sync/push (see core/sync-push-client.ts) — unset means the
+   * endpoint refuses every request rather than accepting unauthenticated writes by default. */
+  remoteToken?: string;
 }
 
 const execFileAsync = promisify(execFile);
@@ -87,7 +90,10 @@ export function createApp(deps: AppDeps): FastifyInstance {
     }
   }
 
-  const app = Fastify({ logger: false });
+  // Default Fastify bodyLimit is 1 MiB — fine for every existing route, but a remote-sync push
+  // batch of verbatim messages (tool outputs, diffs, thoughts) routinely exceeds that; raised here
+  // rather than per-route since there's only the one JSON-body route that needs it.
+  const app = Fastify({ logger: false, bodyLimit: 25 * 1024 * 1024 });
 
   app.register(cors, { origin: deps.corsOrigins ?? true });
   app.register(fastifyWebsocket);
@@ -414,6 +420,22 @@ export function createApp(deps: AppDeps): FastifyInstance {
     rescan();
     broadcast({ type: 'stats_updated', data: computeStats(deps) });
     return { ok: true, stats: computeStats(deps) };
+  });
+
+  // Receiving end of remote sync (see core/sync-push-client.ts for the pushing side). Applies a
+  // batch via the exact same upsertProject/upsertThread/insertMessage this store uses for its own
+  // local ingestion — this route is what makes an instance a "remote hub" rather than a purely
+  // local store. Fails closed: no configured token means no writes accepted, never the reverse.
+  app.post<{ Body: PushBatch }>('/api/sync/push', async (req, reply) => {
+    if (!deps.remoteToken) return reply.code(403).send({ error: 'push_disabled' });
+    if (req.headers.authorization !== `Bearer ${deps.remoteToken}`) return reply.code(401).send({ error: 'unauthorized' });
+    const body = req.body;
+    if (!body || !Array.isArray(body.projects) || !Array.isArray(body.threads) || !Array.isArray(body.messages)) {
+      return reply.code(400).send({ error: 'invalid_body' });
+    }
+    const result = db.applyRemoteBatch(body);
+    broadcast({ type: 'stats_updated', data: computeStats(deps) });
+    return { ok: true, ...result } satisfies PushResult;
   });
 
   return app;

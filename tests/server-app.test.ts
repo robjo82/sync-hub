@@ -410,4 +410,99 @@ describe('sync-hub HTTP API', () => {
       expect(rescan).toHaveBeenCalledOnce();
     });
   });
+
+  describe('POST /api/sync/push — remote-hub receiving end (see core/sync-push-client.ts for the pushing side)', () => {
+    it('refuses every request when no remoteToken is configured — fails closed, not open', async () => {
+      // `app` from the top-level beforeEach has no remoteToken set.
+      const res = await app.inject({ method: 'POST', url: '/api/sync/push', payload: { projects: [], threads: [], messages: [] } });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error).toBe('push_disabled');
+    });
+
+    it('rejects a missing or wrong Authorization header once a token is configured', async () => {
+      const guarded = createApp({
+        db,
+        registry,
+        watchHandle: fakeWatchHandle(),
+        rescan,
+        archiveRoots: { syncHubArchiveRoot: join(dir, 'sync-hub-archive'), codexArchiveRoot: join(dir, 'codex-archived-sessions') },
+        importsDir: join(dir, 'imports'),
+        remoteToken: 'le-vrai-jeton',
+      });
+      try {
+        const noAuth = await guarded.inject({ method: 'POST', url: '/api/sync/push', payload: { projects: [], threads: [], messages: [] } });
+        expect(noAuth.statusCode).toBe(401);
+
+        const wrongAuth = await guarded.inject({
+          method: 'POST',
+          url: '/api/sync/push',
+          headers: { authorization: 'Bearer mauvais-jeton' },
+          payload: { projects: [], threads: [], messages: [] },
+        });
+        expect(wrongAuth.statusCode).toBe(401);
+      } finally {
+        await guarded.close();
+      }
+    });
+
+    it('applies a valid, authenticated batch and reports real counts', async () => {
+      const guarded = createApp({
+        db,
+        registry,
+        watchHandle: fakeWatchHandle(),
+        rescan,
+        archiveRoots: { syncHubArchiveRoot: join(dir, 'sync-hub-archive'), codexArchiveRoot: join(dir, 'codex-archived-sessions') },
+        importsDir: join(dir, 'imports'),
+        remoteToken: 'le-vrai-jeton',
+      });
+      try {
+        const pushedThread = {
+          id: 't-pushed',
+          projectId: 'proj-demo',
+          title: 'Fil poussé',
+          originEngine: 'codex' as const,
+          engineIds: {},
+          messageCount: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          status: 'active' as const,
+        };
+        const res = await guarded.inject({
+          method: 'POST',
+          url: '/api/sync/push',
+          headers: { authorization: 'Bearer le-vrai-jeton' },
+          payload: { projects: [project()], threads: [pushedThread], messages: [message({ id: 'm-pushed', hash: 'h-pushed', threadId: 't-pushed' })] },
+        });
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toMatchObject({ ok: true, appliedProjects: 1, appliedThreads: 1, appliedMessages: 1 });
+        expect(db.getMessagesForThread('t-pushed')).toHaveLength(1);
+      } finally {
+        await guarded.close();
+      }
+    });
+
+    it('accepts a batch whose verbatim content exceeds the default 1 MiB Fastify body limit', async () => {
+      const guarded = createApp({
+        db,
+        registry,
+        watchHandle: fakeWatchHandle(),
+        rescan,
+        archiveRoots: { syncHubArchiveRoot: join(dir, 'sync-hub-archive'), codexArchiveRoot: join(dir, 'codex-archived-sessions') },
+        importsDir: join(dir, 'imports'),
+        remoteToken: 'le-vrai-jeton',
+      });
+      try {
+        const bigContent = 'x'.repeat(2 * 1024 * 1024); // 2 MiB — over the Fastify default of 1 MiB
+        const res = await guarded.inject({
+          method: 'POST',
+          url: '/api/sync/push',
+          headers: { authorization: 'Bearer le-vrai-jeton' },
+          payload: { projects: [], threads: [], messages: [message({ id: 'm-big', hash: 'h-big', content: bigContent })] },
+        });
+        expect(res.statusCode).toBe(200);
+      } finally {
+        await guarded.close();
+      }
+    });
+  });
 });

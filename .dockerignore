@@ -1,0 +1,10 @@
+node_modules
+dist
+data
+.git
+.DS_Store
+*.log
+imports/chatgpt/*
+imports/claude/*
+!imports/chatgpt/.gitkeep
+!imports/claude/.gitkeep

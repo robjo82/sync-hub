@@ -174,6 +174,15 @@ CREATE VIRTUAL TABLE IF NOT EXISTS threads_fts USING fts5(
   thread_id UNINDEXED,
   tokenize = 'unicode61 remove_diacritics 2'
 );
+
+-- Per-remote push watermark for the client side of remote sync (core/sync-push-client.ts) — how
+-- far this instance has pushed to a given hub. Keyed by remote_url rather than a single row so
+-- the same local store could in principle push to more than one hub independently.
+CREATE TABLE IF NOT EXISTS remote_sync_state (
+  remote_url TEXT PRIMARY KEY,
+  last_pushed_seq INTEGER NOT NULL DEFAULT 0,
+  last_pushed_at TEXT
+);
 `;
 
 /**
@@ -205,12 +214,16 @@ const EXPECTED_COLUMNS: Array<{ table: string; column: string; definition: strin
   { table: 'messages', column: 'model', definition: 'TEXT' },
   { table: 'messages', column: 'usage', definition: 'TEXT' },
   { table: 'messages', column: 'estimated_tokens', definition: 'INTEGER' },
+  { table: 'messages', column: 'ingest_seq', definition: 'INTEGER' },
 ];
 
 const DEFAULT_CATEGORIES = ['ekonum', 'client', 'perso'];
 
 export class Db {
   readonly raw: Database.Database;
+  /** Next value to assign to messages.ingest_seq — see backfillIngestSeq's doc for why this exists
+   * instead of using SQLite's own rowid or the message's own timestamp. */
+  private nextIngestSeq: number;
 
   constructor(filePath: string) {
     mkdirSync(dirname(filePath), { recursive: true });
@@ -226,6 +239,29 @@ export class Db {
     for (const name of DEFAULT_CATEGORIES) this.createCategory(name);
     this.backfillFts();
     this.backfillEstimatedTokens();
+    this.nextIngestSeq = (this.raw.prepare('SELECT COALESCE(MAX(ingest_seq), 0) AS n FROM messages').get() as any).n;
+    this.backfillIngestSeq();
+  }
+
+  /**
+   * One-time catch-up for messages.ingest_seq, backing the remote-push watermark (see
+   * getMessagesAfterSeq / core/sync-push-client.ts). Neither SQLite's own rowid (this table has
+   * no AUTOINCREMENT, so a deleted row's rowid can be reused — deleteProject/deleteThread/
+   * mergeProjects all delete message rows) nor `timestamp` (the conversation's own event time, not
+   * ingest time — a backfill can insert an old-timestamped row at any point, and real ties are
+   * common within one ingest batch) is safe to watermark against, so this assigns a private,
+   * strictly-increasing sequence instead, once per row, ordered by rowid over the static
+   * pre-existing corpus (safe only because nothing is concurrently deleting rows during this pass).
+   */
+  private backfillIngestSeq(): void {
+    const rows = this.raw.prepare('SELECT rowid AS rid FROM messages WHERE ingest_seq IS NULL ORDER BY rowid ASC').all() as { rid: number }[];
+    if (rows.length === 0) return;
+    const update = this.raw.prepare('UPDATE messages SET ingest_seq = ? WHERE rowid = ?');
+    const tx = this.raw.transaction(() => {
+      rows.forEach((r, i) => update.run(this.nextIngestSeq + i + 1, r.rid));
+    });
+    tx();
+    this.nextIngestSeq += rows.length;
   }
 
   /**
@@ -536,6 +572,20 @@ export class Db {
     return row ? rowToThread(row) : undefined;
   }
 
+  /** Every thread among the given ids that actually exists — used by sync-push-client to fetch the
+   * exact set of threads referenced by a batch of messages being pushed to a remote hub. */
+  getThreadsByIds(ids: string[]): Thread[] {
+    if (ids.length === 0) return [];
+    const placeholders = ids.map(() => '?').join(',');
+    const rows = this.raw
+      .prepare(
+        `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count
+         FROM threads t WHERE t.id IN (${placeholders})`,
+      )
+      .all(...ids) as any[];
+    return rows.map(rowToThread);
+  }
+
   /** Re-parents a thread and all its messages to a different project — used by the triage flow. */
   reassignThread(threadId: string, projectId: string): void {
     const tx = this.raw.transaction(() => {
@@ -655,12 +705,15 @@ export class Db {
   /** Returns false (and inserts nothing) when the hash already exists — the anti-duplicate gate. */
   insertMessage(message: Message): boolean {
     try {
+      // Computed but not committed to this.nextIngestSeq until the INSERT actually succeeds below
+      // — a failed attempt (caught by the branches beneath) must not burn a sequence number.
+      const candidateSeq = this.nextIngestSeq + 1;
       this.raw
         .prepare(
           `INSERT INTO messages
-             (id, thread_id, project_id, source_engine, role, content, thought, tool_calls, tool_results, attachments, timestamp, sequence, hash, metadata, model, usage, estimated_tokens)
+             (id, thread_id, project_id, source_engine, role, content, thought, tool_calls, tool_results, attachments, timestamp, sequence, hash, metadata, model, usage, estimated_tokens, ingest_seq)
            VALUES
-             (@id, @threadId, @projectId, @sourceEngine, @role, @content, @thought, @toolCalls, @toolResults, @attachments, @timestamp, @sequence, @hash, @metadata, @model, @usage, @estimatedTokens)`,
+             (@id, @threadId, @projectId, @sourceEngine, @role, @content, @thought, @toolCalls, @toolResults, @attachments, @timestamp, @sequence, @hash, @metadata, @model, @usage, @estimatedTokens, @ingestSeq)`,
         )
         .run({
           id: message.id,
@@ -680,7 +733,12 @@ export class Db {
           model: message.model ?? null,
           usage: message.usage ? JSON.stringify(message.usage) : null,
           estimatedTokens: message.estimatedTokens ?? null,
+          // Assigned once, only on a genuine new row — never on the hash-dedup backfill branch or
+          // the id-conflict re-parse UPDATE branch below, so an existing message's position in the
+          // remote-push watermark ordering never moves once assigned (see backfillIngestSeq's doc).
+          ingestSeq: candidateSeq,
         });
+      this.nextIngestSeq = candidateSeq;
       this.syncMessageFts(message.id, message.content);
       return true;
     } catch (err: any) {
@@ -757,6 +815,102 @@ export class Db {
       .prepare('SELECT * FROM messages WHERE thread_id = ? ORDER BY sequence ASC')
       .all(threadId) as any[];
     return rows.map(rowToMessage);
+  }
+
+  /** The next page of messages this instance hasn't pushed to a remote hub yet, ordered by
+   * ingest_seq — see backfillIngestSeq's doc for why that column exists instead of rowid/timestamp.
+   * `maxSeq` is the watermark to pass back next call (0 unchanged when the page is empty). */
+  getMessagesAfterSeq(afterSeq: number, limit: number): { messages: Message[]; maxSeq: number } {
+    const rows = this.raw
+      .prepare('SELECT * FROM messages WHERE ingest_seq > ? ORDER BY ingest_seq ASC LIMIT ?')
+      .all(afterSeq, limit) as any[];
+    const messages = rows.map(rowToMessage);
+    const maxSeq = rows.length ? rows[rows.length - 1].ingest_seq : afterSeq;
+    return { messages, maxSeq };
+  }
+
+  // --- remote sync (core/sync-push-client.ts is the client side of this) --------------------
+
+  /** How far this instance has pushed to a given remote hub — 0/null when never pushed. */
+  getRemoteSyncState(remoteUrl: string): { lastPushedSeq: number; lastPushedAt: string | null } {
+    const row = this.raw.prepare('SELECT * FROM remote_sync_state WHERE remote_url = ?').get(remoteUrl) as any;
+    return row ? { lastPushedSeq: row.last_pushed_seq, lastPushedAt: row.last_pushed_at } : { lastPushedSeq: 0, lastPushedAt: null };
+  }
+
+  setRemoteSyncState(remoteUrl: string, lastPushedSeq: number, lastPushedAt: string): void {
+    this.raw
+      .prepare(
+        `INSERT INTO remote_sync_state (remote_url, last_pushed_seq, last_pushed_at) VALUES (?, ?, ?)
+         ON CONFLICT(remote_url) DO UPDATE SET last_pushed_seq = excluded.last_pushed_seq, last_pushed_at = excluded.last_pushed_at`,
+      )
+      .run(remoteUrl, lastPushedSeq, lastPushedAt);
+  }
+
+  /**
+   * Applies a batch pushed from a local instance (POST /api/sync/push) via the exact same
+   * upsertProject/upsertThread/insertMessage this store already uses for its own local ingestion —
+   * a remote hub is just this same schema, reached over the network instead of the filesystem.
+   * Applied in FK dependency order (projects, then threads, then messages), each row in its own
+   * try/catch: a single bad row (e.g. a canonical_path collision with a different project id —
+   * plausible once multiple real machines contribute) is skipped along with anything that
+   * depends on it, rather than rolling back or crashing on an otherwise-good batch.
+   */
+  applyRemoteBatch(batch: {
+    projects: Project[];
+    threads: Thread[];
+    messages: Message[];
+  }): {
+    appliedProjects: number;
+    appliedThreads: number;
+    appliedMessages: number;
+    skipped: { projects: string[]; threads: string[]; messages: string[] };
+  } {
+    const skippedProjectIds = new Set<string>();
+    const skippedThreadIds = new Set<string>();
+    const skipped = { projects: [] as string[], threads: [] as string[], messages: [] as string[] };
+    let appliedProjects = 0;
+    let appliedThreads = 0;
+    let appliedMessages = 0;
+
+    for (const p of batch.projects) {
+      try {
+        this.upsertProject(p);
+        appliedProjects++;
+      } catch (err: any) {
+        skippedProjectIds.add(p.id);
+        skipped.projects.push(p.id);
+        console.error(`applyRemoteBatch: skipped project ${p.id}: ${err?.message ?? err}`);
+      }
+    }
+    for (const t of batch.threads) {
+      if (skippedProjectIds.has(t.projectId)) {
+        skippedThreadIds.add(t.id);
+        skipped.threads.push(t.id);
+        continue;
+      }
+      try {
+        this.upsertThread(t);
+        appliedThreads++;
+      } catch (err: any) {
+        skippedThreadIds.add(t.id);
+        skipped.threads.push(t.id);
+        console.error(`applyRemoteBatch: skipped thread ${t.id}: ${err?.message ?? err}`);
+      }
+    }
+    for (const m of batch.messages) {
+      if (skippedThreadIds.has(m.threadId) || skippedProjectIds.has(m.projectId)) {
+        skipped.messages.push(m.id);
+        continue;
+      }
+      try {
+        this.insertMessage(m); // false = deduped by hash, still means "handled", not a failure
+        appliedMessages++;
+      } catch (err: any) {
+        skipped.messages.push(m.id);
+        console.error(`applyRemoteBatch: skipped message ${m.id}: ${err?.message ?? err}`);
+      }
+    }
+    return { appliedProjects, appliedThreads, appliedMessages, skipped };
   }
 
   /** Every message that carries real usage or token estimation — raw material for cost aggregation (see core/cost.ts). */

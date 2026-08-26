@@ -835,6 +835,151 @@ describe('Db.getUsageRecords', () => {
   });
 });
 
+describe('Db remote sync', () => {
+  beforeEach(() => {
+    db.upsertProject(makeProject());
+    db.upsertThread({
+      id: 'thread-1',
+      projectId: 'proj-test',
+      title: 'Fil de test',
+      originEngine: 'claude-code',
+      engineIds: {},
+      messageCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'active',
+    });
+  });
+
+  it('assigns ingest_seq sequentially on real inserts only, in insertion order', () => {
+    db.insertMessage(makeMessage({ id: 'm1', hash: 'h1' }));
+    db.insertMessage(makeMessage({ id: 'm2', hash: 'h2' }));
+    db.insertMessage(makeMessage({ id: 'm3', hash: 'h3' }));
+    const rows = db.raw.prepare('SELECT id, ingest_seq FROM messages ORDER BY ingest_seq ASC').all() as any[];
+    expect(rows.map((r) => r.id)).toEqual(['m1', 'm2', 'm3']);
+    expect(rows[1].ingest_seq).toBeGreaterThan(rows[0].ingest_seq);
+    expect(rows[2].ingest_seq).toBeGreaterThan(rows[1].ingest_seq);
+  });
+
+  it('does not reassign ingest_seq on a hash-dedup re-ingest or an id-conflict re-parse update', () => {
+    db.insertMessage(makeMessage({ id: 'm1', hash: 'h1' }));
+    const original = (db.raw.prepare('SELECT ingest_seq FROM messages WHERE id = ?').get('m1') as any).ingest_seq;
+
+    // Same id, same hash — the ordinary hash-dedup path.
+    db.insertMessage(makeMessage({ id: 'm1', hash: 'h1' }));
+    expect((db.raw.prepare('SELECT ingest_seq FROM messages WHERE id = ?').get('m1') as any).ingest_seq).toBe(original);
+
+    // Same id, different hash — the id-conflict "update in place" path.
+    db.insertMessage(makeMessage({ id: 'm1', hash: 'h2', content: 'contenu modifié' }));
+    expect((db.raw.prepare('SELECT ingest_seq FROM messages WHERE id = ?').get('m1') as any).ingest_seq).toBe(original);
+  });
+
+  it('getMessagesAfterSeq pages through messages in ingest_seq order and reports the right watermark', () => {
+    db.insertMessage(makeMessage({ id: 'm1', hash: 'h1' }));
+    db.insertMessage(makeMessage({ id: 'm2', hash: 'h2' }));
+    db.insertMessage(makeMessage({ id: 'm3', hash: 'h3' }));
+
+    const page1 = db.getMessagesAfterSeq(0, 2);
+    expect(page1.messages.map((m) => m.id)).toEqual(['m1', 'm2']);
+
+    const page2 = db.getMessagesAfterSeq(page1.maxSeq, 2);
+    expect(page2.messages.map((m) => m.id)).toEqual(['m3']);
+
+    const page3 = db.getMessagesAfterSeq(page2.maxSeq, 2);
+    expect(page3.messages).toEqual([]);
+    expect(page3.maxSeq).toBe(page2.maxSeq); // unchanged watermark when there's nothing new
+  });
+
+  it('remote_sync_state defaults to zero/null, then round-trips through set/get', () => {
+    expect(db.getRemoteSyncState('https://hub.example.com')).toEqual({ lastPushedSeq: 0, lastPushedAt: null });
+    db.setRemoteSyncState('https://hub.example.com', 42, '2026-01-01T00:00:00Z');
+    expect(db.getRemoteSyncState('https://hub.example.com')).toEqual({ lastPushedSeq: 42, lastPushedAt: '2026-01-01T00:00:00Z' });
+    // A second, different remote gets its own independent watermark.
+    expect(db.getRemoteSyncState('https://other-hub.example.com')).toEqual({ lastPushedSeq: 0, lastPushedAt: null });
+  });
+
+  describe('Db.applyRemoteBatch', () => {
+    it('applies a valid batch — project, thread, and message all land, in the right counts', () => {
+      const project = makeProject({ id: 'proj-remote', name: 'Remote', canonicalPath: '/tmp/remote' });
+      const thread = {
+        id: 'thread-remote',
+        projectId: 'proj-remote',
+        title: 'Fil distant',
+        originEngine: 'claude-code' as const,
+        engineIds: {},
+        messageCount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: 'active' as const,
+      };
+      const message = makeMessage({ id: 'm-remote', hash: 'h-remote', threadId: 'thread-remote', projectId: 'proj-remote', content: 'poussé depuis un autre appareil' });
+
+      const result = db.applyRemoteBatch({ projects: [project], threads: [thread], messages: [message] });
+      expect(result).toMatchObject({ appliedProjects: 1, appliedThreads: 1, appliedMessages: 1, skipped: { projects: [], threads: [], messages: [] } });
+      expect(db.getProject('proj-remote')).toBeDefined();
+      expect(db.getThread('thread-remote')).toBeDefined();
+      expect(db.getMessagesForThread('thread-remote').map((m) => m.content)).toEqual(['poussé depuis un autre appareil']);
+    });
+
+    it('skips a project whose canonical_path collides with a different existing project, and everything that depends on it — without touching the rest of the batch', () => {
+      // proj-test (from beforeEach) already owns '/Users/robin/Projets/test'.
+      const collidingProject = makeProject({ id: 'proj-other-device', name: 'Other device', canonicalPath: '/Users/robin/Projets/test' });
+      const dependentThread = {
+        id: 'thread-dependent',
+        projectId: 'proj-other-device',
+        title: 'Fil dépendant',
+        originEngine: 'codex' as const,
+        engineIds: {},
+        messageCount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: 'active' as const,
+      };
+      const dependentMessage = makeMessage({ id: 'm-dependent', hash: 'h-dependent', threadId: 'thread-dependent', projectId: 'proj-other-device' });
+      // An unrelated, valid thread/message in the SAME batch must still go through.
+      const okMessage = makeMessage({ id: 'm-ok', hash: 'h-ok', threadId: 'thread-1', projectId: 'proj-test', content: 'ce message doit passer' });
+
+      const result = db.applyRemoteBatch({
+        projects: [collidingProject],
+        threads: [dependentThread],
+        messages: [dependentMessage, okMessage],
+      });
+
+      expect(result.appliedProjects).toBe(0);
+      expect(result.skipped.projects).toEqual(['proj-other-device']);
+      expect(result.appliedThreads).toBe(0);
+      expect(result.skipped.threads).toEqual(['thread-dependent']);
+      expect(result.appliedMessages).toBe(1);
+      expect(result.skipped.messages).toEqual(['m-dependent']);
+      expect(db.getProject('proj-other-device')).toBeUndefined();
+      expect(db.getMessagesForThread('thread-1').map((m) => m.content)).toEqual(['ce message doit passer']);
+    });
+
+    it('re-applying the exact same batch twice is idempotent — no duplicate rows, dedup still counts as applied', () => {
+      const project = makeProject({ id: 'proj-remote2', name: 'Remote 2', canonicalPath: '/tmp/remote2' });
+      const thread = {
+        id: 'thread-remote2',
+        projectId: 'proj-remote2',
+        title: 'Fil distant 2',
+        originEngine: 'claude-code' as const,
+        engineIds: {},
+        messageCount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: 'active' as const,
+      };
+      const message = makeMessage({ id: 'm-remote2', hash: 'h-remote2', threadId: 'thread-remote2', projectId: 'proj-remote2' });
+      const batch = { projects: [project], threads: [thread], messages: [message] };
+
+      db.applyRemoteBatch(batch);
+      const second = db.applyRemoteBatch(batch);
+      expect(second.appliedMessages).toBe(1); // hash-dedup still means "handled", not skipped
+      expect(second.skipped.messages).toEqual([]);
+      expect(db.getMessagesForThread('thread-remote2')).toHaveLength(1); // no duplicate row
+    });
+  });
+});
+
 describe('Db MCP call log', () => {
   it('records a call with its verbatim params and returns it newest-first', () => {
     db.logMcpCall('get_thread', { threadId: 't1' }, false, 'Fil : Test', '2026-01-01T00:00:00Z');

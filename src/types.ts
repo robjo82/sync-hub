@@ -189,3 +189,19 @@ export type WebSocketEvent =
   | { type: 'thread_updated'; data: Thread }
   | { type: 'project_updated'; data: Project }
   | { type: 'stats_updated'; data: SyncStats };
+
+/** Body of POST /api/sync/push — a batch of raw verbatim data pushed from one local sync-hub
+ * instance to a remote hub it's configured to back up to (see core/sync-push-client.ts). */
+export interface PushBatch {
+  projects: Project[];
+  threads: Thread[];
+  messages: Message[];
+}
+
+export interface PushResult {
+  ok: true;
+  appliedProjects: number;
+  appliedThreads: number;
+  appliedMessages: number;
+  skipped: { projects: string[]; threads: string[]; messages: string[] };
+}
