@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Hash, Search } from 'lucide-react';
 import type { Message, Thread } from '../../types.js';
 import { api } from '../lib/api.js';
@@ -98,35 +98,51 @@ function snippet(content: string, query: string): { text: string; matchedContent
   return { text, matchedContent: true };
 }
 
+/** No point querying on every keystroke — this is how fast someone can realistically type, not
+ * how fast the FTS5 query itself runs. Cuts request volume roughly 5-10x on a real query typed at
+ * normal speed, and (with the request-sequencing below) removes the flicker of a slow early
+ * response overwriting a faster later one. */
+const SEARCH_DEBOUNCE_MS = 250;
+
 export function SearchView({ onOpenThread }: { onOpenThread: (threadId: string) => void }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [idMatch, setIdMatch] = useState<Thread | null>(null);
   const [loading, setLoading] = useState(false);
+  // Every debounced search gets a ticket; only the most recently issued one is allowed to commit
+  // its results — otherwise an earlier, slower request resolving after a later, faster one would
+  // silently overwrite what's on screen with stale results (a real race, not hypothetical: it's
+  // exactly what unthrottled per-keystroke requests used to do).
+  const latestRequestId = useRef(0);
 
-  const runSearch = async (q: string) => {
-    setQuery(q);
-    if (!q.trim()) {
+  useEffect(() => {
+    if (!query.trim()) {
       setResults(null);
       setIdMatch(null);
+      setLoading(false);
       return;
     }
     setLoading(true);
-    try {
-      const [textResults, thread] = await Promise.all([
-        api.search(q),
-        // A thread id is an opaque string from whichever engine produced it (Claude Code/Codex
-        // UUID, a ChatGPT template id, a content hash…) — no fixed shape to pattern-match, so
-        // just try the direct lookup alongside the text search rather than guessing what an id
-        // looks like. A 404 here is the expected, common case (most queries aren't an id).
-        api.thread(q.trim()).catch(() => null),
-      ]);
-      setResults(textResults);
-      setIdMatch(thread);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const requestId = ++latestRequestId.current;
+    const timer = setTimeout(async () => {
+      try {
+        const [textResults, thread] = await Promise.all([
+          api.search(query),
+          // A thread id is an opaque string from whichever engine produced it (Claude Code/Codex
+          // UUID, a ChatGPT template id, a content hash…) — no fixed shape to pattern-match, so
+          // just try the direct lookup alongside the text search rather than guessing what an id
+          // looks like. A 404 here is the expected, common case (most queries aren't an id).
+          api.thread(query.trim()).catch(() => null),
+        ]);
+        if (requestId !== latestRequestId.current) return; // superseded by a newer keystroke
+        setResults(textResults);
+        setIdMatch(thread);
+      } finally {
+        if (requestId === latestRequestId.current) setLoading(false);
+      }
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query]);
 
   return (
     <div className="mx-auto max-w-3xl overflow-y-auto p-6">
@@ -138,7 +154,7 @@ export function SearchView({ onOpenThread }: { onOpenThread: (threadId: string) 
         <input
           autoFocus
           value={query}
-          onChange={(e) => runSearch(e.target.value)}
+          onChange={(e) => setQuery(e.target.value)}
           placeholder="Rechercher…"
           className="w-full rounded-md border border-border bg-card py-2 pr-3 pl-9 text-sm text-foreground placeholder:text-muted-foreground"
         />

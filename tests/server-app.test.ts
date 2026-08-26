@@ -105,6 +105,36 @@ describe('sync-hub HTTP API', () => {
     expect(typeof claudeHealth.storageRootExists).toBe('boolean'); // real filesystem probe, not a fixed `true`
   });
 
+  it('GET /api/stats unassignedThreadCount only counts active threads, matching what /api/projects/unassigned/threads shows by default — regression: the header badge said 3554 while the page itself showed 3', async () => {
+    db.upsertThread({
+      id: 'unassigned-active',
+      projectId: UNASSIGNED_PROJECT_ID,
+      title: 'Fil actif non affecté',
+      originEngine: 'codex',
+      engineIds: {},
+      messageCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'active',
+    });
+    db.upsertThread({
+      id: 'unassigned-archived',
+      projectId: UNASSIGNED_PROJECT_ID,
+      title: 'Fil archivé non affecté',
+      originEngine: 'codex',
+      engineIds: {},
+      messageCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'archived',
+    });
+
+    const stats = (await app.inject({ method: 'GET', url: '/api/stats' })).json();
+    const shownThreads = (await app.inject({ method: 'GET', url: '/api/projects/unassigned/threads' })).json();
+    expect(stats.unassignedThreadCount).toBe(1);
+    expect(shownThreads).toHaveLength(1);
+  });
+
   it('GET /api/search finds a substring across messages and reports which project/thread it came from', async () => {
     db.insertMessage(message({ content: 'problème de balance comptable chez un client' }));
     const res = await app.inject({ method: 'GET', url: '/api/search?q=balance%20comptable' });

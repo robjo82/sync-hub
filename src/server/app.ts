@@ -68,7 +68,10 @@ export function computeStats(deps: Pick<AppDeps, 'db' | 'watchHandle'>): SyncSta
     totalMessages: db.countAll('messages'),
     totalMemories: db.countAll('memories'),
     totalArtifacts: db.countAll('artifacts'),
-    unassignedThreadCount: db.countThreadsForProject(UNASSIGNED_PROJECT_ID),
+    // Scoped to active threads to match what the "Non affecté" view (and its own "N threads"
+    // count) actually shows by default — a real find: the header badge said 3554 while the page
+    // itself, filtering out archived threads like every other thread list does, showed 3.
+    unassignedThreadCount: db.countThreadsForProject(UNASSIGNED_PROJECT_ID, 'active'),
     engines: engineHealth,
   };
 }
