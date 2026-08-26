@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { homedir } from 'node:os';
+import { encode } from 'gpt-tokenizer';
 import type { Db } from '../db.js';
 import type { ProjectRegistry } from '../registry.js';
 import { computeMessageHash } from '../hash.js';
@@ -56,6 +57,15 @@ interface ParsedLine {
 }
 
 const USER_REQUEST_RE = /<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/;
+
+/** Token-counts everything this message's real API turn would actually have sent/produced —
+ * content and thought as plain text, tool calls/results serialized the same way they're stored
+ * in the DB — so a message that's mostly a tool call isn't undercounted as if it were empty. */
+function estimateMessageTokens(content: string, thought?: string, toolCalls?: ToolCall[], toolResults?: ToolResult[]): number {
+  const parts = [content, thought, toolCalls?.length ? JSON.stringify(toolCalls) : undefined, toolResults?.length ? JSON.stringify(toolResults) : undefined];
+  const text = parts.filter(Boolean).join('\n');
+  return text ? encode(text).length : 0;
+}
 
 /**
  * Parses one line of transcript_full.jsonl. Verified event shapes (real data, both of Robin's
@@ -169,8 +179,8 @@ export function ingestSessionFile(
 
   const body = opts.fromOffset ? raw.slice(opts.fromOffset) : raw;
   const lines = body.split('\n');
-  const projectId = UNASSIGNED_PROJECT_ID;
   const existingThread = db.getThread(ref.sessionId);
+  const projectId = existingThread && existingThread.projectId !== UNASSIGNED_PROJECT_ID ? existingThread.projectId : UNASSIGNED_PROJECT_ID;
 
   if (!existingThread) {
     // messages.thread_id is a foreign key — the thread row must exist before any message does.
@@ -213,6 +223,12 @@ export function ingestSessionFile(
       timestamp: parsed.timestamp,
       sequence: sequence++,
       hash,
+      // Antigravity never reports real token usage — computed once here (not at cost-query time,
+      // which used to re-tokenize the whole corpus on every /api/costs call: ~2s measured on the
+      // real ~6,500-message history) so db.ts's cost estimation is just a cheap running sum over
+      // an already-computed column. Only this engine gets this field: it's a real-usage engine's
+      // job to report its own usage, never sync-hub's job to guess for engines that already do.
+      estimatedTokens: estimateMessageTokens(parsed.content, parsed.thought, parsed.toolCalls, parsed.toolResults),
     };
     if (db.insertMessage(message)) inserted++;
     latestTimestamp = parsed.timestamp;

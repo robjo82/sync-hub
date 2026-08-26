@@ -61,7 +61,43 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'gpt-5-mini': { inputPerMTok: 0.25, outputPerMTok: 2, cachedInputPerMTok: 0.025 },
   'gpt-5-nano': { inputPerMTok: 0.05, outputPerMTok: 0.4, cachedInputPerMTok: 0.005 },
   'gpt-5-pro': { inputPerMTok: 15, outputPerMTok: 120 },
+  // Google Gemini / Antigravity (ai.google.dev/pricing)
+  'gemini-2.5-pro': { inputPerMTok: 1.25, outputPerMTok: 5.0, cachedInputPerMTok: 0.3125 },
+  'gemini-2.5-flash': { inputPerMTok: 0.075, outputPerMTok: 0.3, cachedInputPerMTok: 0.01875 },
+  'gemini-2.0-flash': { inputPerMTok: 0.1, outputPerMTok: 0.4, cachedInputPerMTok: 0.025 },
+  'gemini-1.5-pro': { inputPerMTok: 1.25, outputPerMTok: 5.0, cachedInputPerMTok: 0.3125 },
+  'gemini-1.5-flash': { inputPerMTok: 0.075, outputPerMTok: 0.3, cachedInputPerMTok: 0.01875 },
 };
+
+export const DEFAULT_EUR_USD_RATE = 0.92;
+
+/** Converts an amount in USD to EUR using the provided exchange rate (defaults to 0.92 EUR / USD). */
+export function usdToEur(usd: number, rate = DEFAULT_EUR_USD_RATE): number {
+  return usd * rate;
+}
+
+export const ENGINE_PROVIDER_MAP: Record<string, { provider: string; label: string; color: string }> = {
+  'claude-code': { provider: 'Anthropic', label: 'Claude Code', color: '#d97706' },
+  codex: { provider: 'OpenAI', label: 'Codex / ChatGPT', color: '#10b981' },
+  antigravity: { provider: 'Google', label: 'Google Antigravity', color: '#3b82f6' },
+};
+
+export function getProviderForModel(model: string | undefined, sourceEngine?: string): string {
+  if (!model) {
+    if (sourceEngine === 'claude-code') return 'Anthropic';
+    if (sourceEngine === 'codex') return 'OpenAI';
+    if (sourceEngine === 'antigravity') return 'Google';
+    return 'Inconnu';
+  }
+  const m = model.toLowerCase();
+  if (m.startsWith('claude')) return 'Anthropic';
+  if (m.startsWith('gpt') || m.startsWith('o1') || m.startsWith('o3')) return 'OpenAI';
+  if (m.startsWith('gemini')) return 'Google';
+  if (sourceEngine === 'antigravity') return 'Google';
+  if (sourceEngine === 'claude-code') return 'Anthropic';
+  if (sourceEngine === 'codex') return 'OpenAI';
+  return 'Autre';
+}
 
 /** Real ids sometimes carry a trailing snapshot date (e.g. "claude-haiku-4-5-20251001") not present in the pricing table's keys. */
 function resolvePricing(model: string): ModelPricing | undefined {

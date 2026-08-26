@@ -82,11 +82,13 @@ describe('computeCostSummary', () => {
 
     const summaryA = computeCostSummary(db, { projectId: 'proj-a' });
     expect(summaryA.totalCostUsd).toBeCloseTo(4, 10); // 2 x $2/MTok input
-    expect(summaryA.byModel).toEqual([{ model: 'claude-sonnet-5', costUsd: 4, inputTokens: 2_000_000, outputTokens: 0, messageCount: 2 }]);
+    expect(summaryA.totalCostEur).toBeCloseTo(4 * 0.92, 10);
+    expect(summaryA.byModel[0]).toMatchObject({ model: 'claude-sonnet-5', costUsd: 4, inputTokens: 2_000_000, outputTokens: 0, messageCount: 2, provider: 'Anthropic' });
     expect(summaryA.unpricedMessageCount).toBe(0);
 
     const summaryB = computeCostSummary(db, { projectId: 'proj-b' });
     expect(summaryB.totalCostUsd).toBeCloseTo(5, 10); // $5/MTok input for gpt-5.5
+    expect(summaryB.byEngine[0]).toMatchObject({ engine: 'codex', provider: 'OpenAI', costUsd: 5 });
   });
 
   it('counts messages with a real model+usage but no price entry as unpriced, never as $0', () => {

@@ -60,6 +60,8 @@ export interface Message {
   /** The exact model id reported by the engine for this turn (e.g. "claude-sonnet-5", "gpt-5.5") — never inferred. */
   model?: string;
   usage?: TokenUsage;
+  /** BPE-tokenizer token count of this message's own content+thought+tool payloads, computed once at ingest — only set for engines with no real token usage of their own (Antigravity), to back a cost *estimate*, never treated as real reported usage. */
+  estimatedTokens?: number;
 }
 
 export interface Thread {

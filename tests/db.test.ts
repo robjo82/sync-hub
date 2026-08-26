@@ -644,6 +644,197 @@ describe('Db.searchTranscripts', () => {
   });
 });
 
+describe('Db.getUsageRecords', () => {
+  beforeEach(() => {
+    db.upsertProject(makeProject());
+    db.upsertThread({
+      id: 'thread-1',
+      projectId: 'proj-test',
+      title: 'Fil de test',
+      originEngine: 'claude-code',
+      engineIds: {},
+      messageCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'active',
+    });
+  });
+
+  it('returns real engine-reported usage as-is, never estimated', () => {
+    db.insertMessage(
+      makeMessage({ id: 'm1', hash: 'h1', model: 'claude-sonnet-5', usage: { inputTokens: 100, outputTokens: 50 } }),
+    );
+    const records = db.getUsageRecords();
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ model: 'claude-sonnet-5', usage: { inputTokens: 100, outputTokens: 50 }, isEstimated: false });
+  });
+
+  it('never guesses a model for a real-usage row that has none — left undefined, not silently assigned a specific paid model', () => {
+    db.insertMessage(makeMessage({ id: 'm1', hash: 'h1', sourceEngine: 'codex', usage: { inputTokens: 10, outputTokens: 5 } }));
+    expect(db.getUsageRecords()[0].model).toBeUndefined();
+  });
+
+  it('estimates Antigravity usage from a real BPE tokenizer, flagged isEstimated, growing input tokens as the conversation grows', async () => {
+    const { encode } = await import('gpt-tokenizer');
+    db.upsertThread({
+      id: 'thread-ag',
+      projectId: 'proj-test',
+      title: 'Fil Antigravity',
+      originEngine: 'antigravity',
+      engineIds: {},
+      messageCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'active',
+    });
+    db.insertMessage(
+      makeMessage({ id: 'ag-1', hash: 'ag-h1', threadId: 'thread-ag', sourceEngine: 'antigravity', role: 'user', sequence: 0, content: 'Bonjour, peux-tu regarder ce projet ?' }),
+    );
+    db.insertMessage(
+      makeMessage({ id: 'ag-2', hash: 'ag-h2', threadId: 'thread-ag', sourceEngine: 'antigravity', role: 'assistant', sequence: 1, content: 'Bien sûr, je regarde ça tout de suite.' }),
+    );
+    db.insertMessage(
+      makeMessage({ id: 'ag-3', hash: 'ag-h3', threadId: 'thread-ag', sourceEngine: 'antigravity', role: 'user', sequence: 2, content: 'Merci, voici plus de détails sur ce qu\'il faut vérifier.' }),
+    );
+    db.insertMessage(
+      makeMessage({ id: 'ag-4', hash: 'ag-h4', threadId: 'thread-ag', sourceEngine: 'antigravity', role: 'assistant', sequence: 3, content: 'Voici ce que j\'ai trouvé après vérification complète.' }),
+    );
+
+    const records = db.getUsageRecords({ threadId: 'thread-ag' });
+    expect(records).toHaveLength(2); // one per assistant turn — user/tool turns feed context, not their own record
+    expect(records.every((r) => r.isEstimated)).toBe(true);
+    expect(records.every((r) => r.model === 'gemini-2.5-pro')).toBe(true);
+
+    const firstUserTokens = encode('Bonjour, peux-tu regarder ce projet ?').length;
+    const firstAssistantTokens = encode('Bien sûr, je regarde ça tout de suite.').length;
+    const secondUserTokens = encode('Merci, voici plus de détails sur ce qu\'il faut vérifier.').length;
+
+    // Turn 1: input = everything before it (just the first user message).
+    expect(records[0].usage.inputTokens).toBe(firstUserTokens);
+    expect(records[0].usage.outputTokens).toBe(firstAssistantTokens);
+    // Turn 2: input = every prior message's own tokens (user + assistant + user), not just the latest one.
+    expect(records[1].usage.inputTokens).toBe(firstUserTokens + firstAssistantTokens + secondUserTokens);
+  });
+
+  it('uses the estimated_tokens column computed once at insert time, rather than re-tokenizing on every read — the whole point of caching it', () => {
+    db.upsertThread({
+      id: 'thread-ag-cached',
+      projectId: 'proj-test',
+      title: 'Fil Antigravity avec estimation déjà calculée',
+      originEngine: 'antigravity',
+      engineIds: {},
+      messageCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'active',
+    });
+    // A deliberately implausible token count for this short text — if getUsageRecords were
+    // re-tokenizing live instead of trusting the stored column, this would never come back out.
+    db.insertMessage(
+      makeMessage({
+        id: 'ag-cached-1',
+        hash: 'ag-cached-h1',
+        threadId: 'thread-ag-cached',
+        sourceEngine: 'antigravity',
+        role: 'assistant',
+        content: 'Ok',
+        estimatedTokens: 424242,
+      }),
+    );
+    const records = db.getUsageRecords({ threadId: 'thread-ag-cached' });
+    expect(records[0].usage.outputTokens).toBe(424242);
+  });
+
+  it('backfills estimated_tokens for Antigravity rows that predate the column, so an already-ingested corpus becomes usable without a full re-ingest', () => {
+    const migDir = mkdtempSync(join(tmpdir(), 'sync-hub-estimated-tokens-backfill-'));
+    const filePath = join(migDir, 'hub.sqlite');
+
+    // A pre-existing database created before estimated_tokens existed: insertMessage always sets
+    // it now, so simulate the real "old data" case with a raw insert that leaves it NULL.
+    const seed = new Db(filePath);
+    seed.upsertProject(makeProject());
+    seed.upsertThread({
+      id: 'thread-ag-legacy',
+      projectId: 'proj-test',
+      title: 'Fil Antigravity ingéré avant estimated_tokens',
+      originEngine: 'antigravity',
+      engineIds: {},
+      messageCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'active',
+    });
+    seed.insertMessage(
+      makeMessage({ id: 'ag-legacy-1', hash: 'ag-legacy-h1', threadId: 'thread-ag-legacy', sourceEngine: 'antigravity', role: 'assistant', content: 'Réponse historique assez longue pour donner un vrai compte de tokens.' }),
+    );
+    seed.raw.prepare("UPDATE messages SET estimated_tokens = NULL WHERE id = 'ag-legacy-1'").run();
+    seed.close();
+
+    // Reopening runs the constructor's one-time backfill.
+    const reopened = new Db(filePath);
+    const row = reopened.raw.prepare('SELECT estimated_tokens FROM messages WHERE id = ?').get('ag-legacy-1') as any;
+    expect(row.estimated_tokens).toBeGreaterThan(0);
+    expect(reopened.getUsageRecords({ threadId: 'thread-ag-legacy' })[0].usage.outputTokens).toBe(row.estimated_tokens);
+
+    reopened.close();
+    rmSync(migDir, { recursive: true, force: true });
+  });
+
+  it('includes tool_calls/tool_results/thought in the Antigravity token estimate, not just content', async () => {
+    const { encode } = await import('gpt-tokenizer');
+    db.upsertThread({
+      id: 'thread-ag2',
+      projectId: 'proj-test',
+      title: 'Fil Antigravity avec outils',
+      originEngine: 'antigravity',
+      engineIds: {},
+      messageCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'active',
+    });
+    db.insertMessage(
+      makeMessage({
+        id: 'ag-tool',
+        hash: 'ag-tool-h',
+        threadId: 'thread-ag2',
+        sourceEngine: 'antigravity',
+        role: 'assistant',
+        content: 'Court',
+        thought: 'Une réflexion assez longue qui ne doit pas être ignorée dans l\'estimation.',
+        toolCalls: [{ id: 't1', name: 'run_command', arguments: { command: 'ls -la /Users/robin/Projets' } }],
+      }),
+    );
+    const records = db.getUsageRecords({ threadId: 'thread-ag2' });
+    expect(records).toHaveLength(1);
+    // A count of just "Court" alone would be tiny — the real estimate must include thought + tool_calls too.
+    const contentOnlyTokens = encode('Court').length;
+    expect(records[0].usage.outputTokens).toBeGreaterThan(contentOnlyTokens + 10);
+  });
+
+  it('scoping to engine="antigravity" excludes real-usage engines, and vice versa', () => {
+    db.upsertThread({
+      id: 'thread-ag3',
+      projectId: 'proj-test',
+      title: 'Fil Antigravity',
+      originEngine: 'antigravity',
+      engineIds: {},
+      messageCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'active',
+    });
+    db.insertMessage(makeMessage({ id: 'm1', hash: 'h1', model: 'claude-sonnet-5', usage: { inputTokens: 10, outputTokens: 5 } }));
+    db.insertMessage(
+      makeMessage({ id: 'ag-1', hash: 'ag-h1', threadId: 'thread-ag3', sourceEngine: 'antigravity', role: 'assistant', content: 'Bonjour' }),
+    );
+
+    expect(db.getUsageRecords({ engine: 'antigravity' }).every((r) => r.sourceEngine === 'antigravity')).toBe(true);
+    expect(db.getUsageRecords({ engine: 'claude-code' }).every((r) => r.sourceEngine === 'claude-code')).toBe(true);
+    expect(db.getUsageRecords()).toHaveLength(2); // both present when unscoped
+  });
+});
+
 describe('Db MCP call log', () => {
   it('records a call with its verbatim params and returns it newest-first', () => {
     db.logMcpCall('get_thread', { threadId: 't1' }, false, 'Fil : Test', '2026-01-01T00:00:00Z');

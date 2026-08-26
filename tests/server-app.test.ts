@@ -139,7 +139,8 @@ describe('sync-hub HTTP API', () => {
     expect(res.statusCode).toBe(200);
     const summary = res.json();
     expect(summary.totalCostUsd).toBeCloseTo(2, 10); // $2/MTok input for claude-sonnet-5
-    expect(summary.byModel).toEqual([{ model: 'claude-sonnet-5', costUsd: 2, inputTokens: 1_000_000, outputTokens: 0, messageCount: 1 }]);
+    expect(summary.totalCostEur).toBeCloseTo(2 * 0.92, 10);
+    expect(summary.byModel[0]).toMatchObject({ model: 'claude-sonnet-5', costUsd: 2, inputTokens: 1_000_000, outputTokens: 0, messageCount: 1 });
   });
 
   it('GET /api/projects/:id/threads and /api/threads/:id/messages', async () => {

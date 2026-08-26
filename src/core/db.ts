@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { encode } from 'gpt-tokenizer';
 import type {
   Artifact,
   EngineType,
@@ -15,6 +16,27 @@ import type {
   Thread,
   TokenUsage,
 } from '../types.js';
+
+export interface UsageScope {
+  projectId?: string;
+  threadId?: string;
+  engine?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+/** One priced-or-estimated turn's worth of usage — raw material for cost aggregation (core/cost.ts). */
+export interface UsageRecord {
+  timestamp: string;
+  projectId: string;
+  threadId: string;
+  sourceEngine: EngineType;
+  /** Undefined means "don't know which model" — never guessed, so estimateCostUsd correctly treats it as unpriced. */
+  model?: string;
+  usage: TokenUsage;
+  /** True for Antigravity's text-length-derived estimate — never a real, engine-reported figure. */
+  isEstimated: boolean;
+}
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS projects (
@@ -182,6 +204,7 @@ const EXPECTED_COLUMNS: Array<{ table: string; column: string; definition: strin
   { table: 'threads', column: 'source_file_path', definition: 'TEXT' },
   { table: 'messages', column: 'model', definition: 'TEXT' },
   { table: 'messages', column: 'usage', definition: 'TEXT' },
+  { table: 'messages', column: 'estimated_tokens', definition: 'INTEGER' },
 ];
 
 const DEFAULT_CATEGORIES = ['ekonum', 'client', 'perso'];
@@ -202,6 +225,7 @@ export class Db {
     // any project has been sorted into one yet. createCategory is idempotent (INSERT OR IGNORE).
     for (const name of DEFAULT_CATEGORIES) this.createCategory(name);
     this.backfillFts();
+    this.backfillEstimatedTokens();
   }
 
   /**
@@ -219,6 +243,28 @@ export class Db {
       INSERT INTO threads_fts (title, thread_id)
       SELECT title, id FROM threads WHERE id NOT IN (SELECT thread_id FROM threads_fts);
     `);
+  }
+
+  /**
+   * One-time catch-up for messages.estimated_tokens (see estimateAntigravityUsage's doc for why
+   * this exists) — a brand-new column is NULL on every pre-existing row, and computing it here
+   * once at startup is what keeps the cost endpoint from re-tokenizing the whole Antigravity
+   * corpus on every request. Only Antigravity messages get a value; every other engine already
+   * reports real usage and never needs this.
+   */
+  private backfillEstimatedTokens(): void {
+    const rows = this.raw
+      .prepare(`SELECT id, content, thought, tool_calls, tool_results FROM messages WHERE source_engine = 'antigravity' AND estimated_tokens IS NULL`)
+      .all() as any[];
+    if (rows.length === 0) return;
+    const update = this.raw.prepare('UPDATE messages SET estimated_tokens = ? WHERE id = ?');
+    const tx = this.raw.transaction(() => {
+      for (const row of rows) {
+        const text = [row.content, row.thought, row.tool_calls, row.tool_results].filter(Boolean).join('\n');
+        update.run(text ? encode(text).length : 0, row.id);
+      }
+    });
+    tx();
   }
 
   close(): void {
@@ -612,9 +658,9 @@ export class Db {
       this.raw
         .prepare(
           `INSERT INTO messages
-             (id, thread_id, project_id, source_engine, role, content, thought, tool_calls, tool_results, attachments, timestamp, sequence, hash, metadata, model, usage)
+             (id, thread_id, project_id, source_engine, role, content, thought, tool_calls, tool_results, attachments, timestamp, sequence, hash, metadata, model, usage, estimated_tokens)
            VALUES
-             (@id, @threadId, @projectId, @sourceEngine, @role, @content, @thought, @toolCalls, @toolResults, @attachments, @timestamp, @sequence, @hash, @metadata, @model, @usage)`,
+             (@id, @threadId, @projectId, @sourceEngine, @role, @content, @thought, @toolCalls, @toolResults, @attachments, @timestamp, @sequence, @hash, @metadata, @model, @usage, @estimatedTokens)`,
         )
         .run({
           id: message.id,
@@ -633,22 +679,30 @@ export class Db {
           metadata: message.metadata ? JSON.stringify(message.metadata) : null,
           model: message.model ?? null,
           usage: message.usage ? JSON.stringify(message.usage) : null,
+          estimatedTokens: message.estimatedTokens ?? null,
         });
       this.syncMessageFts(message.id, message.content);
       return true;
     } catch (err: any) {
       if (typeof err?.message === 'string' && err.message.includes('UNIQUE constraint failed: messages.hash')) {
-        // A genuine re-ingestion of the same content (same id, same hash) — but model/usage are
-        // metadata added to the adapters after most messages already existed, and don't factor
-        // into the hash. Without this, an already-ingested message could never pick up model/
-        // usage on a later rescan: SQLite reports the hash conflict before the id conflict even
-        // though id is the primary key (verified), so the "update in place" branch below never
-        // runs for an otherwise-unchanged message. Backfill just these two columns when they're
-        // newly available, leave everything else alone.
-        if (message.model || message.usage) {
+        // A genuine re-ingestion of the same content (same id, same hash) — but model/usage/
+        // estimated_tokens are metadata added to the adapters after most messages already existed,
+        // and don't factor into the hash. Without this, an already-ingested message could never
+        // pick up this metadata on a later rescan: SQLite reports the hash conflict before the id
+        // conflict even though id is the primary key (verified), so the "update in place" branch
+        // below never runs for an otherwise-unchanged message. Backfill just these columns when
+        // they're newly available, leave everything else alone.
+        if (message.model || message.usage || message.estimatedTokens != null) {
           this.raw
-            .prepare('UPDATE messages SET model = COALESCE(model, @model), usage = COALESCE(usage, @usage) WHERE hash = @hash')
-            .run({ hash: message.hash, model: message.model ?? null, usage: message.usage ? JSON.stringify(message.usage) : null });
+            .prepare(
+              'UPDATE messages SET model = COALESCE(model, @model), usage = COALESCE(usage, @usage), estimated_tokens = COALESCE(estimated_tokens, @estimatedTokens) WHERE hash = @hash',
+            )
+            .run({
+              hash: message.hash,
+              model: message.model ?? null,
+              usage: message.usage ? JSON.stringify(message.usage) : null,
+              estimatedTokens: message.estimatedTokens ?? null,
+            });
         }
         return false;
       }
@@ -663,7 +717,7 @@ export class Db {
                SET thread_id = @threadId, project_id = @projectId, source_engine = @sourceEngine, role = @role,
                    content = @content, thought = @thought, tool_calls = @toolCalls, tool_results = @toolResults,
                    attachments = @attachments, timestamp = @timestamp, sequence = @sequence, hash = @hash, metadata = @metadata,
-                   model = @model, usage = @usage
+                   model = @model, usage = @usage, estimated_tokens = @estimatedTokens
              WHERE id = @id`,
           )
           .run({
@@ -683,6 +737,7 @@ export class Db {
             metadata: message.metadata ? JSON.stringify(message.metadata) : null,
             model: message.model ?? null,
             usage: message.usage ? JSON.stringify(message.usage) : null,
+            estimatedTokens: message.estimatedTokens ?? null,
           });
         this.syncMessageFts(message.id, message.content);
         return true;
@@ -704,9 +759,19 @@ export class Db {
     return rows.map(rowToMessage);
   }
 
-  /** Every message that carries real usage — raw material for cost aggregation (see core/cost.ts). Rows with no model/usage recorded are excluded — nothing to price, not zero-cost. */
-  getUsageRecords(scope: { projectId?: string; threadId?: string } = {}): { model: string; usage: TokenUsage }[] {
-    let sql = 'SELECT model, usage FROM messages WHERE model IS NOT NULL AND usage IS NOT NULL';
+  /** Every message that carries real usage or token estimation — raw material for cost aggregation (see core/cost.ts). */
+  getUsageRecords(scope: UsageScope = {}): UsageRecord[] {
+    const real = this.getRealUsageRecords(scope);
+    // Antigravity never reports real usage (verified: no token/model fields anywhere in its
+    // transcript format) — estimated separately below rather than folded into the real-usage SQL,
+    // since a proper estimate needs to walk each thread in order (see estimateAntigravityUsage).
+    const estimated = !scope.engine || scope.engine === 'antigravity' ? this.estimateAntigravityUsage(scope) : [];
+    return [...real, ...estimated].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  }
+
+  /** Messages with a real, engine-reported model + token usage. */
+  private getRealUsageRecords(scope: UsageScope): UsageRecord[] {
+    let sql = `SELECT timestamp, project_id, thread_id, source_engine, model, usage FROM messages WHERE usage IS NOT NULL`;
     const params: string[] = [];
     if (scope.projectId) {
       sql += ' AND project_id = ?';
@@ -716,8 +781,103 @@ export class Db {
       sql += ' AND thread_id = ?';
       params.push(scope.threadId);
     }
+    if (scope.engine) {
+      sql += ' AND source_engine = ?';
+      params.push(scope.engine);
+    }
+    if (scope.startDate) {
+      sql += ' AND timestamp >= ?';
+      params.push(scope.startDate.includes('T') ? scope.startDate : `${scope.startDate}T00:00:00.000Z`);
+    }
+    if (scope.endDate) {
+      sql += ' AND timestamp <= ?';
+      params.push(scope.endDate.includes('T') ? scope.endDate : `${scope.endDate}T23:59:59.999Z`);
+    }
     const rows = this.raw.prepare(sql).all(...params) as any[];
-    return rows.map((r) => ({ model: r.model as string, usage: JSON.parse(r.usage) as TokenUsage }));
+    // A message can carry usage with no model (e.g. an edge case in an adapter's own parsing) —
+    // left as undefined rather than guessed at a specific paid model: estimateCostUsd treats a
+    // missing model as unpriced, which is correct here, not silently priced as if it were real.
+    return rows.map((r) => ({
+      timestamp: r.timestamp,
+      projectId: r.project_id,
+      threadId: r.thread_id,
+      sourceEngine: r.source_engine as EngineType,
+      model: r.model ?? undefined,
+      usage: JSON.parse(r.usage) as TokenUsage,
+      isEstimated: false,
+    }));
+  }
+
+  /**
+   * Antigravity's transcript carries no token/model fields at all (verified against the real
+   * format), so this estimates from text length using a real BPE tokenizer (gpt-tokenizer,
+   * OpenAI's o200k_base encoding — not Gemini's own, which isn't public, but a far closer proxy
+   * than a flat chars-per-token divisor) rather than guessing a number outright. Every field here
+   * is estimated and every record is marked isEstimated — never silently blended with real usage.
+   *
+   * A single API turn's real input cost is the FULL prior conversation, not just the latest
+   * message — modeled by walking each thread in sequence and tracking a running token count:
+   * input for an assistant turn = the sum of every prior message's own token count in that
+   * thread (system context, prior turns, tool results all included); output = that turn's own
+   * content + thought + tool call/result payloads. Each message's own token count is computed
+   * ONCE, at ingest time (messages.estimated_tokens — see antigravity.ts), not here: re-tokenizing
+   * the whole corpus on every /api/costs call measured at ~2s on the real ~6,500-message
+   * Antigravity history, which is far too slow to pay on every request just to add up numbers that
+   * never change once a message exists. This method is now just a cheap running sum.
+   */
+  private estimateAntigravityUsage(scope: UsageScope): UsageRecord[] {
+    let sql = `SELECT thread_id, project_id, role, content, thought, tool_calls, tool_results, timestamp, estimated_tokens
+               FROM messages WHERE source_engine = 'antigravity'`;
+    const params: string[] = [];
+    if (scope.projectId) {
+      sql += ' AND project_id = ?';
+      params.push(scope.projectId);
+    }
+    if (scope.threadId) {
+      sql += ' AND thread_id = ?';
+      params.push(scope.threadId);
+    }
+    sql += ' ORDER BY thread_id, sequence ASC';
+    const rows = this.raw.prepare(sql).all(...params) as any[];
+
+    const startBound = scope.startDate ? (scope.startDate.includes('T') ? scope.startDate : `${scope.startDate}T00:00:00.000Z`) : undefined;
+    const endBound = scope.endDate ? (scope.endDate.includes('T') ? scope.endDate : `${scope.endDate}T23:59:59.999Z`) : undefined;
+
+    const records: UsageRecord[] = [];
+    let currentThreadId: string | null = null;
+    let contextTokens = 0;
+    for (const row of rows) {
+      if (row.thread_id !== currentThreadId) {
+        currentThreadId = row.thread_id;
+        contextTokens = 0;
+      }
+      // Defensive fallback only — every row should have this populated by ingest-time computation
+      // plus the constructor's one-time backfill; never re-tokenize the whole scope's worth just
+      // because one row's column happens to be null.
+      const ownTokens =
+        row.estimated_tokens ??
+        (() => {
+          const ownText = [row.content, row.thought, row.tool_calls, row.tool_results].filter(Boolean).join('\n');
+          return ownText ? encode(ownText).length : 0;
+        })();
+
+      if (row.role === 'assistant' && ownTokens > 0) {
+        const inBounds = (!startBound || row.timestamp >= startBound) && (!endBound || row.timestamp <= endBound);
+        if (inBounds) {
+          records.push({
+            timestamp: row.timestamp,
+            projectId: row.project_id,
+            threadId: row.thread_id,
+            sourceEngine: 'antigravity',
+            model: 'gemini-2.5-pro',
+            usage: { inputTokens: contextTokens, outputTokens: ownTokens },
+            isEstimated: true,
+          });
+        }
+      }
+      contextTokens += ownTokens;
+    }
+    return records;
   }
 
   /** Verbatim cross-tool timeline for a project, optionally since a given ISO timestamp. Backs the MCP server. */
@@ -1044,6 +1204,7 @@ function rowToMessage(row: any): Message {
     metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
     model: row.model ?? undefined,
     usage: row.usage ? JSON.parse(row.usage) : undefined,
+    estimatedTokens: row.estimated_tokens ?? undefined,
   };
 }
 

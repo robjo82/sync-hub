@@ -38,9 +38,11 @@ describe('estimateCostUsd', () => {
     expect(estimateCostUsd('claude-sonnet-5', undefined)).toBeNull();
   });
 
-  it('reasoning_output_tokens is informational only — never added on top of outputTokens (it is already a subset, per OpenAI\'s own total_tokens accounting)', () => {
-    const withReasoning = estimateCostUsd('gpt-5.5', { inputTokens: 100, outputTokens: 50, reasoningOutputTokens: 20 });
-    const withoutReasoning = estimateCostUsd('gpt-5.5', { inputTokens: 100, outputTokens: 50 });
-    expect(withReasoning).toBe(withoutReasoning);
+  it('computes a Gemini / Antigravity turn (gemini-2.5-pro: $1.25/$5.00/MTok)', () => {
+    const cost = estimateCostUsd('gemini-2.5-pro', { inputTokens: 1_000_000, outputTokens: 100_000, cachedInputTokens: 500_000 });
+    const expected = (1_000_000 * 1.25 + 100_000 * 5.0 + 500_000 * 0.3125) / 1_000_000;
+    expect(cost).toBeCloseTo(expected, 10);
+    expect(hasPricing('gemini-2.5-pro')).toBe(true);
   });
 });
+

@@ -29,10 +29,21 @@ export const api = {
     }),
   coverage: () =>
     jsonFetch<{ projectId: string; projectName: string; engines: Record<string, string> }[]>('/api/coverage'),
-  costs: (scope?: { projectId?: string; threadId?: string }) => {
+  costs: (scope?: {
+    projectId?: string;
+    threadId?: string;
+    engine?: string;
+    startDate?: string;
+    endDate?: string;
+    eurRate?: number;
+  }) => {
     const params = new URLSearchParams();
     if (scope?.projectId) params.set('projectId', scope.projectId);
     if (scope?.threadId) params.set('threadId', scope.threadId);
+    if (scope?.engine) params.set('engine', scope.engine);
+    if (scope?.startDate) params.set('startDate', scope.startDate);
+    if (scope?.endDate) params.set('endDate', scope.endDate);
+    if (scope?.eurRate) params.set('eurRate', String(scope.eurRate));
     const qs = params.toString();
     return jsonFetch<CostSummary>(`/api/costs${qs ? `?${qs}` : ''}`);
   },

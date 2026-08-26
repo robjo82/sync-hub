@@ -148,8 +148,24 @@ export function createApp(deps: AppDeps): FastifyInstance {
       .map((p) => ({ projectId: p.id, projectName: p.name, engines: db.getLastActivityByEngine(p.id) })),
   );
 
-  app.get<{ Querystring: { projectId?: string; threadId?: string } }>('/api/costs', async (req) =>
-    computeCostSummary(db, { projectId: req.query.projectId, threadId: req.query.threadId }),
+  app.get<{
+    Querystring: {
+      projectId?: string;
+      threadId?: string;
+      engine?: string;
+      startDate?: string;
+      endDate?: string;
+      eurRate?: string;
+    };
+  }>('/api/costs', async (req) =>
+    computeCostSummary(db, {
+      projectId: req.query.projectId,
+      threadId: req.query.threadId,
+      engine: req.query.engine,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+      eurRate: req.query.eurRate ? parseFloat(req.query.eurRate) : undefined,
+    }),
   );
 
   app.get<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
