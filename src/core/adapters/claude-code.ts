@@ -6,7 +6,7 @@ import type { Db } from '../db.js';
 import type { ProjectRegistry } from '../registry.js';
 import { computeMessageHash } from '../hash.js';
 import { ensureChatGptProject, loadChatGptProjectNames } from './chatgpt-export.js';
-import type { Message, MessageRole, Thread, ToolCall, ToolResult, TokenUsage } from '../../types.js';
+import { UNASSIGNED_PROJECT_ID, type Message, type MessageRole, type Thread, type ToolCall, type ToolResult, type TokenUsage } from '../../types.js';
 
 export const CLAUDE_CODE_STORAGE_ROOT = join(homedir(), '.claude', 'projects');
 
@@ -243,9 +243,9 @@ export function ingestSessionFile(
   const lines = body.split('\n');
   // Cowork sessions pass an override here: their slug is derived from a VM-sandboxed cwd and is
   // meaningless for project resolution — the real signal is the user-selected folder, if any.
-  const projectId = opts.projectIdOverride ?? resolveClaudeSlug(db, registry, ref.slug, opts.chatGptProjectsCacheRoot);
-
+  const defaultProjectId = opts.projectIdOverride ?? resolveClaudeSlug(db, registry, ref.slug, opts.chatGptProjectsCacheRoot);
   const existingThread = db.getThread(ref.sessionId);
+  const projectId = existingThread && existingThread.projectId !== UNASSIGNED_PROJECT_ID ? existingThread.projectId : defaultProjectId;
   let sequence = existingThread ? db.getMessagesForThread(ref.sessionId).length : 0;
   let firstUserContent: string | undefined;
   let inserted = 0;

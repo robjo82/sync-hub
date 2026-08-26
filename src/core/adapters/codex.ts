@@ -6,7 +6,7 @@ import type { Db } from '../db.js';
 import type { ProjectRegistry } from '../registry.js';
 import { computeMessageHash } from '../hash.js';
 import { ensureChatGptProject, loadChatGptProjectNames } from './chatgpt-export.js';
-import type { Message, MessageRole, Thread, ToolCall, ToolResult, TokenUsage } from '../../types.js';
+import { UNASSIGNED_PROJECT_ID, type Message, type MessageRole, type Thread, type ToolCall, type ToolResult, type TokenUsage } from '../../types.js';
 
 export const CODEX_SESSIONS_ROOT = join(homedir(), '.codex', 'sessions');
 export const CODEX_ARCHIVED_SESSIONS_ROOT = join(homedir(), '.codex', 'archived_sessions');
@@ -359,8 +359,9 @@ export function ingestSessionFile(
     return 0;
   }
 
-  const projectId = header.cwd ? resolveCodexCwd(db, registry, header.cwd, opts.chatGptProjectsCacheRoot) : 'unassigned';
+  const defaultProjectId = header.cwd ? resolveCodexCwd(db, registry, header.cwd, opts.chatGptProjectsCacheRoot) : UNASSIGNED_PROJECT_ID;
   const existingThread = db.getThread(header.sessionId);
+  const projectId = existingThread && existingThread.projectId !== UNASSIGNED_PROJECT_ID ? existingThread.projectId : defaultProjectId;
 
   if (!existingThread) {
     const now = header.createdAt ?? new Date().toISOString();

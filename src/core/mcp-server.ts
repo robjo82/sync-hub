@@ -265,7 +265,7 @@ export function createMcpServer(
     logged(db, 'list_projects', async () => {
       const projects = db.getProjects();
       const lines = projects.map((p) => {
-        const count = db.countThreadsForProject(p.id);
+        const count = p.id === UNASSIGNED_PROJECT_ID ? db.countThreadsForProject(p.id, 'active') : db.countThreadsForProject(p.id);
         const path = p.canonicalPath ? ` — ${p.canonicalPath}` : '';
         const category = p.category ? ` [${p.category}]` : '';
         const archived = p.archived ? ' [archivé]' : '';
