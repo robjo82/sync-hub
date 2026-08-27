@@ -20,6 +20,11 @@ services:
       SYNC_HUB_DATA_DIR: /data
       SYNC_HUB_DISABLE_LOCAL_INGEST: "1"
       SYNC_HUB_REMOTE_TOKEN: ${SYNC_HUB_REMOTE_TOKEN}
+    labels:
+      # Watchtower tourne sur ce serveur en --label-enable : il ne met à jour que les conteneurs
+      # qui le demandent explicitement. Avec ce label, un push sur main suffit — la CI pousse
+      # l'image, Watchtower la récupère dans la minute et redéploie. Pas de webhook à gérer.
+      com.centurylinklabs.watchtower.enable: "true"
     volumes:
       - sync-hub-data:/data
 

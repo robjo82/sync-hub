@@ -14,7 +14,6 @@ permissions:
 
 env:
   IMAGE_NAME: registry.robin-joseph.fr/sync-hub/remote-hub
-  PORTAINER_STACK_WEBHOOK_URL: ${{ secrets.PORTAINER_STACK_WEBHOOK_URL }}
 
 jobs:
   test:
@@ -61,21 +60,6 @@ jobs:
           provenance: false
           sbom: false
 
-      - name: Trigger Portainer stack webhook (optional)
-        if: ${{ env.PORTAINER_STACK_WEBHOOK_URL != '' }}
-        run: |
-          set -euo pipefail
-          headers_file="$(mktemp)"
-          body_file="$(mktemp)"
-          status="$(curl -sS -o "${body_file}" -D "${headers_file}" -w "%{http_code}" -X POST "${{ env.PORTAINER_STACK_WEBHOOK_URL }}" || true)"
-
-          if [[ "${status}" =~ ^2[0-9][0-9]$ ]]; then
-            echo "Portainer webhook triggered (HTTP ${status})."
-            exit 0
-          fi
-
-          echo "::warning::Portainer webhook call failed (HTTP ${status})."
-          echo "Response headers:"
-          sed -n '1,20p' "${headers_file}" || true
-          echo "Response body (first 20 lines):"
-          sed -n '1,20p' "${body_file}" || true
+      # Pas d'étape de redéploiement : Watchtower tourne sur le serveur et surveille le conteneur
+      # via le label com.centurylinklabs.watchtower.enable (voir deploy/portainer-stack.yml).
+      # Il récupère l'image dans la minute qui suit ce push et redéploie tout seul.
