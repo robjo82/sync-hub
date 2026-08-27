@@ -830,11 +830,74 @@ export class Db {
     this.raw.prepare('INSERT INTO messages_fts (content, message_id) VALUES (?, ?)').run(content, id);
   }
 
-  getMessagesForThread(threadId: string): Message[] {
-    const rows = this.raw
-      .prepare('SELECT * FROM messages WHERE thread_id = ? ORDER BY sequence ASC')
-      .all(threadId) as any[];
+  getMessagesForThread(threadId: string, page?: { offset: number; limit: number }): Message[] {
+    // Unpaginated by default because callers inside this file walk whole threads. The dashboard
+    // passes a page: the largest real thread here is 13k messages averaging ~800 characters, so
+    // serving one in full is a ~10MB response and thousands of DOM nodes for a single click.
+    const rows = page
+      ? (this.raw
+          .prepare('SELECT * FROM messages WHERE thread_id = ? ORDER BY sequence ASC LIMIT ? OFFSET ?')
+          .all(threadId, page.limit, page.offset) as any[])
+      : (this.raw
+          .prepare('SELECT * FROM messages WHERE thread_id = ? ORDER BY sequence ASC')
+          .all(threadId) as any[]);
     return rows.map(rowToMessage);
+  }
+
+  countMessagesForThread(threadId: string): number {
+    const row = this.raw.prepare('SELECT COUNT(*) AS n FROM messages WHERE thread_id = ?').get(threadId) as { n: number };
+    return row.n;
+  }
+
+  /**
+   * The user's own turns in a thread, as jump targets for the dashboard's outline — the natural
+   * structure of a conversation is "what was asked", so those are the anchors worth offering.
+   * Deliberately excerpt-only (and a verbatim excerpt, never a generated summary): the point is to
+   * stay small enough to load for a 13k-message thread when the messages themselves cannot.
+   */
+  getThreadOutline(threadId: string): { id: string; position: number; timestamp: string; excerpt: string }[] {
+    // `position` is the 0-based index of that message within the whole thread, which is exactly
+    // the offset the paginated endpoint takes — so clicking an outline entry can load the window
+    // starting there instead of paging forward from the beginning to reach it.
+    // Harness-injected turns carry role='user' but nobody typed them, so they make useless jump
+    // targets. The list is explicit rather than "anything starting with <": real pasted content
+    // in this store begins with <?xml, <!DOCTYPE, <t t-name=, <img … and must stay addressable.
+    // Nothing is filtered out of the thread itself — only out of the list of anchors offered.
+    const INJECTED_PREFIXES = [
+      '<task-notification>',
+      '<environment_context>',
+      '<recommended_plugins>',
+      '<uploaded_files>',
+      '<local-command-stdout>',
+      '<command-name>',
+      '<command-message>',
+      '<system-reminder>',
+      '<local-command-caveat>',
+      // Not a tag, but equally harness-written: the attachment manifest added when files are
+      // dropped into a prompt. Matched in full so real pasted markdown starting with '#'
+      // (#lang racket, # AGENTS.md …) keeps its anchor.
+      '# Files mentioned by the user:',
+    ];
+    // ltrim(X) alone strips spaces only, and these blocks routinely open with a newline.
+    const LEAD = "' ' || char(10) || char(13) || char(9)";
+    const notInjected = INJECTED_PREFIXES.map(() => `ltrim(content, ${LEAD}) NOT LIKE ?`).join(' AND ');
+    const rows = this.raw
+      .prepare(
+        `SELECT id, position, timestamp, excerpt FROM (
+           SELECT id, role, timestamp,
+                  ROW_NUMBER() OVER (ORDER BY sequence ASC) - 1 AS position,
+                  trim(substr(replace(replace(content, char(10), ' '), char(13), ' '), 1, 160)) AS excerpt,
+                  ${notInjected} AS keep
+           FROM messages WHERE thread_id = ?
+         ) WHERE role = 'user' AND keep AND excerpt <> '' ORDER BY position ASC`,
+      )
+      .all(...INJECTED_PREFIXES.map((prefix) => `${prefix}%`), threadId) as {
+      id: string;
+      position: number;
+      timestamp: string;
+      excerpt: string;
+    }[];
+    return rows;
   }
 
   /** The next page of messages this instance hasn't pushed to a remote hub yet, ordered by

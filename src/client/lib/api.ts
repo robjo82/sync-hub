@@ -1,6 +1,14 @@
 import type { Artifact, Category, Memory, Message, Project, SyncStats, Thread, WebSocketEvent } from '../../types.js';
 import type { CostSummary } from '../../core/cost.js';
 
+export interface ThreadOutlineEntry {
+  id: string;
+  /** 0-based index in the full thread — the offset to load the window from. */
+  position: number;
+  timestamp: string;
+  excerpt: string;
+}
+
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${url} → ${res.status}`);
@@ -14,7 +22,14 @@ export const api = {
   thread: (threadId: string) => jsonFetch<Thread>(`/api/threads/${threadId}`),
   memories: (projectId: string) => jsonFetch<Memory[]>(`/api/projects/${projectId}/memories`),
   artifacts: (projectId: string) => jsonFetch<Artifact[]>(`/api/projects/${projectId}/artifacts`),
-  messages: (threadId: string) => jsonFetch<Message[]>(`/api/threads/${threadId}/messages`),
+  messages: (threadId: string, page?: { offset: number; limit: number }) =>
+    jsonFetch<{ messages: Message[]; total: number }>(
+      page
+        ? `/api/threads/${threadId}/messages?offset=${page.offset}&limit=${page.limit}`
+        : `/api/threads/${threadId}/messages`,
+    ),
+  threadOutline: (threadId: string) =>
+    jsonFetch<ThreadOutlineEntry[]>(`/api/threads/${threadId}/outline`),
   assign: (projectId: string, kind: 'paths' | 'claudeSlugs' | 'codexCwds', value: string) =>
     jsonFetch<Project>(`/api/projects/${projectId}/assign`, {
       method: 'POST',

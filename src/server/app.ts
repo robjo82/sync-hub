@@ -198,10 +198,28 @@ export function createApp(deps: AppDeps): FastifyInstance {
     return thread;
   });
 
-  app.get<{ Params: { id: string } }>('/api/threads/:id/messages', async (req, reply) => {
+  app.get<{ Params: { id: string }; Querystring: { offset?: string; limit?: string } }>(
+    '/api/threads/:id/messages',
+    async (req, reply) => {
+      const thread = db.getThread(req.params.id);
+      if (!thread) return reply.code(404).send({ error: 'not_found' });
+
+      const total = db.countMessagesForThread(req.params.id);
+      // No limit given means "the whole thread", which stays valid for scripts and the MCP side.
+      // The dashboard always pages; see getMessagesForThread for why that matters here.
+      if (req.query.limit === undefined) {
+        return { messages: db.getMessagesForThread(req.params.id), total };
+      }
+      const limit = Math.min(Math.max(Number(req.query.limit) || 0, 1), 500);
+      const offset = Math.max(Number(req.query.offset) || 0, 0);
+      return { messages: db.getMessagesForThread(req.params.id, { offset, limit }), total };
+    },
+  );
+
+  app.get<{ Params: { id: string } }>('/api/threads/:id/outline', async (req, reply) => {
     const thread = db.getThread(req.params.id);
     if (!thread) return reply.code(404).send({ error: 'not_found' });
-    return db.getMessagesForThread(req.params.id);
+    return db.getThreadOutline(req.params.id);
   });
 
   app.post<{ Params: { id: string }; Body: { kind: 'paths' | 'claudeSlugs' | 'codexCwds'; value: string } }>(

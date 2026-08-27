@@ -179,8 +179,60 @@ describe('sync-hub HTTP API', () => {
     expect(threadsRes.json()).toHaveLength(1);
 
     const messagesRes = await app.inject({ method: 'GET', url: '/api/threads/t1/messages' });
-    expect(messagesRes.json()).toHaveLength(1);
-    expect(messagesRes.json()[0].content).toBe('Bonjour');
+    expect(messagesRes.json().total).toBe(1);
+    expect(messagesRes.json().messages).toHaveLength(1);
+    expect(messagesRes.json().messages[0].content).toBe('Bonjour');
+  });
+
+  it('pages a thread and always reports the full total, so the client knows what is left', async () => {
+    for (let i = 0; i < 7; i++) {
+      db.insertMessage(message({ id: `m${i}`, hash: `h${i}`, sequence: i, content: `message ${i}` }));
+    }
+
+    const firstPage = await app.inject({ method: 'GET', url: '/api/threads/t1/messages?offset=0&limit=3' });
+    expect(firstPage.json().total).toBe(7);
+    expect(firstPage.json().messages.map((m: any) => m.content)).toEqual(['message 0', 'message 1', 'message 2']);
+
+    const lastPage = await app.inject({ method: 'GET', url: '/api/threads/t1/messages?offset=6&limit=3' });
+    expect(lastPage.json().total).toBe(7);
+    expect(lastPage.json().messages.map((m: any) => m.content)).toEqual(['message 6']);
+
+    // No limit at all still means the whole thread — scripts and the MCP side rely on that.
+    const whole = await app.inject({ method: 'GET', url: '/api/threads/t1/messages' });
+    expect(whole.json().messages).toHaveLength(7);
+  });
+
+  it('serves a thread outline of the user turns only, as jump targets', async () => {
+    db.insertMessage(message({ id: 'u1', hash: 'hu1', sequence: 0, role: 'user', content: 'Première question\nsur deux lignes' }));
+    db.insertMessage(message({ id: 'a1', hash: 'ha1', sequence: 1, role: 'assistant', content: 'Une réponse' }));
+    db.insertMessage(message({ id: 'u2', hash: 'hu2', sequence: 2, role: 'user', content: 'Seconde question' }));
+
+    const res = await app.inject({ method: 'GET', url: '/api/threads/t1/outline' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().map((o: any) => o.id)).toEqual(['u1', 'u2']);
+    // position is the offset into the full thread, so a click can load the window starting there.
+    expect(res.json().map((o: any) => o.position)).toEqual([0, 2]);
+    // Newlines flattened so the excerpt stays one readable line in the outline.
+    expect(res.json()[0].excerpt).toBe('Première question sur deux lignes');
+
+    expect((await app.inject({ method: 'GET', url: '/api/threads/nope/outline' })).statusCode).toBe(404);
+  });
+
+  it('leaves harness-injected turns out of the outline, but keeps real pasted markup', async () => {
+    db.insertMessage(message({ id: 'inj1', hash: 'hi1', sequence: 0, role: 'user', content: '<task-notification><task-id>42</task-id>' }));
+    db.insertMessage(message({ id: 'inj2', hash: 'hi2', sequence: 1, role: 'user', content: '<command-name>/model</command-name>' }));
+    // Real content Robin pasted himself — starts with '<' too, and must stay addressable.
+    db.insertMessage(message({ id: 'real1', hash: 'hr1', sequence: 2, role: 'user', content: '<?xml version="1.0"?><note/>' }));
+    db.insertMessage(message({ id: 'real2', hash: 'hr2', sequence: 3, role: 'user', content: 'Une vraie question' }));
+
+    const outline = (await app.inject({ method: 'GET', url: '/api/threads/t1/outline' })).json();
+    expect(outline.map((o: any) => o.id)).toEqual(['real1', 'real2']);
+    // Positions still index the full thread, injected turns included.
+    expect(outline.map((o: any) => o.position)).toEqual([2, 3]);
+
+    // And the thread itself still serves every message — filtering is for the anchors only.
+    const all = await app.inject({ method: 'GET', url: '/api/threads/t1/messages' });
+    expect(all.json().messages).toHaveLength(4);
   });
 
   it('returns 404 for an unknown project or thread', async () => {

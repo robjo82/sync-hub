@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Archive, Brain, Check, Copy, FolderInput, Info, Settings2, Trash2, Wrench, X } from 'lucide-react';
+import { Archive, Brain, Check, ChevronDown, Copy, FolderInput, Info, List, Settings2, Trash2, Wrench, X } from 'lucide-react';
 import type { EngineType, Message, Project, Thread, ToolCall, ToolResult } from '../../types.js';
 import { UNASSIGNED_PROJECT_ID } from '../../types.js';
-import { api } from '../lib/api.js';
+import { api, type ThreadOutlineEntry } from '../lib/api.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 
 const ENGINE_LABEL: Record<string, string> = { 'claude-code': 'Claude Code', codex: 'Codex', antigravity: 'Antigravity' };
 
 const USER_CARD_COLLAPSE_LENGTH = 600;
+const ASSISTANT_COLLAPSE_LENGTH = 4000;
+/** Below this, consecutive turns from the same engine are one continuous stretch of work and
+ * repeating "Claude Code · 16:52:34" above each one is noise, not information. */
+const META_REPEAT_GAP_MS = 5 * 60 * 1000;
+const PAGE_SIZE = 100;
 
 function Meta({ sourceEngine, timestamp, className = 'mb-1' }: { sourceEngine: EngineType; timestamp: string; className?: string }) {
   return (
@@ -205,10 +210,10 @@ function UserCard({ message }: { message: Message }) {
 /** A system-role notice (e.g. Antigravity's <SYSTEM_MESSAGE> wrapper, or a background-task
  * notification) — real content, but injected rather than typed by anyone, so it's folded by
  * default like the reasoning trail rather than shown inline at full height. */
-function SystemNoticeBlock({ message }: { message: Message }) {
+function SystemNoticeBlock({ message, showMeta }: { message: Message; showMeta: boolean }) {
   return (
     <div>
-      <Meta sourceEngine={message.sourceEngine} timestamp={message.timestamp} />
+      {showMeta && <Meta sourceEngine={message.sourceEngine} timestamp={message.timestamp} />}
       <details className="rounded-lg border border-border bg-muted/60 px-2.5 py-1.5 text-xs text-muted-foreground">
         <summary className="flex cursor-pointer select-none items-center gap-1.5">
           <Info size={13} className="shrink-0" />
@@ -222,39 +227,98 @@ function SystemNoticeBlock({ message }: { message: Message }) {
   );
 }
 
-function AssistantTurn({ message, previousTimestamp }: { message: Message; previousTimestamp?: string }) {
+function AssistantTurn({
+  message,
+  previousTimestamp,
+  showMeta,
+}: {
+  message: Message;
+  previousTimestamp?: string;
+  showMeta: boolean;
+}) {
   const hasReasoning = !!message.thought || (message.toolCalls?.length ?? 0) > 0 || (message.toolResults?.length ?? 0) > 0;
   const durationLabel = previousTimestamp ? formatDuration(previousTimestamp, message.timestamp) : null;
   return (
     <div>
-      <Meta sourceEngine={message.sourceEngine} timestamp={message.timestamp} />
+      {showMeta && <Meta sourceEngine={message.sourceEngine} timestamp={message.timestamp} />}
       {hasReasoning && (
         <ReasoningBlock thought={message.thought} calls={message.toolCalls ?? []} results={message.toolResults} durationLabel={durationLabel} />
       )}
-      {message.content && <MarkdownRenderer text={message.content} />}
+      {message.content && <CollapsibleContent text={message.content} />}
     </div>
   );
 }
 
-function RenderedItem({ item, previousTimestamp }: { item: RenderItem; previousTimestamp?: string }) {
+/** A single assistant turn can be enormous — the largest one in this store is 355k characters,
+ * which on its own makes a thread unscrollable. Long ones open to a readable height with the rest
+ * one click away; nothing is truncated or rewritten, only hidden. */
+function CollapsibleContent({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  if (text.length <= ASSISTANT_COLLAPSE_LENGTH) return <MarkdownRenderer text={text} />;
+  return (
+    <div>
+      <div className={`relative ${expanded ? '' : 'max-h-96 overflow-hidden'}`}>
+        <MarkdownRenderer text={text} />
+        {!expanded && <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background" />}
+      </div>
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        className="mt-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+      >
+        {expanded ? 'Replier ce message' : `Afficher la suite (${Math.round(text.length / 1000)} k caractères)`}
+      </button>
+    </div>
+  );
+}
+
+function RenderedItem({
+  item,
+  previousTimestamp,
+  showMeta,
+}: {
+  item: RenderItem;
+  previousTimestamp?: string;
+  showMeta: boolean;
+}) {
   if (item.kind === 'toolGroup') {
     const hasReasoning = item.calls.length > 0 || item.results.length > 0;
     const durationLabel = formatDuration(item.timestamp, item.endTimestamp) ?? (previousTimestamp ? formatDuration(previousTimestamp, item.timestamp) : null);
     return (
       <div>
-        <Meta sourceEngine={item.sourceEngine} timestamp={item.timestamp} />
+        {showMeta && <Meta sourceEngine={item.sourceEngine} timestamp={item.timestamp} />}
         {hasReasoning && <ReasoningBlock calls={item.calls} results={item.results} durationLabel={durationLabel} />}
-        {item.content && <MarkdownRenderer text={item.content} />}
+        {item.content && <CollapsibleContent text={item.content} />}
       </div>
     );
   }
   if (item.message.role === 'user') return <UserCard message={item.message} />;
-  if (item.message.role === 'system') return <SystemNoticeBlock message={item.message} />;
-  return <AssistantTurn message={item.message} previousTimestamp={previousTimestamp} />;
+  if (item.message.role === 'system') return <SystemNoticeBlock message={item.message} showMeta={showMeta} />;
+  return <AssistantTurn message={item.message} previousTimestamp={previousTimestamp} showMeta={showMeta} />;
 }
 
 function itemTimestamp(item: RenderItem): string {
   return item.kind === 'toolGroup' ? item.endTimestamp : item.message.timestamp;
+}
+
+function itemEngine(item: RenderItem): EngineType {
+  return item.kind === 'toolGroup' ? item.sourceEngine : item.message.sourceEngine;
+}
+
+function isUserItem(item: RenderItem): boolean {
+  return item.kind === 'message' && item.message.role === 'user';
+}
+
+/** Whether this item still needs its own "engine · timestamp" line. Repeating it above every
+ * consecutive assistant turn is what makes a thread read as a wall of stamps; it earns its place
+ * when the turn actually starts something — the first item, a reply to the user, a switch of
+ * engine, or a real pause. */
+function shouldShowMeta(item: RenderItem, previous: RenderItem | undefined): boolean {
+  if (!previous) return true;
+  if (isUserItem(item)) return true;
+  if (isUserItem(previous)) return true;
+  if (itemEngine(item) !== itemEngine(previous)) return true;
+  const gap = new Date(itemTimestamp(item)).getTime() - new Date(itemTimestamp(previous)).getTime();
+  return !Number.isFinite(gap) || gap > META_REPEAT_GAP_MS;
 }
 
 const actionButtonClass = 'flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted';
@@ -347,13 +411,57 @@ export function ChatView({
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [thread, setThread] = useState<Thread | null>(null);
   const [idCopied, setIdCopied] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [windowStart, setWindowStart] = useState(0);
+  const [outline, setOutline] = useState<ThreadOutlineEntry[]>([]);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
     setMessages(null);
     setThread(null);
-    api.messages(threadId).then(setMessages);
-    api.thread(threadId).then(setThread);
+    setOutline([]);
+    setOutlineOpen(false);
+    setWindowStart(0);
+    let cancelled = false;
+    api.messages(threadId, { offset: 0, limit: PAGE_SIZE }).then((r) => {
+      if (cancelled) return;
+      setMessages(r.messages);
+      setTotal(r.total);
+    });
+    api.thread(threadId).then((t) => !cancelled && setThread(t));
+    api.threadOutline(threadId).then((o) => !cancelled && setOutline(o));
+    // A thread switch while a page is still in flight would otherwise paint the previous thread's
+    // messages over the new one.
+    return () => {
+      cancelled = true;
+    };
   }, [threadId]);
+
+  const loadedEnd = windowStart + (messages?.length ?? 0);
+
+  async function loadMore() {
+    setLoadingMore(true);
+    try {
+      const r = await api.messages(threadId, { offset: loadedEnd, limit: PAGE_SIZE });
+      setMessages((prev) => [...(prev ?? []), ...r.messages]);
+      setTotal(r.total);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  /** Jumping replaces the window rather than paging forward to reach the target: reaching message
+   * 12 000 by appending 100 at a time would be 120 requests and 12 000 mounted nodes. */
+  async function jumpTo(position: number) {
+    setMessages(null);
+    setOutlineOpen(false);
+    const r = await api.messages(threadId, { offset: position, limit: PAGE_SIZE });
+    setWindowStart(position);
+    setMessages(r.messages);
+    setTotal(r.total);
+    document.getElementById('thread-top')?.scrollIntoView({ behavior: 'auto', block: 'start' });
+  }
 
   useEffect(() => {
     if (!idCopied) return;
@@ -414,16 +522,75 @@ export function ChatView({
           </button>
         </div>
       </div>
-      <div className="flex flex-col gap-4">
+      {outline.length > 1 && (
+        <div className="mb-3">
+          <button
+            onClick={() => setOutlineOpen((o) => !o)}
+            className={`${actionButtonClass} w-full justify-between`}
+          >
+            <span className="flex items-center gap-1.5">
+              <List size={12} />
+              Sommaire du fil — {outline.length} questions
+            </span>
+            <ChevronDown size={12} className={outlineOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+          </button>
+          {outlineOpen && (
+            <ol className="mt-1.5 max-h-72 overflow-y-auto rounded-md border border-border">
+              {outline.map((entry, i) => {
+                const loaded = entry.position >= windowStart && entry.position < loadedEnd;
+                return (
+                  <li key={entry.id}>
+                    <button
+                      onClick={() =>
+                        loaded
+                          ? document.getElementById(`msg-${entry.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                          : jumpTo(entry.position)
+                      }
+                      className="flex w-full items-baseline gap-2 border-b border-border/60 px-2.5 py-1.5 text-left text-xs last:border-b-0 hover:bg-muted"
+                    >
+                      <span className="shrink-0 tabular-nums text-muted-foreground">{i + 1}.</span>
+                      <span className="truncate text-foreground">{entry.excerpt || '(message vide)'}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </div>
+      )}
+
+      {windowStart > 0 && (
+        <p className="mb-3 text-center text-xs text-muted-foreground">
+          Affichage à partir du message {windowStart + 1}.{' '}
+          <button onClick={() => jumpTo(0)} className="underline underline-offset-2 hover:text-foreground">
+            Revenir au début du fil
+          </button>
+        </p>
+      )}
+
+      <div id="thread-top" className="flex flex-col gap-4">
         {messages.length === 0 && <p className="text-sm text-muted-foreground">Aucun message dans ce fil.</p>}
         {items.map((item, idx) => (
-          <RenderedItem
-            key={item.kind === 'toolGroup' ? item.id : item.message.id}
-            item={item}
-            previousTimestamp={idx > 0 ? itemTimestamp(items[idx - 1]) : undefined}
-          />
+          <div key={item.kind === 'toolGroup' ? item.id : item.message.id} id={item.kind === 'message' ? `msg-${item.message.id}` : undefined}>
+            <RenderedItem
+              item={item}
+              previousTimestamp={idx > 0 ? itemTimestamp(items[idx - 1]) : undefined}
+              showMeta={shouldShowMeta(item, idx > 0 ? items[idx - 1] : undefined)}
+            />
+          </div>
         ))}
       </div>
+
+      {loadedEnd < total && (
+        <div className="mt-4 flex flex-col items-center gap-1">
+          <button onClick={loadMore} disabled={loadingMore} className={`${actionButtonClass} disabled:opacity-50`}>
+            {loadingMore ? 'Chargement…' : `Charger la suite (${total - loadedEnd} messages restants)`}
+          </button>
+          <span className="text-xs text-muted-foreground">
+            {loadedEnd} / {total} affichés
+          </span>
+        </div>
+      )}
     </div>
   );
 }
