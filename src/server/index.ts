@@ -50,14 +50,29 @@ function fullScan(): void {
 }
 
 let pushTimer: ReturnType<typeof setTimeout> | undefined;
+let pushInterval: ReturnType<typeof setInterval> | undefined;
+
+function pushNow(): void {
+  if (!REMOTE_URL || !REMOTE_TOKEN) return;
+  runPushCycle(db, { remoteUrl: REMOTE_URL, remoteToken: REMOTE_TOKEN }).catch((err) => console.error('sync-push: cycle failed', err));
+}
+
 /** Debounced rather than fired on every ingest event — a burst of file changes (a full scan, a
  * fast-typed conversation) should settle into one push cycle, not one HTTP round trip per file. */
 function schedulePush(): void {
   if (!REMOTE_URL || !REMOTE_TOKEN) return;
   if (pushTimer) clearTimeout(pushTimer);
-  pushTimer = setTimeout(() => {
-    runPushCycle(db, { remoteUrl: REMOTE_URL, remoteToken: REMOTE_TOKEN }).catch((err) => console.error('sync-push: cycle failed', err));
-  }, 15_000);
+  pushTimer = setTimeout(pushNow, 15_000);
+}
+
+/** A floor under the ingest-driven schedule above. A cycle that fails (remote redeploying, network
+ * blip) leaves its watermark untouched and waits for "next cycle" — but the only thing that used to
+ * start one was a local ingest event, so on a quiet machine a single failed push could stall the
+ * sync for hours. This guarantees a retry regardless of local activity. */
+function startPushInterval(): void {
+  if (!REMOTE_URL || !REMOTE_TOKEN) return;
+  pushInterval = setInterval(pushNow, 5 * 60_000);
+  pushInterval.unref?.(); // never hold the process open on its own account
 }
 
 if (DISABLE_LOCAL_INGEST) {
@@ -67,6 +82,7 @@ if (DISABLE_LOCAL_INGEST) {
 }
 fullScan();
 schedulePush();
+startPushInterval();
 
 const watchHandle: WatchHandle = DISABLE_LOCAL_INGEST
   ? { isActive: () => false, ready: () => Promise.resolve(), close: async () => {} }
@@ -93,6 +109,7 @@ app.log.info(`sync-hub écoute sur ${address}`);
 
 async function shutdown(): Promise<void> {
   if (pushTimer) clearTimeout(pushTimer);
+  if (pushInterval) clearInterval(pushInterval);
   await watchHandle.close();
   await app.close();
   db.close();
