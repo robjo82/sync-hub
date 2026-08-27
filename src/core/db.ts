@@ -892,9 +892,16 @@ export class Db {
     let appliedThreads = 0;
     let appliedMessages = 0;
 
+    // Each row used to write in its own implicit transaction, so a 200-message batch cost 200
+    // disk syncs and the push timed out against a real corpus. Wrapping the batch in one
+    // transaction costs a single sync; nested transaction() calls in better-sqlite3 become
+    // SAVEPOINTs, so `isolated` still rolls back only the row that failed and the rest applies.
+    const isolated = this.raw.transaction((apply: () => void) => apply());
+
+    const applyAll = this.raw.transaction(() => {
     for (const p of batch.projects) {
       try {
-        this.upsertProject(p);
+        isolated(() => this.upsertProject(p));
         appliedProjects++;
       } catch (err: any) {
         skippedProjectIds.add(p.id);
@@ -909,7 +916,7 @@ export class Db {
         continue;
       }
       try {
-        this.upsertThread(t);
+        isolated(() => this.upsertThread(t));
         appliedThreads++;
       } catch (err: any) {
         skippedThreadIds.add(t.id);
@@ -923,13 +930,15 @@ export class Db {
         continue;
       }
       try {
-        this.insertMessage(m); // false = deduped by hash, still means "handled", not a failure
+        isolated(() => { this.insertMessage(m); }); // false = deduped by hash, still "handled", not a failure
         appliedMessages++;
       } catch (err: any) {
         skipped.messages.push(m.id);
         console.error(`applyRemoteBatch: skipped message ${m.id}: ${err?.message ?? err}`);
       }
     }
+    });
+    applyAll();
     return { appliedProjects, appliedThreads, appliedMessages, skipped };
   }
 

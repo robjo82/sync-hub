@@ -5,8 +5,14 @@ export interface PushClientOptions {
   remoteUrl: string;
   remoteToken: string;
   /** Messages per POST — kept well under the server's raised bodyLimit (see app.ts) since verbatim
-   * message content (tool outputs, diffs) varies wildly in size; 200 is a conservative default. */
+   * message content (tool outputs, diffs) varies wildly in size. 50 rather than something larger
+   * because the remote indexes every message into FTS as it applies the batch: on a small VPS a
+   * 200-message batch took long enough to blow Node's default fetch headers timeout, which stalls
+   * the whole sync. Smaller batches mean more round trips but ones that actually finish. */
   batchSize?: number;
+  /** Bounds a single POST. Without it a slow remote hangs on undici's default headers timeout and
+   * the failure surfaces as an opaque UND_ERR_HEADERS_TIMEOUT minutes later. */
+  requestTimeoutMs?: number;
 }
 
 /**
@@ -20,7 +26,8 @@ export interface PushClientOptions {
  * Push-only for now (see the brick-1 plan): this never reads anything back from the remote.
  */
 export async function runPushCycle(db: Db, opts: PushClientOptions): Promise<void> {
-  const batchSize = opts.batchSize ?? 200;
+  const batchSize = opts.batchSize ?? 50;
+  const requestTimeoutMs = opts.requestTimeoutMs ?? 60_000;
   let cursor = db.getRemoteSyncState(opts.remoteUrl).lastPushedSeq;
 
   while (true) {
@@ -40,9 +47,13 @@ export async function runPushCycle(db: Db, opts: PushClientOptions): Promise<voi
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${opts.remoteToken}` },
         body: JSON.stringify(batch),
+        signal: AbortSignal.timeout(requestTimeoutMs),
       });
     } catch (err) {
-      console.error('sync-push: network error reaching remote, will retry next cycle:', err);
+      console.error(
+        `sync-push: batch of ${messages.length} after seq ${cursor} failed to reach the remote, will retry next cycle:`,
+        err,
+      );
       return;
     }
     if (!response.ok) {
