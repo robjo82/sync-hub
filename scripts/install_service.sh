@@ -8,6 +8,11 @@ PLIST_PATH="$HOME/Library/LaunchAgents/${LABEL}.plist"
 DATA_DIR="$PROJECT_DIR/data"
 LOG_DIR="$DATA_DIR/logs"
 
+# Hub distant vers lequel pousser. Le jeton, lui, ne passe pas par ici : run_daemon.sh le lit
+# dans le trousseau au démarrage (entrée « sync-hub-remote-token »). Sans jeton, la synchro
+# distante reste simplement inactive.
+REMOTE_URL="${SYNC_HUB_REMOTE_URL:-https://sync-hub.robin-joseph.fr}"
+
 NODE_BIN="$(command -v node || echo /opt/homebrew/bin/node)"
 if [ ! -x "$NODE_BIN" ]; then
   echo "node introuvable (essayé: \$PATH puis /opt/homebrew/bin/node). Installe Node.js d'abord." >&2
@@ -30,8 +35,7 @@ cat > "$PLIST_PATH" <<PLIST
   <string>${LABEL}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${NODE_BIN}</string>
-    <string>${PROJECT_DIR}/dist/server/index.js</string>
+    <string>${PROJECT_DIR}/scripts/run_daemon.sh</string>
   </array>
   <key>WorkingDirectory</key>
   <string>${PROJECT_DIR}</string>
@@ -41,6 +45,8 @@ cat > "$PLIST_PATH" <<PLIST
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>SYNC_HUB_DATA_DIR</key>
     <string>${DATA_DIR}</string>
+    <key>SYNC_HUB_REMOTE_URL</key>
+    <string>${REMOTE_URL}</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>

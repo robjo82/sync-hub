@@ -861,6 +861,40 @@ describe('Db remote sync', () => {
     expect(rows[2].ingest_seq).toBeGreaterThan(rows[1].ingest_seq);
   });
 
+  it('backfills a corpus larger than one batch with unique, gapless, rowid-ordered sequences', () => {
+    // Regression: the backfill used to load every pending row in one go and update them inside a
+    // single transaction. On a real 150k-message corpus that built a ~700MB WAL and, killed before
+    // it could commit, restarted from zero on the next boot — the daemon never finished booting.
+    // 5001 rows crosses the 5000-row batch boundary, where per-batch numbering can go wrong.
+    const COUNT = 5001;
+    const insert = db.raw.prepare(
+      `INSERT INTO messages (id, thread_id, project_id, source_engine, role, content, timestamp, sequence, hash, ingest_seq)
+       VALUES (?, 'thread-1', 'proj-test', 'claude-code', 'user', ?, ?, ?, ?, NULL)`,
+    );
+    const now = new Date().toISOString();
+    db.raw.transaction(() => {
+      for (let i = 0; i < COUNT; i++) insert.run(`m${i}`, `contenu ${i}`, now, i, `h${i}`);
+    })();
+
+    const path = join(dir, 'hub.sqlite');
+    db.close();
+    db = new Db(path); // reopening runs the backfill over rows that predate ingest_seq
+
+    const rows = db.raw
+      .prepare('SELECT id, ingest_seq FROM messages ORDER BY rowid ASC')
+      .all() as { id: string; ingest_seq: number }[];
+    expect(rows).toHaveLength(COUNT);
+    expect(rows.every((r) => r.ingest_seq !== null)).toBe(true);
+    expect(new Set(rows.map((r) => r.ingest_seq)).size).toBe(COUNT);
+    // Contiguous and ascending across the batch seam, not restarted per batch.
+    expect(rows.map((r) => r.ingest_seq)).toEqual(rows.map((_, i) => i + 1));
+
+    // A message inserted afterwards must still sit above the whole backfilled range.
+    db.insertMessage(makeMessage({ id: 'after', hash: 'h-after' }));
+    const after = db.raw.prepare('SELECT ingest_seq FROM messages WHERE id = ?').get('after') as any;
+    expect(after.ingest_seq).toBe(COUNT + 1);
+  });
+
   it('does not reassign ingest_seq on a hash-dedup re-ingest or an id-conflict re-parse update', () => {
     db.insertMessage(makeMessage({ id: 'm1', hash: 'h1' }));
     const original = (db.raw.prepare('SELECT ingest_seq FROM messages WHERE id = ?').get('m1') as any).ingest_seq;

@@ -254,14 +254,34 @@ export class Db {
    * pre-existing corpus (safe only because nothing is concurrently deleting rows during this pass).
    */
   private backfillIngestSeq(): void {
-    const rows = this.raw.prepare('SELECT rowid AS rid FROM messages WHERE ingest_seq IS NULL ORDER BY rowid ASC').all() as { rid: number }[];
-    if (rows.length === 0) return;
+    // Declared here rather than in SCHEMA because ingest_seq is added by ensureColumn, which runs
+    // after SCHEMA. Serves both directions: the IS NULL probe below (NULLs sort first in a SQLite
+    // index, so an already-backfilled corpus answers from the index instead of scanning the whole
+    // messages table on every single startup) and getMessagesAfterSeq's range scan on every push.
+    this.raw.exec('CREATE INDEX IF NOT EXISTS idx_messages_ingest_seq ON messages(ingest_seq)');
+
     const update = this.raw.prepare('UPDATE messages SET ingest_seq = ? WHERE rowid = ?');
-    const tx = this.raw.transaction(() => {
-      rows.forEach((r, i) => update.run(this.nextIngestSeq + i + 1, r.rid));
-    });
-    tx();
-    this.nextIngestSeq += rows.length;
+    // Batched rather than one pass over the whole corpus: 150k+ rows in a single transaction
+    // builds a multi-hundred-MB WAL and, if the process dies before it commits, redoes everything
+    // from scratch on the next boot — a loop that never converges. Each batch commits on its own,
+    // so an interrupted backfill resumes where it stopped.
+    const BATCH = 5_000;
+    let total = 0;
+    for (;;) {
+      const rows = this.raw
+        .prepare('SELECT rowid AS rid FROM messages WHERE ingest_seq IS NULL ORDER BY rowid ASC LIMIT ?')
+        .all(BATCH) as { rid: number }[];
+      if (rows.length === 0) break;
+      const base = this.nextIngestSeq;
+      this.raw.transaction(() => {
+        rows.forEach((r, i) => update.run(base + i + 1, r.rid));
+      })();
+      this.nextIngestSeq += rows.length;
+      total += rows.length;
+    }
+    // A large catch-up leaves a WAL far bigger than steady-state traffic ever would; fold it back
+    // in once here rather than letting every later read pay to search it.
+    if (total > 0) this.raw.pragma('wal_checkpoint(TRUNCATE)');
   }
 
   /**
