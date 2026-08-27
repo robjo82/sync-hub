@@ -1,20 +1,27 @@
-version: "3.8"
+# Fichier prêt à coller dans Portainer (ou déployé via l'API Portainer).
+#
+# Rôle « hub distant » : c'est la même image que l'instance locale, avec le scan de fichiers
+# désactivé — il n'y a rien à scanner dans le conteneur. Elle ne fait que recevoir les
+# POST /api/sync/push des instances locales et les stocker.
+#
+# SYNC_HUB_REMOTE_TOKEN doit valoir exactement la même chose des deux côtés (hub et instance
+# locale qui pousse). Il est fourni par Portainer au déploiement, jamais écrit dans ce fichier.
 
 services:
-  sync-hub-remote:
+  remote-hub:
     image: registry.robin-joseph.fr/sync-hub/remote-hub:latest
     pull_policy: always
     restart: unless-stopped
     ports:
       - "47213:4000"
     environment:
-      HOST: "0.0.0.0"
+      HOST: 0.0.0.0
       PORT: "4000"
-      SYNC_HUB_DISABLE_LOCAL_INGEST: "1"
-      SYNC_HUB_REMOTE_TOKEN: "REPLACE_WITH_A_REAL_SECRET"
       SYNC_HUB_DATA_DIR: /data
+      SYNC_HUB_DISABLE_LOCAL_INGEST: "1"
+      SYNC_HUB_REMOTE_TOKEN: ${SYNC_HUB_REMOTE_TOKEN}
     volumes:
-      - sync-hub-remote-data:/data
+      - sync-hub-data:/data
 
 volumes:
-  sync-hub-remote-data:
+  sync-hub-data:

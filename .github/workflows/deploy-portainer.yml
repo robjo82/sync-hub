@@ -1,28 +1,81 @@
-name: Deploy remote hub
+name: Build And Push Remote Hub Image
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: registry.robin-joseph.fr/sync-hub/remote-hub
+  PORTAINER_STACK_WEBHOOK_URL: ${{ secrets.PORTAINER_STACK_WEBHOOK_URL }}
 
 jobs:
-  build-and-push:
+  test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+  build-and-push:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push image
+      - name: Build and push image (anonymous registry)
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64
           push: true
           tags: |
-            registry.robin-joseph.fr/sync-hub/remote-hub:latest
-            registry.robin-joseph.fr/sync-hub/remote-hub:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          provenance: false
+          sbom: false
 
-      - name: Trigger Portainer redeploy
-        if: ${{ secrets.PORTAINER_STACK_WEBHOOK_URL != '' }}
-        run: curl -X POST "${{ secrets.PORTAINER_STACK_WEBHOOK_URL }}"
+      - name: Trigger Portainer stack webhook (optional)
+        if: ${{ env.PORTAINER_STACK_WEBHOOK_URL != '' }}
+        run: |
+          set -euo pipefail
+          headers_file="$(mktemp)"
+          body_file="$(mktemp)"
+          status="$(curl -sS -o "${body_file}" -D "${headers_file}" -w "%{http_code}" -X POST "${{ env.PORTAINER_STACK_WEBHOOK_URL }}" || true)"
+
+          if [[ "${status}" =~ ^2[0-9][0-9]$ ]]; then
+            echo "Portainer webhook triggered (HTTP ${status})."
+            exit 0
+          fi
+
+          echo "::warning::Portainer webhook call failed (HTTP ${status})."
+          echo "Response headers:"
+          sed -n '1,20p' "${headers_file}" || true
+          echo "Response body (first 20 lines):"
+          sed -n '1,20p' "${body_file}" || true
