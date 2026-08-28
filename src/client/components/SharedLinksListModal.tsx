@@ -63,19 +63,19 @@ export function SharedLinksListModal({ onClose, onSelectThread }: SharedLinksLis
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-xs p-4 animate-in fade-in duration-150">
       <div
-        className="w-full max-w-2xl rounded-xl border border-border bg-card shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+        className="w-full max-w-2xl rounded-xl border border-border bg-card shadow-xl overflow-hidden flex flex-col max-h-[85vh]"
         role="dialog"
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-muted/40">
+        <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-card">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Globe size={18} />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-muted text-accent-muted-foreground">
+              <Globe size={16} className="text-accent" />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-foreground">Gestion des liens partagés</h2>
+              <h2 className="text-sm font-semibold text-foreground">Gestion des liens partagés</h2>
               <p className="text-xs text-muted-foreground">
                 Toutes les conversations actuellement accessibles via un lien public
               </p>
@@ -83,16 +83,16 @@ export function SharedLinksListModal({ onClose, onSelectThread }: SharedLinksLis
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         </div>
 
         {/* Content */}
         <div className="p-6 overflow-y-auto space-y-4 flex-1">
           {error && (
-            <div className="flex items-center gap-2 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-xs text-destructive">
+            <div className="flex items-center gap-2 rounded-lg bg-destructive-muted border border-destructive/20 p-3 text-xs text-destructive">
               <AlertCircle size={14} className="shrink-0" />
               <span>{error}</span>
             </div>
@@ -101,7 +101,7 @@ export function SharedLinksListModal({ onClose, onSelectThread }: SharedLinksLis
           {loading ? (
             <div className="py-12 text-center text-xs text-muted-foreground">Chargement des liens partagés…</div>
           ) : shares.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border p-12 text-center text-xs text-muted-foreground">
+            <div className="rounded-xl border border-dashed border-border p-12 text-center text-xs text-muted-foreground">
               Aucun lien de partage n'a été créé pour le moment.
             </div>
           ) : (
@@ -114,9 +114,9 @@ export function SharedLinksListModal({ onClose, onSelectThread }: SharedLinksLis
                 return (
                   <div
                     key={s.id}
-                    className={`rounded-lg border p-3.5 transition-colors ${
+                    className={`rounded-xl border p-3.5 transition-colors ${
                       !s.isActive || isExpired
-                        ? 'border-border/60 bg-muted/10 opacity-75'
+                        ? 'border-border/60 bg-muted/20 opacity-75'
                         : 'border-border bg-card hover:border-border/80'
                     }`}
                   >
@@ -131,7 +131,7 @@ export function SharedLinksListModal({ onClose, onSelectThread }: SharedLinksLis
                                 onClose();
                               }
                             }}
-                            className="font-medium text-xs text-foreground hover:underline text-left truncate"
+                            className="font-medium text-xs text-foreground hover:underline text-left truncate cursor-pointer"
                           >
                             {s.title || s.threadTitle}
                           </button>
@@ -141,15 +141,15 @@ export function SharedLinksListModal({ onClose, onSelectThread }: SharedLinksLis
                             </span>
                           )}
                           {!s.isActive ? (
-                            <span className="inline-flex items-center rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive">
+                            <span className="inline-flex items-center rounded-full bg-destructive-muted px-2 py-0.5 text-[10px] font-medium text-destructive">
                               Désactivé
                             </span>
                           ) : isExpired ? (
-                            <span className="inline-flex items-center rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-medium text-warning">
+                            <span className="inline-flex items-center rounded-full bg-warning-muted px-2 py-0.5 text-[10px] font-medium text-warning-foreground">
                               Expiré
                             </span>
                           ) : (
-                            <span className="inline-flex items-center rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success">
+                            <span className="inline-flex items-center rounded-full bg-success-muted px-2 py-0.5 text-[10px] font-medium text-success">
                               Actif
                             </span>
                           )}
@@ -174,7 +174,7 @@ export function SharedLinksListModal({ onClose, onSelectThread }: SharedLinksLis
                         <button
                           type="button"
                           onClick={() => handleToggleActive(s)}
-                          className="rounded-md p-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                          className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
                           title={s.isActive ? 'Désactiver le lien' : 'Réactiver le lien'}
                         >
                           {s.isActive ? 'Désactiver' : 'Activer'}
@@ -182,7 +182,7 @@ export function SharedLinksListModal({ onClose, onSelectThread }: SharedLinksLis
                         <button
                           type="button"
                           onClick={() => handleDelete(s.id)}
-                          className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                          className="rounded-md p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive-muted transition-colors cursor-pointer"
                           title="Supprimer définitivement"
                         >
                           <Trash2 size={13} />
@@ -191,7 +191,7 @@ export function SharedLinksListModal({ onClose, onSelectThread }: SharedLinksLis
                     </div>
 
                     {/* URL bar with copy & open */}
-                    <div className="flex items-center gap-1.5 rounded-md bg-muted/60 border border-border/80 px-2.5 py-1.5">
+                    <div className="flex items-center gap-1.5 rounded-lg bg-muted/50 border border-border px-2.5 py-1.5">
                       <input
                         type="text"
                         readOnly
@@ -201,7 +201,7 @@ export function SharedLinksListModal({ onClose, onSelectThread }: SharedLinksLis
                       <button
                         type="button"
                         onClick={() => handleCopy(s.shareToken)}
-                        className="shrink-0 flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-foreground hover:bg-background transition-colors"
+                        className="shrink-0 flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-foreground hover:bg-card transition-colors cursor-pointer"
                         title="Copier l'URL"
                       >
                         {isCopied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
@@ -227,11 +227,11 @@ export function SharedLinksListModal({ onClose, onSelectThread }: SharedLinksLis
         </div>
 
         {/* Footer */}
-        <div className="border-t border-border px-6 py-3 bg-muted/20 flex justify-end">
+        <div className="border-t border-border px-6 py-3 bg-card flex justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-border bg-background px-4 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+            className="rounded-lg border border-border bg-muted px-4 py-1.5 text-xs font-medium text-foreground hover:bg-muted/80 transition-colors cursor-pointer"
           >
             Fermer
           </button>

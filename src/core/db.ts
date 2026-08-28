@@ -4,8 +4,11 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { encode } from 'gpt-tokenizer';
 import type {
+  AccountSyncOverview,
   Artifact,
   CreateSharedThreadInput,
+  DeviceSession,
+  EngineStats,
   EngineType,
   IngestEventStatus,
   IngestLogEntry,
@@ -18,6 +21,7 @@ import type {
   RemoteSyncState,
   Session,
   SharedThread,
+  SyncOverview,
   Thread,
   TokenUsage,
   UpdateSharedThreadInput,
@@ -1718,6 +1722,100 @@ export class Db {
       UPDATE shared_threads SET view_count = view_count + 1, last_viewed_at = ? WHERE share_token = ?
     `).run(now, shareToken);
   }
+
+  getEngineStats(): EngineStats[] {
+    const rows = this.raw.prepare(`
+      SELECT 
+        source_engine as engine,
+        COUNT(DISTINCT id) as message_count,
+        COUNT(DISTINCT thread_id) as thread_count,
+        MAX(timestamp) as last_active_at
+      FROM messages
+      GROUP BY source_engine
+      ORDER BY message_count DESC
+    `).all() as Array<{ engine: string; message_count: number; thread_count: number; last_active_at: string | null }>;
+
+    const engineLabels: Record<string, string> = {
+      'claude-code': 'Claude Code',
+      codex: 'Codex / ChatGPT',
+      antigravity: 'Antigravity',
+      cowork: 'Cowork',
+    };
+
+    return rows.map((r) => ({
+      engine: r.engine as EngineType,
+      label: engineLabels[r.engine] ?? r.engine,
+      messageCount: r.message_count,
+      threadCount: r.thread_count,
+      lastActiveAt: r.last_active_at,
+    }));
+  }
+
+  getSyncOverview(remoteUrl?: string): SyncOverview {
+    const users = this.listUsers();
+    const nowIso = new Date().toISOString();
+
+    const accounts: AccountSyncOverview[] = users.map((u: User) => {
+      const sessionRows = this.raw.prepare(`
+        SELECT id, user_id, user_agent, ip, created_at, expires_at
+        FROM sessions
+        WHERE user_id = ? AND expires_at > ?
+        ORDER BY created_at DESC
+      `).all(u.id, nowIso) as Array<{
+        id: string;
+        user_id: string;
+        user_agent?: string;
+        ip?: string;
+        created_at: string;
+        expires_at: string;
+      }>;
+
+      const devices: DeviceSession[] = sessionRows.map((s) => ({
+        id: s.id,
+        userId: s.user_id,
+        userAgent: s.user_agent,
+        ip: s.ip,
+        createdAt: s.created_at,
+        expiresAt: s.expires_at,
+        deviceLabel: parseDeviceLabel(s.user_agent),
+      }));
+
+      return {
+        user: u,
+        devices,
+      };
+    });
+
+    const engines = this.getEngineStats();
+    const syncState = remoteUrl ? this.getRemoteSyncState(remoteUrl) : null;
+
+    const totalProjects = (this.raw.prepare(`SELECT count(*) as c FROM projects WHERE id != '__unassigned__' AND id != 'unassigned'`).get() as { c: number }).c;
+    const totalThreads = (this.raw.prepare(`SELECT count(*) as c FROM threads`).get() as { c: number }).c;
+    const totalMessages = (this.raw.prepare(`SELECT count(*) as c FROM messages`).get() as { c: number }).c;
+
+    return {
+      remoteConfigured: !!(remoteUrl && syncState),
+      remoteUrl: remoteUrl ?? null,
+      syncState,
+      accounts,
+      engines,
+      totalProjects,
+      totalThreads,
+      totalMessages,
+    };
+  }
+}
+
+function parseDeviceLabel(userAgent?: string): string {
+  if (!userAgent) return 'Navigateur Web';
+  const ua = userAgent.toLowerCase();
+  if (ua.includes('macintosh') || ua.includes('mac os x')) return 'MacBook / macOS';
+  if (ua.includes('windows')) return 'PC Windows';
+  if (ua.includes('iphone')) return 'iPhone (iOS)';
+  if (ua.includes('ipad')) return 'iPad (iPadOS)';
+  if (ua.includes('android')) return 'Smartphone Android';
+  if (ua.includes('linux')) return 'Machine Linux';
+  return 'Navigateur Web';
 }
 
 function rowToSharedThread(row: any): SharedThread {

@@ -1,5 +1,8 @@
-import { Moon, RefreshCw, Sun } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Cloud, CloudCheck, Moon, RefreshCw, Sun } from 'lucide-react';
 import { UserMenu } from './UserMenu.js';
+import { api } from '../lib/api.js';
+import type { RemoteSyncState } from '../../types.js';
 
 type Tab = 'projects' | 'coverage' | 'unassigned' | 'search' | 'costs';
 
@@ -17,12 +20,18 @@ interface HeaderProps {
 const TABS: { key: Tab; label: string }[] = [
   { key: 'projects', label: 'Projets' },
   { key: 'search', label: 'Recherche' },
-  { key: 'coverage', label: 'Couverture de synchro' },
+  { key: 'coverage', label: 'Synchronisation & Appareils' },
   { key: 'unassigned', label: 'Non affecté' },
   { key: 'costs', label: 'Coûts' },
 ];
 
 export function Header({ connected, scanning, onRescan, tab, onTabChange, unassignedCount, theme, onToggleTheme }: HeaderProps) {
+  const [syncStatus, setSyncStatus] = useState<{ configured: boolean; remoteUrl: string | null; syncState: RemoteSyncState | null } | null>(null);
+
+  useEffect(() => {
+    api.syncStatus().then(setSyncStatus).catch(() => {});
+  }, [scanning]);
+
   return (
     <header className="flex items-center gap-4 border-b border-border bg-card px-4 py-2.5">
       <div className="flex items-center gap-2">
@@ -51,6 +60,17 @@ export function Header({ connected, scanning, onRescan, tab, onTabChange, unassi
       </nav>
 
       <div className="flex-1" />
+
+      {syncStatus?.configured && (
+        <button
+          onClick={() => onTabChange('coverage')}
+          title={`Synchronisé avec ${syncStatus.remoteUrl} (Push: ${syncStatus.syncState?.lastPushedSeq ?? 0}, Pull: ${syncStatus.syncState?.lastPulledSeq ?? 0})`}
+          className="hidden md:flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+        >
+          <Cloud size={13} className="text-success" />
+          <span className="truncate max-w-[140px]">Distant synchronisé</span>
+        </button>
+      )}
 
       <button
         onClick={onToggleTheme}

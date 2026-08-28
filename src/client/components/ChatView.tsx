@@ -1,12 +1,27 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Archive, Brain, Check, ChevronDown, Copy, FolderInput, Info, List, Settings2, Share2, Trash2, Wrench, X } from 'lucide-react';
+import {
+  Archive,
+  Brain,
+  Check,
+  ChevronDown,
+  Copy,
+  Download,
+  FolderInput,
+  Info,
+  List,
+  Settings2,
+  Share2,
+  Trash2,
+  Wrench,
+  X,
+} from 'lucide-react';
 import type { EngineType, Message, Project, Thread, ToolCall, ToolResult } from '../../types.js';
 import { UNASSIGNED_PROJECT_ID } from '../../types.js';
 import { api, type ThreadOutlineEntry } from '../lib/api.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { ShareModal } from './ShareModal.js';
 
-const ENGINE_LABEL: Record<string, string> = { 'claude-code': 'Claude Code', codex: 'Codex', antigravity: 'Antigravity' };
+const ENGINE_LABEL: Record<string, string> = { 'claude-code': 'Claude Code', codex: 'Codex', antigravity: 'Antigravity', cowork: 'Cowork' };
 
 const USER_CARD_COLLAPSE_LENGTH = 600;
 const ASSISTANT_COLLAPSE_LENGTH = 4000;
@@ -16,9 +31,18 @@ const META_REPEAT_GAP_MS = 5 * 60 * 1000;
 const PAGE_SIZE = 100;
 
 function Meta({ sourceEngine, timestamp, className = 'mb-1' }: { sourceEngine: EngineType; timestamp: string; className?: string }) {
+  const badgeColor =
+    sourceEngine === 'claude-code'
+      ? 'bg-engine-claude/10 text-engine-claude border-engine-claude/20'
+      : sourceEngine === 'codex'
+      ? 'bg-engine-codex/10 text-engine-codex border-engine-codex/20'
+      : 'bg-engine-antigravity/10 text-engine-antigravity border-engine-antigravity/20';
+
   return (
     <div className={`flex items-center gap-2 text-xs text-muted-foreground ${className}`}>
-      <span>{ENGINE_LABEL[sourceEngine] ?? sourceEngine}</span>
+      <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${badgeColor}`}>
+        {ENGINE_LABEL[sourceEngine] ?? sourceEngine}
+      </span>
       <span>· {new Date(timestamp).toLocaleString('fr-FR')}</span>
     </div>
   );
@@ -418,6 +442,7 @@ export function ChatView({
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
   useEffect(() => {
     setMessages(null);
@@ -514,6 +539,39 @@ export function ChatView({
             <Share2 size={12} />
             Partager
           </button>
+          <div className="relative">
+            <button
+              onClick={() => setExportMenuOpen((o) => !o)}
+              className={actionButtonClass}
+              title="Exporter cette conversation"
+            >
+              <Download size={12} />
+              Exporter
+              <ChevronDown size={10} />
+            </button>
+            {exportMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 z-30 w-44 rounded-xl border border-border bg-card p-1 shadow-lg text-xs">
+                <a
+                  href={`/api/threads/${threadId}/export?format=markdown`}
+                  download
+                  onClick={() => setExportMenuOpen(false)}
+                  className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-foreground hover:bg-muted transition-colors cursor-pointer"
+                >
+                  <span className="font-semibold text-accent text-[11px]">MD</span>
+                  <span>Format Markdown</span>
+                </a>
+                <a
+                  href={`/api/threads/${threadId}/export?format=json`}
+                  download
+                  onClick={() => setExportMenuOpen(false)}
+                  className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-foreground hover:bg-muted transition-colors cursor-pointer"
+                >
+                  <span className="font-semibold text-accent text-[11px]">JSON</span>
+                  <span>Format JSON</span>
+                </a>
+              </div>
+            )}
+          </div>
           <button
             onClick={async () => {
               // Clipboard writes can fail silently (permission denied, insecure context) — only

@@ -10,6 +10,7 @@ import type {
   PullResult,
   RemoteSyncState,
   SharedThread,
+  SyncOverview,
   SyncStats,
   Thread,
   UpdateSharedThreadInput,
@@ -152,6 +153,7 @@ export const api = {
   rescan: () => jsonFetch<{ ok: true; stats: SyncStats }>('/api/sync/rescan', { method: 'POST' }),
   syncStatus: () =>
     jsonFetch<{ configured: boolean; remoteUrl: string | null; syncState: RemoteSyncState | null }>('/api/sync/status'),
+  syncOverview: () => jsonFetch<SyncOverview>('/api/sync/overview'),
   syncPull: () =>
     jsonFetch<{ ok: true; result: PullResult; syncState: RemoteSyncState }>('/api/sync/pull', { method: 'POST' }),
   archiveThread: (threadId: string) =>

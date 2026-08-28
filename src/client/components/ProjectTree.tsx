@@ -7,6 +7,7 @@ const ENGINE_DOT: Record<string, string> = {
   'claude-code': 'bg-engine-claude',
   codex: 'bg-engine-codex',
   antigravity: 'bg-engine-antigravity',
+  cowork: 'bg-accent',
 };
 
 export type SelectedItem = { kind: 'thread'; id: string } | { kind: 'memory'; item: Memory } | { kind: 'artifact'; item: Artifact } | null;

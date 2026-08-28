@@ -23,12 +23,16 @@ import * as antigravity from '../core/adapters/antigravity.js';
 import { archiveThread, deleteProject, deleteThread, type ArchiveRoots } from '../core/archive.js';
 import { computeCostSummary } from '../core/cost.js';
 import { runPullCycle } from '../core/sync-pull-client.js';
+import { formatThreadAsMarkdown, formatThreadAsJson, sanitizeFilename } from '../core/export.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { createMcpServer } from '../core/mcp-server.js';
 import type {
   EngineHealth,
   EngineType,
   PullBatch,
   PushBatch,
   PushResult,
+  SyncOverview,
   SyncStats,
   User,
   UserRole,
@@ -874,6 +878,68 @@ export function createApp(deps: AppDeps): FastifyInstance {
       remoteUrl: deps.remoteUrl ?? null,
       syncState,
     };
+  });
+
+  // Returns comprehensive multi-account, multi-device and engine sync statistics.
+  app.get('/api/sync/overview', async (): Promise<SyncOverview> => {
+    return db.getSyncOverview(deps.remoteUrl);
+  });
+
+  // Export thread conversation as clean Markdown or JSON file.
+  app.get<{ Params: { id: string }; Querystring: { format?: string } }>('/api/threads/:id/export', async (req, reply) => {
+    const thread = db.getThread(req.params.id);
+    if (!thread) return reply.code(404).send({ error: 'not_found' });
+    const project = (thread.projectId ? db.getProject(thread.projectId) : null) ?? null;
+    const messages = db.getMessagesForThread(thread.id);
+    const format = (req.query.format ?? 'markdown').toLowerCase();
+    const filenameSlug = sanitizeFilename(thread.title || 'conversation');
+
+    if (format === 'json') {
+      const json = formatThreadAsJson(thread, project, messages);
+      reply.header('Content-Type', 'application/json; charset=utf-8');
+      reply.header('Content-Disposition', `attachment; filename="${filenameSlug}.json"`);
+      return reply.send(json);
+    }
+
+    const md = formatThreadAsMarkdown(thread, project, messages);
+    reply.header('Content-Type', 'text/markdown; charset=utf-8');
+    reply.header('Content-Disposition', `attachment; filename="${filenameSlug}.md"`);
+    return reply.send(md);
+  });
+
+  // MCP Remote Endpoint (Server-Sent Events)
+  const mcpTransports = new Map<string, SSEServerTransport>();
+
+  const handleMcpSse = async (_req: FastifyRequest, reply: any) => {
+    reply.raw.setHeader('Access-Control-Allow-Origin', '*');
+    reply.raw.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    reply.raw.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    reply.hijack();
+    const transport = new SSEServerTransport('/api/mcp/messages', reply.raw);
+    const mcpServer = createMcpServer(deps.db, deps.registry, deps.archiveRoots);
+    mcpTransports.set(transport.sessionId, transport);
+    transport.onclose = () => {
+      mcpTransports.delete(transport.sessionId);
+    };
+    await mcpServer.connect(transport);
+  };
+
+  app.get('/sse', handleMcpSse);
+  app.get('/api/mcp/sse', handleMcpSse);
+
+  // MCP POST messages handler
+  app.post('/api/mcp/messages', async (req, reply) => {
+    const sessionId = (req.query as { sessionId?: string })?.sessionId;
+    if (!sessionId) {
+      return reply.code(400).send({ error: 'missing_session_id' });
+    }
+    const transport = mcpTransports.get(sessionId);
+    if (!transport) {
+      return reply.code(404).send({ error: 'session_not_found' });
+    }
+    reply.raw.setHeader('Access-Control-Allow-Origin', '*');
+    reply.hijack();
+    await transport.handlePostMessage(req.raw, reply.raw, req.body);
   });
 
   return app;

@@ -118,7 +118,7 @@ export function SharedThreadView({ shareToken }: SharedThreadViewProps) {
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent mb-3" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent mb-3" />
         <p className="text-sm text-muted-foreground">Chargement de la conversation partagée…</p>
       </div>
     );
@@ -127,8 +127,8 @@ export function SharedThreadView({ shareToken }: SharedThreadViewProps) {
   if (error || !data) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
-        <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 text-center shadow-lg">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+        <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 text-center shadow-lg">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive-muted text-destructive">
             <AlertCircle size={24} />
           </div>
           <h1 className="text-base font-semibold text-foreground mb-2">Lien de partage indisponible</h1>
@@ -137,7 +137,7 @@ export function SharedThreadView({ shareToken }: SharedThreadViewProps) {
           </p>
           <a
             href="/"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-xs font-medium text-accent-foreground hover:opacity-90 transition-opacity"
           >
             Retour à l'accueil
           </a>
@@ -155,13 +155,13 @@ export function SharedThreadView({ shareToken }: SharedThreadViewProps) {
       <header className="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur-md px-4 py-3 sm:px-8">
         <div className="mx-auto max-w-4xl flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-xs">
-              <Sparkles size={18} />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-muted text-accent-muted-foreground shadow-xs">
+              <Sparkles size={18} className="text-accent" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <span className="font-bold text-sm tracking-tight text-foreground">Sync Hub</span>
-                <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                <span className="font-semibold text-sm tracking-tight text-foreground">Sync Hub</span>
+                <span className="inline-flex items-center rounded-full bg-accent-muted px-2 py-0.5 text-[10px] font-medium text-accent-muted-foreground">
                   Lecture seule
                 </span>
               </div>
@@ -182,8 +182,8 @@ export function SharedThreadView({ shareToken }: SharedThreadViewProps) {
       {/* Main Content */}
       <main className="flex-1 mx-auto w-full max-w-4xl p-4 sm:p-6 lg:p-8 space-y-6">
         {/* Thread Info Banner */}
-        <div className="rounded-xl border border-border bg-card p-5 shadow-xs">
-          <h1 className="text-lg sm:text-xl font-bold text-foreground mb-2 leading-snug">
+        <div className="rounded-2xl border border-border bg-card p-5 shadow-xs">
+          <h1 className="text-lg sm:text-xl font-semibold text-foreground mb-2 leading-snug">
             {sharedThread.title || thread.title}
           </h1>
 
@@ -204,14 +204,14 @@ export function SharedThreadView({ shareToken }: SharedThreadViewProps) {
               const isExpanded = !!expandedItems[item.id];
               const totalCalls = item.calls.length || 1;
               return (
-                <div key={item.id} className="rounded-lg border border-border/80 bg-muted/20 overflow-hidden text-xs">
+                <div key={item.id} className="rounded-xl border border-border bg-muted/30 overflow-hidden text-xs">
                   <button
                     type="button"
                     onClick={() => toggleExpanded(item.id)}
-                    className="flex w-full items-center justify-between px-3.5 py-2 text-left text-muted-foreground hover:bg-muted/40 transition-colors"
+                    className="flex w-full items-center justify-between px-3.5 py-2 text-left text-muted-foreground hover:bg-muted/50 transition-colors cursor-pointer"
                   >
                     <div className="flex items-center gap-2">
-                      <Wrench size={13} className="text-primary" />
+                      <Wrench size={13} className="text-accent" />
                       <span className="font-medium text-foreground">
                         {totalCalls > 1 ? `Exécution de ${totalCalls} outils` : 'Appel d’outil'}
                       </span>
@@ -221,7 +221,7 @@ export function SharedThreadView({ shareToken }: SharedThreadViewProps) {
                   </button>
 
                   {isExpanded && (
-                    <div className="border-t border-border/60 p-3 bg-muted/10 space-y-2 font-mono text-[11px]">
+                    <div className="border-t border-border p-3 bg-muted/20 space-y-2 font-mono text-[11px]">
                       {item.content && <MarkdownRenderer text={item.content} />}
                     </div>
                   )}
@@ -242,9 +242,9 @@ export function SharedThreadView({ shareToken }: SharedThreadViewProps) {
             return (
               <div
                 key={m.id}
-                className={`rounded-xl border p-4 sm:p-5 transition-colors ${
+                className={`rounded-2xl border p-4 sm:p-5 transition-colors ${
                   isUser
-                    ? 'border-primary/20 bg-primary/5 text-foreground'
+                    ? 'border-accent-muted bg-accent-muted/30 text-foreground'
                     : 'border-border bg-card text-foreground shadow-xs'
                 }`}
               >
@@ -252,8 +252,8 @@ export function SharedThreadView({ shareToken }: SharedThreadViewProps) {
                 <div className="flex items-center justify-between gap-2 mb-3">
                   <div className="flex items-center gap-2">
                     <div
-                      className={`flex h-6 w-6 items-center justify-center rounded-md text-xs font-semibold ${
-                        isUser ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'
+                      className={`flex h-6 w-6 items-center justify-center rounded-lg text-xs font-semibold ${
+                        isUser ? 'bg-accent text-accent-foreground' : 'bg-muted text-foreground'
                       }`}
                     >
                       {isUser ? <UserIcon size={13} /> : <Bot size={13} />}
@@ -269,7 +269,7 @@ export function SharedThreadView({ shareToken }: SharedThreadViewProps) {
                   <button
                     type="button"
                     onClick={() => handleCopyContent(m.id, m.content)}
-                    className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                    className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
                     title="Copier le message"
                   >
                     {copiedId === m.id ? <Check size={12} className="text-success" /> : <Copy size={12} />}
@@ -279,7 +279,7 @@ export function SharedThreadView({ shareToken }: SharedThreadViewProps) {
 
                 {/* Reasoning / Thought block */}
                 {m.thought && (
-                  <div className="mb-3 rounded-lg border border-border/80 bg-muted/30 p-3 text-xs">
+                  <div className="mb-3 rounded-xl border border-border bg-muted/40 p-3 text-xs">
                     <div className="flex items-center gap-1.5 font-medium text-muted-foreground mb-1.5">
                       <Brain size={13} />
                       <span>Raisonnement de l'IA</span>
@@ -300,7 +300,7 @@ export function SharedThreadView({ shareToken }: SharedThreadViewProps) {
                   <button
                     type="button"
                     onClick={() => toggleExpanded(m.id)}
-                    className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                    className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline cursor-pointer"
                   >
                     {isExpanded ? 'Afficher moins' : 'Afficher l’intégralité du message'}
                   </button>
@@ -313,7 +313,7 @@ export function SharedThreadView({ shareToken }: SharedThreadViewProps) {
 
       {/* Footer */}
       <footer className="border-t border-border bg-card py-6 text-center text-xs text-muted-foreground">
-        <p>Partagé via <strong className="font-semibold text-foreground">Sync Hub</strong> · Centralisation des historiques IA</p>
+        <p>Partagé via <strong className="font-medium text-foreground">Sync Hub</strong> · Centralisation des historiques IA</p>
       </footer>
     </div>
   );

@@ -297,3 +297,38 @@ export interface PublicSharedThreadData {
   project: Project | null;
 }
 
+export interface DeviceSession {
+  id: string;
+  userId: string;
+  userAgent?: string;
+  ip?: string;
+  createdAt: string;
+  expiresAt: string;
+  isCurrent?: boolean;
+  deviceLabel: string;
+}
+
+export interface AccountSyncOverview {
+  user: User;
+  devices: DeviceSession[];
+}
+
+export interface EngineStats {
+  engine: EngineType;
+  label: string;
+  messageCount: number;
+  threadCount: number;
+  lastActiveAt: string | null;
+}
+
+export interface SyncOverview {
+  remoteConfigured: boolean;
+  remoteUrl: string | null;
+  syncState: RemoteSyncState | null;
+  accounts: AccountSyncOverview[];
+  engines: EngineStats[];
+  totalProjects: number;
+  totalThreads: number;
+  totalMessages: number;
+}
+
