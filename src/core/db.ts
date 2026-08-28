@@ -1,10 +1,11 @@
 import Database from 'better-sqlite3';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { encode } from 'gpt-tokenizer';
 import type {
   Artifact,
+  CreateSharedThreadInput,
   EngineType,
   IngestEventStatus,
   IngestLogEntry,
@@ -14,8 +15,10 @@ import type {
   Project,
   ProjectAliases,
   Session,
+  SharedThread,
   Thread,
   TokenUsage,
+  UpdateSharedThreadInput,
   User,
   UserRole,
   UserWithPasswordHash,
@@ -212,6 +215,24 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+-- Shared threads for public/external read-only link access.
+CREATE TABLE IF NOT EXISTS shared_threads (
+  id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  share_token TEXT NOT NULL UNIQUE,
+  created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  title TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  expires_at TEXT,
+  view_count INTEGER NOT NULL DEFAULT 0,
+  last_viewed_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_shared_threads_token ON shared_threads(share_token);
+CREATE INDEX IF NOT EXISTS idx_shared_threads_thread ON shared_threads(thread_id);
+CREATE INDEX IF NOT EXISTS idx_shared_threads_user ON shared_threads(created_by_user_id);
 `;
 
 /**
@@ -1556,6 +1577,112 @@ export class Db {
     const res = this.raw.prepare(`DELETE FROM sessions WHERE expires_at <= ?`).run(now);
     return res.changes;
   }
+
+  // --- Shared Threads ---
+
+  createSharedThread(input: CreateSharedThreadInput, createdByUserId?: string | null): SharedThread {
+    const id = randomUUID();
+    const shareToken = randomBytes(24).toString('base64url');
+    const now = new Date().toISOString();
+    const title = input.title?.trim() || null;
+    const expiresAt = input.expiresAt || null;
+
+    this.raw.prepare(`
+      INSERT INTO shared_threads (id, thread_id, share_token, created_by_user_id, title, is_active, expires_at, view_count, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?, 0, ?, ?)
+    `).run(id, input.threadId, shareToken, createdByUserId ?? null, title, expiresAt, now, now);
+
+    return {
+      id,
+      threadId: input.threadId,
+      shareToken,
+      createdByUserId: createdByUserId ?? null,
+      title,
+      isActive: true,
+      expiresAt,
+      viewCount: 0,
+      lastViewedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  getSharedThreadByToken(shareToken: string, options?: { allowInactive?: boolean; allowExpired?: boolean }): SharedThread | undefined {
+    const row = this.raw.prepare(`SELECT * FROM shared_threads WHERE share_token = ?`).get(shareToken) as any;
+    if (!row) return undefined;
+    const item = rowToSharedThread(row);
+    if (!options?.allowInactive && !item.isActive) return undefined;
+    if (!options?.allowExpired && item.expiresAt && new Date(item.expiresAt) <= new Date()) return undefined;
+    return item;
+  }
+
+  getSharedThreadById(id: string): SharedThread | undefined {
+    const row = this.raw.prepare(`SELECT * FROM shared_threads WHERE id = ?`).get(id) as any;
+    return row ? rowToSharedThread(row) : undefined;
+  }
+
+  listSharedThreadsForThread(threadId: string): SharedThread[] {
+    const rows = this.raw.prepare(`SELECT * FROM shared_threads WHERE thread_id = ? ORDER BY created_at DESC`).all(threadId) as any[];
+    return rows.map(rowToSharedThread);
+  }
+
+  listSharedThreads(createdByUserId?: string): SharedThread[] {
+    if (createdByUserId) {
+      const rows = this.raw.prepare(`SELECT * FROM shared_threads WHERE created_by_user_id = ? ORDER BY created_at DESC`).all(createdByUserId) as any[];
+      return rows.map(rowToSharedThread);
+    }
+    const rows = this.raw.prepare(`SELECT * FROM shared_threads ORDER BY created_at DESC`).all() as any[];
+    return rows.map(rowToSharedThread);
+  }
+
+  updateSharedThread(id: string, updates: UpdateSharedThreadInput): SharedThread | undefined {
+    const existing = this.getSharedThreadById(id);
+    if (!existing) return undefined;
+    const now = new Date().toISOString();
+    const title = updates.title !== undefined ? (updates.title?.trim() || null) : existing.title;
+    const isActive = updates.isActive !== undefined ? (updates.isActive ? 1 : 0) : (existing.isActive ? 1 : 0);
+    const expiresAt = updates.expiresAt !== undefined ? (updates.expiresAt || null) : existing.expiresAt;
+
+    this.raw.prepare(`
+      UPDATE shared_threads SET title = ?, is_active = ?, expires_at = ?, updated_at = ? WHERE id = ?
+    `).run(title, isActive, expiresAt, now, id);
+
+    return {
+      ...existing,
+      title,
+      isActive: Boolean(isActive),
+      expiresAt,
+      updatedAt: now,
+    };
+  }
+
+  deleteSharedThread(id: string): boolean {
+    const res = this.raw.prepare(`DELETE FROM shared_threads WHERE id = ?`).run(id);
+    return res.changes > 0;
+  }
+
+  incrementSharedThreadViewCount(shareToken: string): void {
+    const now = new Date().toISOString();
+    this.raw.prepare(`
+      UPDATE shared_threads SET view_count = view_count + 1, last_viewed_at = ? WHERE share_token = ?
+    `).run(now, shareToken);
+  }
+}
+
+function rowToSharedThread(row: any): SharedThread {
+  return {
+    id: row.id,
+    threadId: row.thread_id,
+    shareToken: row.share_token,
+    createdByUserId: row.created_by_user_id ?? null,
+    title: row.title ?? null,
+    isActive: Boolean(row.is_active),
+    expiresAt: row.expires_at ?? null,
+    viewCount: row.view_count ?? 0,
+    lastViewedAt: row.last_viewed_at ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
 function rowToUser(row: any): User {

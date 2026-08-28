@@ -13,9 +13,27 @@ import { CostsView } from './components/CostsView.js';
 import { AuthProvider, useAuth } from './context/AuthContext.js';
 import { SetupView } from './components/SetupView.js';
 import { LoginView } from './components/LoginView.js';
+import { SharedThreadView } from './components/SharedThreadView.js';
 import { Loader2 } from 'lucide-react';
 
 type Tab = 'projects' | 'coverage' | 'unassigned' | 'search' | 'costs';
+
+function getShareTokenFromUrl(): string | null {
+  const path = window.location.pathname;
+  if (path.startsWith('/shared/')) {
+    const token = path.slice('/shared/'.length).split('/')[0];
+    if (token) return token;
+  }
+  const params = new URLSearchParams(window.location.search);
+  const paramToken = params.get('share');
+  if (paramToken) return paramToken;
+
+  const hash = window.location.hash;
+  if (hash.startsWith('#/shared/')) {
+    return hash.slice('#/shared/'.length).split('?')[0];
+  }
+  return null;
+}
 
 function useTheme(): ['light' | 'dark', () => void] {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('sync-hub-theme') === 'dark' ? 'dark' : 'light'));
@@ -155,6 +173,12 @@ function MainDashboard() {
 }
 
 function AppContent() {
+  const shareToken = useMemo(() => getShareTokenFromUrl(), []);
+
+  if (shareToken) {
+    return <SharedThreadView shareToken={shareToken} />;
+  }
+
   const { user, loading, authEnabled, setupRequired } = useAuth();
 
   if (loading) {

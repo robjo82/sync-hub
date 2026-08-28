@@ -161,7 +161,8 @@ export function createApp(deps: AppDeps): FastifyInstance {
       path === '/api/auth/status' ||
       path === '/api/auth/setup' ||
       path === '/api/auth/login' ||
-      path === '/api/sync/push';
+      path === '/api/sync/push' ||
+      path.startsWith('/api/share/');
 
     if (isPublic) return;
 
@@ -505,6 +506,101 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const thread = db.getThread(req.params.id);
     if (!thread) return reply.code(404).send({ error: 'not_found' });
     return db.getThreadOutline(req.params.id);
+  });
+
+  // --- Public Shared Thread Route (Exempt from auth) ---
+  app.get<{ Params: { shareToken: string } }>('/api/share/:shareToken', async (req, reply) => {
+    const { shareToken } = req.params;
+    const shared = db.getSharedThreadByToken(shareToken);
+    if (!shared) {
+      return reply.code(404).send({ error: 'not_found', message: 'Ce lien de partage est invalide, a été révoqué ou a expiré' });
+    }
+
+    // Increment view count
+    db.incrementSharedThreadViewCount(shareToken);
+
+    const thread = db.getThread(shared.threadId);
+    if (!thread) {
+      return reply.code(404).send({ error: 'thread_not_found', message: 'La conversation partagée est introuvable' });
+    }
+
+    const messages = db.getMessagesForThread(shared.threadId);
+    const project = db.getProject(thread.projectId) ?? null;
+
+    return {
+      sharedThread: shared,
+      thread,
+      messages,
+      project,
+    };
+  });
+
+  // --- Protected Sharing Management Routes ---
+
+  app.get<{ Params: { id: string } }>('/api/threads/:id/shares', async (req, reply) => {
+    const thread = db.getThread(req.params.id);
+    if (!thread) return reply.code(404).send({ error: 'not_found' });
+    return db.listSharedThreadsForThread(req.params.id);
+  });
+
+  app.post<{ Params: { id: string }; Body: { title?: string; expiresAt?: string | null } }>(
+    '/api/threads/:id/shares',
+    async (req, reply) => {
+      const thread = db.getThread(req.params.id);
+      if (!thread) return reply.code(404).send({ error: 'not_found', message: 'Conversation introuvable' });
+
+      const shared = db.createSharedThread(
+        {
+          threadId: req.params.id,
+          title: req.body?.title,
+          expiresAt: req.body?.expiresAt,
+        },
+        req.user?.id,
+      );
+
+      return reply.code(201).send(shared);
+    },
+  );
+
+  app.get('/api/shares', async (req) => {
+    const isGlobal = req.user?.role === 'admin';
+    const shares = isGlobal ? db.listSharedThreads() : db.listSharedThreads(req.user?.id);
+    return shares.map((s) => {
+      const thread = db.getThread(s.threadId);
+      const project = thread ? db.getProject(thread.projectId) : undefined;
+      return {
+        ...s,
+        threadTitle: thread?.title ?? s.threadId,
+        projectName: project?.name ?? thread?.projectId,
+      };
+    });
+  });
+
+  app.patch<{ Params: { id: string }; Body: { title?: string | null; isActive?: boolean; expiresAt?: string | null } }>(
+    '/api/shares/:id',
+    async (req, reply) => {
+      const existing = db.getSharedThreadById(req.params.id);
+      if (!existing) return reply.code(404).send({ error: 'not_found' });
+
+      if (req.user?.role !== 'admin' && existing.createdByUserId && existing.createdByUserId !== req.user?.id) {
+        return reply.code(403).send({ error: 'forbidden', message: 'Accès non autorisé à ce partage' });
+      }
+
+      const updated = db.updateSharedThread(req.params.id, req.body ?? {});
+      return updated;
+    },
+  );
+
+  app.delete<{ Params: { id: string } }>('/api/shares/:id', async (req, reply) => {
+    const existing = db.getSharedThreadById(req.params.id);
+    if (!existing) return reply.code(404).send({ error: 'not_found' });
+
+    if (req.user?.role !== 'admin' && existing.createdByUserId && existing.createdByUserId !== req.user?.id) {
+      return reply.code(403).send({ error: 'forbidden', message: 'Accès non autorisé à ce partage' });
+    }
+
+    db.deleteSharedThread(req.params.id);
+    return { ok: true };
   });
 
   app.post<{ Params: { id: string }; Body: { kind: 'paths' | 'claudeSlugs' | 'codexCwds'; value: string } }>(

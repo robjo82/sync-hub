@@ -237,3 +237,36 @@ export interface AuthStatus {
   user: User | null;
 }
 
+export interface SharedThread {
+  id: string;
+  threadId: string;
+  shareToken: string;
+  createdByUserId: string | null;
+  title: string | null;
+  isActive: boolean;
+  expiresAt: string | null;
+  viewCount: number;
+  lastViewedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSharedThreadInput {
+  threadId: string;
+  title?: string;
+  expiresAt?: string | null;
+}
+
+export interface UpdateSharedThreadInput {
+  title?: string | null;
+  isActive?: boolean;
+  expiresAt?: string | null;
+}
+
+export interface PublicSharedThreadData {
+  sharedThread: SharedThread;
+  thread: Thread;
+  messages: Message[];
+  project: Project | null;
+}
+

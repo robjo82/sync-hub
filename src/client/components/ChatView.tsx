@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Archive, Brain, Check, ChevronDown, Copy, FolderInput, Info, List, Settings2, Trash2, Wrench, X } from 'lucide-react';
+import { Archive, Brain, Check, ChevronDown, Copy, FolderInput, Info, List, Settings2, Share2, Trash2, Wrench, X } from 'lucide-react';
 import type { EngineType, Message, Project, Thread, ToolCall, ToolResult } from '../../types.js';
 import { UNASSIGNED_PROJECT_ID } from '../../types.js';
 import { api, type ThreadOutlineEntry } from '../lib/api.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
+import { ShareModal } from './ShareModal.js';
 
 const ENGINE_LABEL: Record<string, string> = { 'claude-code': 'Claude Code', codex: 'Codex', antigravity: 'Antigravity' };
 
@@ -416,6 +417,7 @@ export function ChatView({
   const [outline, setOutline] = useState<ThreadOutlineEntry[]>([]);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
 
   useEffect(() => {
     setMessages(null);
@@ -505,6 +507,14 @@ export function ChatView({
             }}
           />
           <button
+            onClick={() => setShareModalOpen(true)}
+            className={actionButtonClass}
+            title="Partager cette conversation"
+          >
+            <Share2 size={12} />
+            Partager
+          </button>
+          <button
             onClick={async () => {
               // Clipboard writes can fail silently (permission denied, insecure context) — only
               // claim success once the browser actually confirms it, rather than assuming it worked.
@@ -590,6 +600,10 @@ export function ChatView({
             {loadedEnd} / {total} affichés
           </span>
         </div>
+      )}
+
+      {shareModalOpen && thread && (
+        <ShareModal thread={thread} onClose={() => setShareModalOpen(false)} />
       )}
     </div>
   );

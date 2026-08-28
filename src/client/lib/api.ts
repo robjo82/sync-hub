@@ -2,11 +2,15 @@ import type {
   Artifact,
   AuthStatus,
   Category,
+  CreateSharedThreadInput,
   Memory,
   Message,
   Project,
+  PublicSharedThreadData,
+  SharedThread,
   SyncStats,
   Thread,
+  UpdateSharedThreadInput,
   User,
   UserRole,
   WebSocketEvent,
@@ -75,6 +79,24 @@ export const api = {
       body: JSON.stringify(data),
     }),
   deleteUser: (id: string) => jsonFetch<{ ok: true }>(`/api/users/${id}`, { method: 'DELETE' }),
+
+  // --- Sharing ---
+  publicShare: (shareToken: string) => jsonFetch<PublicSharedThreadData>(`/api/share/${shareToken}`),
+  threadShares: (threadId: string) => jsonFetch<SharedThread[]>(`/api/threads/${threadId}/shares`),
+  createShare: (threadId: string, data: Omit<CreateSharedThreadInput, 'threadId'>) =>
+    jsonFetch<SharedThread>(`/api/threads/${threadId}/shares`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  allShares: () => jsonFetch<Array<SharedThread & { threadTitle: string; projectName?: string }>>('/api/shares'),
+  updateShare: (id: string, data: UpdateSharedThreadInput) =>
+    jsonFetch<SharedThread>(`/api/shares/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  deleteShare: (id: string) => jsonFetch<{ ok: true }>(`/api/shares/${id}`, { method: 'DELETE' }),
 
   // --- App Data ---
   stats: () => jsonFetch<SyncStats>('/api/stats'),

@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext.js';
 import { UserManagementModal } from './UserManagementModal.js';
-import { Users, LogOut, ChevronDown } from 'lucide-react';
+import { SharedLinksListModal } from './SharedLinksListModal.js';
+import { Users, LogOut, ChevronDown, Globe } from 'lucide-react';
 
 export function UserMenu() {
   const { user, authEnabled, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [usersModalOpen, setUsersModalOpen] = useState(false);
+  const [sharesModalOpen, setSharesModalOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -55,6 +57,17 @@ export function UserMenu() {
             <p className="text-[11px] text-slate-400 truncate">{user.email}</p>
           </div>
 
+          <button
+            onClick={() => {
+              setMenuOpen(false);
+              setSharesModalOpen(true);
+            }}
+            className="w-full px-3.5 py-2 text-left text-xs text-slate-200 hover:bg-indigo-600/20 hover:text-indigo-300 flex items-center gap-2 transition-colors cursor-pointer"
+          >
+            <Globe className="w-3.5 h-3.5 text-blue-400" />
+            Liens partagés
+          </button>
+
           {user.role === 'admin' && (
             <button
               onClick={() => {
@@ -84,6 +97,7 @@ export function UserMenu() {
       )}
 
       <UserManagementModal isOpen={usersModalOpen} onClose={() => setUsersModalOpen(false)} />
+      {sharesModalOpen && <SharedLinksListModal onClose={() => setSharesModalOpen(false)} />}
     </div>
   );
 }
