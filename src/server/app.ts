@@ -22,9 +22,11 @@ import * as codex from '../core/adapters/codex.js';
 import * as antigravity from '../core/adapters/antigravity.js';
 import { archiveThread, deleteProject, deleteThread, type ArchiveRoots } from '../core/archive.js';
 import { computeCostSummary } from '../core/cost.js';
+import { runPullCycle } from '../core/sync-pull-client.js';
 import type {
   EngineHealth,
   EngineType,
+  PullBatch,
   PushBatch,
   PushResult,
   SyncStats,
@@ -43,10 +45,8 @@ declare module 'fastify' {
 export interface AppDeps {
   db: Db;
   registry: ProjectRegistry;
-  watchHandle: WatchHandle;
-  /** Triggered by POST /api/sync/rescan — a full re-ingest of both engines. */
+  watchHandle: Pick<WatchHandle, 'isActive' | 'ready' | 'close'>;
   rescan: () => void;
-  /** Where archiveThread moves files it has no native archive location for (Claude Code). */
   archiveRoots: ArchiveRoots;
   /** Where deleteProject moves a project's real folder — defaults to the real ~/.Trash; override in tests. */
   trashRoot?: string;
@@ -54,8 +54,10 @@ export interface AppDeps {
   importsDir: string;
   clientDistDir?: string;
   corsOrigins?: string[];
-  /** Shared secret guarding POST /api/sync/push (see core/sync-push-client.ts) — unset means the
-   * endpoint refuses every request rather than accepting unauthenticated writes by default. */
+  /** Remote hub URL this instance connects to for bidirectional sync. */
+  remoteUrl?: string;
+  /** Shared secret guarding /api/sync/push and /api/sync/pull (see core/sync-push-client.ts) — unset means the
+   * endpoint refuses every unauthenticated request. */
   remoteToken?: string;
   /** When true, authentication is disabled/bypassed (e.g. for purely local personal use). */
   authDisabled?: boolean;
@@ -162,6 +164,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
       path === '/api/auth/setup' ||
       path === '/api/auth/login' ||
       path === '/api/sync/push' ||
+      path === '/api/sync/pull' ||
       path.startsWith('/api/share/');
 
     if (isPublic) return;
@@ -835,6 +838,42 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const result = db.applyRemoteBatch(body);
     broadcast({ type: 'stats_updated', data: computeStats(deps) });
     return { ok: true, ...result } satisfies PushResult;
+  });
+
+  // Pulling end of remote sync (see core/sync-pull-client.ts for the pulling client). Returns a batch
+  // of messages after `afterSeq` with referenced threads and projects for secondary devices.
+  app.get<{ Querystring: { afterSeq?: string; limit?: string } }>('/api/sync/pull', async (req, reply) => {
+    if (!deps.remoteToken) return reply.code(403).send({ error: 'pull_disabled' });
+    if (req.headers.authorization !== `Bearer ${deps.remoteToken}`) return reply.code(401).send({ error: 'unauthorized' });
+
+    const afterSeq = Math.max(Number(req.query.afterSeq ?? 0) || 0, 0);
+    const limit = Math.min(Math.max(Number(req.query.limit ?? 50) || 1, 1), 200);
+
+    return db.getPullBatch(afterSeq, limit) satisfies PullBatch;
+  });
+
+  // Local-side manual trigger to pull the latest updates from the configured remote hub on demand.
+  app.post('/api/sync/pull', async (_req, reply) => {
+    if (!deps.remoteUrl || !deps.remoteToken) {
+      return reply.code(400).send({ error: 'remote_not_configured', message: 'Aucun hub distant configuré pour la synchronisation' });
+    }
+    const result = await runPullCycle(db, {
+      remoteUrl: deps.remoteUrl,
+      remoteToken: deps.remoteToken,
+    });
+    broadcast({ type: 'stats_updated', data: computeStats(deps) });
+    return { ok: true, result, syncState: db.getRemoteSyncState(deps.remoteUrl) };
+  });
+
+  // Returns the current bidirectional sync configuration and watermarks.
+  app.get('/api/sync/status', async () => {
+    const configured = !!(deps.remoteUrl && deps.remoteToken);
+    const syncState = deps.remoteUrl ? db.getRemoteSyncState(deps.remoteUrl) : null;
+    return {
+      configured,
+      remoteUrl: deps.remoteUrl ?? null,
+      syncState,
+    };
   });
 
   return app;

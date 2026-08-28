@@ -7,6 +7,8 @@ import type {
   Message,
   Project,
   PublicSharedThreadData,
+  PullResult,
+  RemoteSyncState,
   SharedThread,
   SyncStats,
   Thread,
@@ -148,6 +150,10 @@ export const api = {
   search: (q: string) =>
     jsonFetch<{ message: Message; projectName: string; threadTitle: string }[]>(`/api/search?q=${encodeURIComponent(q)}`),
   rescan: () => jsonFetch<{ ok: true; stats: SyncStats }>('/api/sync/rescan', { method: 'POST' }),
+  syncStatus: () =>
+    jsonFetch<{ configured: boolean; remoteUrl: string | null; syncState: RemoteSyncState | null }>('/api/sync/status'),
+  syncPull: () =>
+    jsonFetch<{ ok: true; result: PullResult; syncState: RemoteSyncState }>('/api/sync/pull', { method: 'POST' }),
   archiveThread: (threadId: string) =>
     jsonFetch<{ thread: Thread; ok: boolean; movedFileTo?: string; note: string }>(`/api/threads/${threadId}/archive`, {
       method: 'POST',

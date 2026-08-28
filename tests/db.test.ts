@@ -925,11 +925,37 @@ describe('Db remote sync', () => {
   });
 
   it('remote_sync_state defaults to zero/null, then round-trips through set/get', () => {
-    expect(db.getRemoteSyncState('https://hub.example.com')).toEqual({ lastPushedSeq: 0, lastPushedAt: null });
+    expect(db.getRemoteSyncState('https://hub.example.com')).toEqual({
+      remoteUrl: 'https://hub.example.com',
+      lastPushedSeq: 0,
+      lastPushedAt: null,
+      lastPulledSeq: 0,
+      lastPulledAt: null,
+    });
     db.setRemoteSyncState('https://hub.example.com', 42, '2026-01-01T00:00:00Z');
-    expect(db.getRemoteSyncState('https://hub.example.com')).toEqual({ lastPushedSeq: 42, lastPushedAt: '2026-01-01T00:00:00Z' });
+    expect(db.getRemoteSyncState('https://hub.example.com')).toEqual({
+      remoteUrl: 'https://hub.example.com',
+      lastPushedSeq: 42,
+      lastPushedAt: '2026-01-01T00:00:00Z',
+      lastPulledSeq: 0,
+      lastPulledAt: null,
+    });
+    db.setRemoteSyncPullState('https://hub.example.com', 10, '2026-01-01T01:00:00Z');
+    expect(db.getRemoteSyncState('https://hub.example.com')).toEqual({
+      remoteUrl: 'https://hub.example.com',
+      lastPushedSeq: 42,
+      lastPushedAt: '2026-01-01T00:00:00Z',
+      lastPulledSeq: 10,
+      lastPulledAt: '2026-01-01T01:00:00Z',
+    });
     // A second, different remote gets its own independent watermark.
-    expect(db.getRemoteSyncState('https://other-hub.example.com')).toEqual({ lastPushedSeq: 0, lastPushedAt: null });
+    expect(db.getRemoteSyncState('https://other-hub.example.com')).toEqual({
+      remoteUrl: 'https://other-hub.example.com',
+      lastPushedSeq: 0,
+      lastPushedAt: null,
+      lastPulledSeq: 0,
+      lastPulledAt: null,
+    });
   });
 
   describe('Db.applyRemoteBatch', () => {

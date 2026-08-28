@@ -206,6 +206,33 @@ export interface PushResult {
   skipped: { projects: string[]; threads: string[]; messages: string[] };
 }
 
+/** Response of GET /api/sync/pull — a batch of raw verbatim data pulled by a local sync-hub
+ * instance from a remote hub (see core/sync-pull-client.ts). */
+export interface PullBatch {
+  projects: Project[];
+  threads: Thread[];
+  messages: Message[];
+  maxSeq: number;
+  hasMore: boolean;
+}
+
+export interface PullResult {
+  ok: true;
+  appliedProjects: number;
+  appliedThreads: number;
+  appliedMessages: number;
+  skipped: { projects: string[]; threads: string[]; messages: string[] };
+  newWatermark: number;
+}
+
+export interface RemoteSyncState {
+  remoteUrl: string;
+  lastPushedSeq: number;
+  lastPushedAt: string | null;
+  lastPulledSeq: number;
+  lastPulledAt: string | null;
+}
+
 export type UserRole = 'admin' | 'member';
 
 export interface User {

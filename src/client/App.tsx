@@ -106,6 +106,11 @@ function MainDashboard() {
     setScanning(true);
     try {
       await api.rescan();
+      try {
+        await api.syncPull();
+      } catch {
+        // Remote sync not configured or offline
+      }
       await refetchProjects();
     } finally {
       setScanning(false);

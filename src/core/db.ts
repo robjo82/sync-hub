@@ -14,6 +14,8 @@ import type {
   Message,
   Project,
   ProjectAliases,
+  PullBatch,
+  RemoteSyncState,
   Session,
   SharedThread,
   Thread,
@@ -182,13 +184,15 @@ CREATE VIRTUAL TABLE IF NOT EXISTS threads_fts USING fts5(
   tokenize = 'unicode61 remove_diacritics 2'
 );
 
--- Per-remote push watermark for the client side of remote sync (core/sync-push-client.ts) — how
--- far this instance has pushed to a given hub. Keyed by remote_url rather than a single row so
--- the same local store could in principle push to more than one hub independently.
+-- Per-remote push/pull watermarks for the client side of remote sync — how
+-- far this instance has pushed to and pulled from a given hub. Keyed by remote_url rather than a single row so
+-- the same local store could in principle sync with more than one hub independently.
 CREATE TABLE IF NOT EXISTS remote_sync_state (
   remote_url TEXT PRIMARY KEY,
   last_pushed_seq INTEGER NOT NULL DEFAULT 0,
-  last_pushed_at TEXT
+  last_pushed_at TEXT,
+  last_pulled_seq INTEGER NOT NULL DEFAULT 0,
+  last_pulled_at TEXT
 );
 
 -- Users and roles (admin / member) for authentication and multi-user access control.
@@ -265,6 +269,8 @@ const EXPECTED_COLUMNS: Array<{ table: string; column: string; definition: strin
   { table: 'messages', column: 'usage', definition: 'TEXT' },
   { table: 'messages', column: 'estimated_tokens', definition: 'INTEGER' },
   { table: 'messages', column: 'ingest_seq', definition: 'INTEGER' },
+  { table: 'remote_sync_state', column: 'last_pulled_seq', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'remote_sync_state', column: 'last_pulled_at', definition: 'TEXT' },
 ];
 
 const DEFAULT_CATEGORIES = ['ekonum', 'client', 'perso'];
@@ -962,12 +968,26 @@ export class Db {
     return { messages, maxSeq };
   }
 
-  // --- remote sync (core/sync-push-client.ts is the client side of this) --------------------
+  // --- remote sync (core/sync-push-client.ts & core/sync-pull-client.ts) --------------------
 
-  /** How far this instance has pushed to a given remote hub — 0/null when never pushed. */
-  getRemoteSyncState(remoteUrl: string): { lastPushedSeq: number; lastPushedAt: string | null } {
+  /** How far this instance has pushed to and pulled from a given remote hub. */
+  getRemoteSyncState(remoteUrl: string): RemoteSyncState {
     const row = this.raw.prepare('SELECT * FROM remote_sync_state WHERE remote_url = ?').get(remoteUrl) as any;
-    return row ? { lastPushedSeq: row.last_pushed_seq, lastPushedAt: row.last_pushed_at } : { lastPushedSeq: 0, lastPushedAt: null };
+    return row
+      ? {
+          remoteUrl,
+          lastPushedSeq: row.last_pushed_seq ?? 0,
+          lastPushedAt: row.last_pushed_at ?? null,
+          lastPulledSeq: row.last_pulled_seq ?? 0,
+          lastPulledAt: row.last_pulled_at ?? null,
+        }
+      : {
+          remoteUrl,
+          lastPushedSeq: 0,
+          lastPushedAt: null,
+          lastPulledSeq: 0,
+          lastPulledAt: null,
+        };
   }
 
   setRemoteSyncState(remoteUrl: string, lastPushedSeq: number, lastPushedAt: string): void {
@@ -977,6 +997,37 @@ export class Db {
          ON CONFLICT(remote_url) DO UPDATE SET last_pushed_seq = excluded.last_pushed_seq, last_pushed_at = excluded.last_pushed_at`,
       )
       .run(remoteUrl, lastPushedSeq, lastPushedAt);
+  }
+
+  setRemoteSyncPullState(remoteUrl: string, lastPulledSeq: number, lastPulledAt: string): void {
+    this.raw
+      .prepare(
+        `INSERT INTO remote_sync_state (remote_url, last_pulled_seq, last_pulled_at) VALUES (?, ?, ?)
+         ON CONFLICT(remote_url) DO UPDATE SET last_pulled_seq = excluded.last_pulled_seq, last_pulled_at = excluded.last_pulled_at`,
+      )
+      .run(remoteUrl, lastPulledSeq, lastPulledAt);
+  }
+
+  /**
+   * Produces a batch of data to pull by a secondary device/client, containing messages after `afterSeq`,
+   * their referenced threads, and all current projects.
+   */
+  getPullBatch(afterSeq: number, limit = 50): PullBatch {
+    const rows = this.raw
+      .prepare('SELECT * FROM messages WHERE ingest_seq > ? ORDER BY ingest_seq ASC LIMIT ?')
+      .all(afterSeq, limit) as any[];
+    const messages = rows.map(rowToMessage);
+    const maxSeq = rows.length ? rows[rows.length - 1].ingest_seq : afterSeq;
+    const threadIds = [...new Set(messages.map((m) => m.threadId))];
+    const threads = this.getThreadsByIds(threadIds);
+    const projects = this.getProjects();
+    return {
+      projects,
+      threads,
+      messages,
+      maxSeq,
+      hasMore: rows.length === limit,
+    };
   }
 
   /**
