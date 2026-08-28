@@ -154,6 +154,11 @@ export function createApp(deps: AppDeps): FastifyInstance {
       }
     }
 
+    const authHeader = req.headers.authorization;
+    if (deps.remoteToken && authHeader === `Bearer ${deps.remoteToken}`) {
+      req.user = DEFAULT_LOCAL_USER;
+    }
+
     if (isAuthDisabled && !req.user) {
       req.user = DEFAULT_LOCAL_USER;
     }
@@ -163,6 +168,9 @@ export function createApp(deps: AppDeps): FastifyInstance {
 
     const isPublic =
       (!path.startsWith('/api') && !path.startsWith('/ws')) ||
+      path === '/sse' ||
+      path === '/api/mcp/sse' ||
+      path === '/api/mcp/messages' ||
       path === '/api/health' ||
       path === '/api/auth/status' ||
       path === '/api/auth/setup' ||
