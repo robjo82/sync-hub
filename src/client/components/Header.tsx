@@ -1,4 +1,5 @@
 import { Moon, RefreshCw, Sun } from 'lucide-react';
+import { UserMenu } from './UserMenu.js';
 
 type Tab = 'projects' | 'coverage' | 'unassigned' | 'search' | 'costs';
 
@@ -37,7 +38,7 @@ export function Header({ connected, scanning, onRescan, tab, onTabChange, unassi
           <button
             key={t.key}
             onClick={() => onTabChange(t.key)}
-            className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
+            className={`rounded-md px-3 py-1.5 text-sm transition-colors cursor-pointer ${
               tab === t.key ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
             }`}
           >
@@ -54,7 +55,7 @@ export function Header({ connected, scanning, onRescan, tab, onTabChange, unassi
       <button
         onClick={onToggleTheme}
         title={theme === 'light' ? 'Passer en thème sombre' : 'Passer en thème clair'}
-        className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
       >
         {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
       </button>
@@ -62,11 +63,13 @@ export function Header({ connected, scanning, onRescan, tab, onTabChange, unassi
       <button
         onClick={onRescan}
         disabled={scanning}
-        className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+        className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50 cursor-pointer"
       >
         <RefreshCw size={14} className={scanning ? 'animate-spin' : ''} />
         {scanning ? 'Scan en cours…' : 'Rescanner'}
       </button>
+
+      <UserMenu />
     </header>
   );
 }

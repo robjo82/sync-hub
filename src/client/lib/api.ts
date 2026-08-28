@@ -1,4 +1,16 @@
-import type { Artifact, Category, Memory, Message, Project, SyncStats, Thread, WebSocketEvent } from '../../types.js';
+import type {
+  Artifact,
+  AuthStatus,
+  Category,
+  Memory,
+  Message,
+  Project,
+  SyncStats,
+  Thread,
+  User,
+  UserRole,
+  WebSocketEvent,
+} from '../../types.js';
 import type { CostSummary } from '../../core/cost.js';
 
 export interface ThreadOutlineEntry {
@@ -10,12 +22,61 @@ export interface ThreadOutlineEntry {
 }
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${url} → ${res.status}`);
+  const res = await fetch(url, {
+    ...init,
+    credentials: init?.credentials ?? 'same-origin',
+  });
+  if (!res.ok) {
+    let errorMessage = `${init?.method ?? 'GET'} ${url} → ${res.status}`;
+    try {
+      const errJson = await res.json();
+      if (errJson?.message) errorMessage = errJson.message;
+      else if (errJson?.error) errorMessage = errJson.error;
+    } catch {
+      // fallback to status error
+    }
+    const err = new Error(errorMessage);
+    (err as any).status = res.status;
+    throw err;
+  }
   return res.json() as Promise<T>;
 }
 
 export const api = {
+  // --- Auth ---
+  authStatus: () => jsonFetch<AuthStatus>('/api/auth/status'),
+  setup: (data: { email: string; displayName: string; password: string }) =>
+    jsonFetch<{ user: User; token: string }>('/api/auth/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  login: (data: { email: string; password: string }) =>
+    jsonFetch<{ user: User; token: string }>('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  logout: () => jsonFetch<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
+  me: () => jsonFetch<{ user: User }>('/api/auth/me'),
+
+  // --- Users Management ---
+  users: () => jsonFetch<User[]>('/api/users'),
+  createUser: (data: { email: string; displayName: string; password: string; role?: UserRole }) =>
+    jsonFetch<User>('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  updateUser: (id: string, data: { email?: string; displayName?: string; password?: string; role?: UserRole }) =>
+    jsonFetch<User>(`/api/users/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  deleteUser: (id: string) => jsonFetch<{ ok: true }>(`/api/users/${id}`, { method: 'DELETE' }),
+
+  // --- App Data ---
   stats: () => jsonFetch<SyncStats>('/api/stats'),
   projects: () => jsonFetch<Project[]>('/api/projects'),
   threads: (projectId: string) => jsonFetch<Thread[]>(`/api/projects/${projectId}/threads`),
@@ -109,11 +170,17 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ confirm: true }),
     }),
-  mergeProject: (sourceId: string, targetId: string) =>
-    jsonFetch<Project>(`/api/projects/${targetId}/merge`, {
+  mergeProjects: (targetProjectId: string, sourceProjectId: string) =>
+    jsonFetch<Project>(`/api/projects/${targetProjectId}/merge`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourceId }),
+      body: JSON.stringify({ sourceId: sourceProjectId }),
+    }),
+  mergeProject: (targetProjectId: string, sourceProjectId: string) =>
+    jsonFetch<Project>(`/api/projects/${targetProjectId}/merge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourceId: sourceProjectId }),
     }),
   reorderProjects: (orderedIds: string[]) =>
     jsonFetch<{ ok: true }>('/api/projects/reorder', {

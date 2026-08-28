@@ -13,8 +13,12 @@ import type {
   Message,
   Project,
   ProjectAliases,
+  Session,
   Thread,
   TokenUsage,
+  User,
+  UserRole,
+  UserWithPasswordHash,
 } from '../types.js';
 
 export interface UsageScope {
@@ -183,6 +187,31 @@ CREATE TABLE IF NOT EXISTS remote_sync_state (
   last_pushed_seq INTEGER NOT NULL DEFAULT 0,
   last_pushed_at TEXT
 );
+
+-- Users and roles (admin / member) for authentication and multi-user access control.
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'member',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
+-- Active authenticated sessions, indexed by token_hash (SHA-256 over random raw token).
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  user_agent TEXT,
+  ip TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 `;
 
 /**
@@ -1400,6 +1429,156 @@ export class Db {
       : (this.raw.prepare('SELECT COUNT(*) as n FROM threads WHERE project_id = ?').get(projectId) as any);
     return row?.n ?? 0;
   }
+
+  // --- Users & Authentication ---
+
+  createUser(user: { id?: string; email: string; displayName: string; passwordHash: string; role?: UserRole }): User {
+    const id = user.id ?? randomUUID();
+    const now = new Date().toISOString();
+    const role: UserRole = user.role ?? 'member';
+    const email = user.email.trim().toLowerCase();
+    this.raw.prepare(`
+      INSERT INTO users (id, email, display_name, password_hash, role, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, email, user.displayName.trim(), user.passwordHash, role, now, now);
+    return { id, email, displayName: user.displayName.trim(), role, createdAt: now, updatedAt: now };
+  }
+
+  getUserById(id: string): User | undefined {
+    const row = this.raw.prepare(`SELECT id, email, display_name, role, created_at, updated_at FROM users WHERE id = ?`).get(id);
+    return row ? rowToUser(row) : undefined;
+  }
+
+  getUserByEmail(email: string): UserWithPasswordHash | undefined {
+    const row = this.raw.prepare(`SELECT * FROM users WHERE email = ?`).get(email.trim().toLowerCase());
+    return row ? rowToUserWithPasswordHash(row) : undefined;
+  }
+
+  listUsers(): User[] {
+    const rows = this.raw.prepare(`SELECT id, email, display_name, role, created_at, updated_at FROM users ORDER BY created_at ASC`).all();
+    return rows.map(rowToUser);
+  }
+
+  updateUser(id: string, updates: { email?: string; displayName?: string; passwordHash?: string; role?: UserRole }): User | undefined {
+    const existing = this.getUserById(id);
+    if (!existing) return undefined;
+    const now = new Date().toISOString();
+    const email = updates.email !== undefined ? updates.email.trim().toLowerCase() : existing.email;
+    const displayName = updates.displayName !== undefined ? updates.displayName.trim() : existing.displayName;
+    const role = updates.role !== undefined ? updates.role : existing.role;
+
+    if (updates.passwordHash !== undefined) {
+      this.raw.prepare(`
+        UPDATE users SET email = ?, display_name = ?, password_hash = ?, role = ?, updated_at = ? WHERE id = ?
+      `).run(email, displayName, updates.passwordHash, role, now, id);
+    } else {
+      this.raw.prepare(`
+        UPDATE users SET email = ?, display_name = ?, role = ?, updated_at = ? WHERE id = ?
+      `).run(email, displayName, role, now, id);
+    }
+    return { id, email, displayName, role, createdAt: existing.createdAt, updatedAt: now };
+  }
+
+  deleteUser(id: string): boolean {
+    const res = this.raw.prepare(`DELETE FROM users WHERE id = ?`).run(id);
+    return res.changes > 0;
+  }
+
+  countUsers(): number {
+    const row = this.raw.prepare(`SELECT COUNT(*) as count FROM users`).get() as { count: number };
+    return row.count;
+  }
+
+  // --- Sessions ---
+
+  createSession(session: { id?: string; userId: string; tokenHash: string; expiresAt: string; userAgent?: string; ip?: string }): Session {
+    const id = session.id ?? randomUUID();
+    const now = new Date().toISOString();
+    this.raw.prepare(`
+      INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at, user_agent, ip)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, session.userId, session.tokenHash, session.expiresAt, now, session.userAgent ?? null, session.ip ?? null);
+    return {
+      id,
+      userId: session.userId,
+      tokenHash: session.tokenHash,
+      expiresAt: session.expiresAt,
+      createdAt: now,
+      userAgent: session.userAgent,
+      ip: session.ip,
+    };
+  }
+
+  getSessionByTokenHash(tokenHash: string): { session: Session; user: User } | undefined {
+    const now = new Date().toISOString();
+    const row = this.raw.prepare(`
+      SELECT s.id as s_id, s.user_id, s.token_hash, s.expires_at, s.created_at as s_created_at, s.user_agent, s.ip,
+             u.id as u_id, u.email, u.display_name, u.role, u.created_at as u_created_at, u.updated_at as u_updated_at
+      FROM sessions s
+      JOIN users u ON u.id = s.user_id
+      WHERE s.token_hash = ? AND s.expires_at > ?
+    `).get(tokenHash, now) as any;
+
+    if (!row) return undefined;
+    return {
+      session: {
+        id: row.s_id,
+        userId: row.user_id,
+        tokenHash: row.token_hash,
+        expiresAt: row.expires_at,
+        createdAt: row.s_created_at,
+        userAgent: row.user_agent ?? undefined,
+        ip: row.ip ?? undefined,
+      },
+      user: {
+        id: row.u_id,
+        email: row.email,
+        displayName: row.display_name,
+        role: row.role,
+        createdAt: row.u_created_at,
+        updatedAt: row.u_updated_at,
+      },
+    };
+  }
+
+  deleteSessionByTokenHash(tokenHash: string): boolean {
+    const res = this.raw.prepare(`DELETE FROM sessions WHERE token_hash = ?`).run(tokenHash);
+    return res.changes > 0;
+  }
+
+  deleteSessionsForUser(userId: string): number {
+    const res = this.raw.prepare(`DELETE FROM sessions WHERE user_id = ?`).run(userId);
+    return res.changes;
+  }
+
+  cleanExpiredSessions(): number {
+    const now = new Date().toISOString();
+    const res = this.raw.prepare(`DELETE FROM sessions WHERE expires_at <= ?`).run(now);
+    return res.changes;
+  }
+}
+
+function rowToUser(row: any): User {
+  return {
+    id: row.id,
+    email: row.email,
+    displayName: row.display_name,
+    role: row.role as UserRole,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToUserWithPasswordHash(row: any): UserWithPasswordHash {
+  return {
+    id: row.id,
+    email: row.email,
+    displayName: row.display_name,
+    role: row.role as UserRole,
+    passwordHash: row.password_hash,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
 function rowToProject(row: any): Project {

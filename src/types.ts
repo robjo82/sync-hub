@@ -205,3 +205,35 @@ export interface PushResult {
   appliedMessages: number;
   skipped: { projects: string[]; threads: string[]; messages: string[] };
 }
+
+export type UserRole = 'admin' | 'member';
+
+export interface User {
+  id: string;
+  email: string;
+  displayName: string;
+  role: UserRole;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UserWithPasswordHash extends User {
+  passwordHash: string;
+}
+
+export interface Session {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: string;
+  createdAt: string;
+  userAgent?: string;
+  ip?: string;
+}
+
+export interface AuthStatus {
+  authEnabled: boolean;
+  setupRequired: boolean;
+  user: User | null;
+}
+

@@ -10,10 +10,14 @@ import { CoverageView } from './components/CoverageView.js';
 import { UnassignedView } from './components/UnassignedView.js';
 import { SearchView } from './components/SearchView.js';
 import { CostsView } from './components/CostsView.js';
+import { AuthProvider, useAuth } from './context/AuthContext.js';
+import { SetupView } from './components/SetupView.js';
+import { LoginView } from './components/LoginView.js';
+import { Loader2 } from 'lucide-react';
 
 type Tab = 'projects' | 'coverage' | 'unassigned' | 'search' | 'costs';
 
-function useTheme(): [ 'light' | 'dark', () => void ] {
+function useTheme(): ['light' | 'dark', () => void] {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('sync-hub-theme') === 'dark' ? 'dark' : 'light'));
 
   useEffect(() => {
@@ -24,25 +28,26 @@ function useTheme(): [ 'light' | 'dark', () => void ] {
   return [theme, () => setTheme((t) => (t === 'light' ? 'dark' : 'light'))];
 }
 
-export default function App() {
+function MainDashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [stats, setStats] = useState<SyncStats | null>(null);
   const [connected, setConnected] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [tab, setTab] = useState<Tab>('projects');
   const [selected, setSelected] = useState<SelectedItem>(null);
-  // Set when a thread is opened from somewhere other than clicking it directly in the tree (e.g.
-  // search) — tells ProjectTree to expand/scroll to it once, then gets cleared so it doesn't
-  // re-trigger the scroll on every unrelated re-render.
   const [focusThreadId, setFocusThreadId] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [theme, toggleTheme] = useTheme();
 
   useEffect(() => {
-    Promise.all([api.projects(), api.stats()]).then(([p, s]) => {
-      setProjects(p);
-      setStats(s);
-    });
+    Promise.all([api.projects(), api.stats()])
+      .then(([p, s]) => {
+        setProjects(p);
+        setStats(s);
+      })
+      .catch((err) => {
+        console.error('Failed to load initial projects/stats:', err);
+      });
 
     const socket = connectSocket((event) => {
       setConnected(true);
@@ -146,5 +151,38 @@ export default function App() {
         {tab === 'costs' && <CostsView projects={projects} />}
       </div>
     </div>
+  );
+}
+
+function AppContent() {
+  const { user, loading, authEnabled, setupRequired } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-slate-400">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+          <span className="text-sm font-medium">Chargement de Sync Hub...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (setupRequired) {
+    return <SetupView />;
+  }
+
+  if (authEnabled && !user) {
+    return <LoginView />;
+  }
+
+  return <MainDashboard />;
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }

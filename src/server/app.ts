@@ -1,5 +1,6 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
+import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import fastifyMultipart from '@fastify/multipart';
@@ -15,13 +16,29 @@ import type { Db } from '../core/db.js';
 import type { ProjectRegistry } from '../core/registry.js';
 import type { WatchHandle } from '../core/watch.js';
 import { updatePointerFiles } from '../core/pointer-files.js';
+import { hashPassword, verifyPassword, generateSessionToken, hashSessionToken } from '../core/crypto.js';
 import * as claudeCode from '../core/adapters/claude-code.js';
 import * as codex from '../core/adapters/codex.js';
 import * as antigravity from '../core/adapters/antigravity.js';
 import { archiveThread, deleteProject, deleteThread, type ArchiveRoots } from '../core/archive.js';
 import { computeCostSummary } from '../core/cost.js';
-import type { EngineHealth, EngineType, PushBatch, PushResult, SyncStats, WebSocketEvent } from '../types.js';
+import type {
+  EngineHealth,
+  EngineType,
+  PushBatch,
+  PushResult,
+  SyncStats,
+  User,
+  UserRole,
+  WebSocketEvent,
+} from '../types.js';
 import { UNASSIGNED_PROJECT_ID } from '../types.js';
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    user?: User;
+  }
+}
 
 export interface AppDeps {
   db: Db;
@@ -40,6 +57,10 @@ export interface AppDeps {
   /** Shared secret guarding POST /api/sync/push (see core/sync-push-client.ts) — unset means the
    * endpoint refuses every request rather than accepting unauthenticated writes by default. */
   remoteToken?: string;
+  /** When true, authentication is disabled/bypassed (e.g. for purely local personal use). */
+  authDisabled?: boolean;
+  /** Secret used to sign session cookies. */
+  cookieSecret?: string;
 }
 
 const execFileAsync = promisify(execFile);
@@ -71,12 +92,29 @@ export function computeStats(deps: Pick<AppDeps, 'db' | 'watchHandle'>): SyncSta
     totalMessages: db.countAll('messages'),
     totalMemories: db.countAll('memories'),
     totalArtifacts: db.countAll('artifacts'),
-    // Scoped to active threads to match what the "Non affecté" view (and its own "N threads"
-    // count) actually shows by default — a real find: the header badge said 3554 while the page
-    // itself, filtering out archived threads like every other thread list does, showed 3.
     unassignedThreadCount: db.countThreadsForProject(UNASSIGNED_PROJECT_ID, 'active'),
     engines: engineHealth,
   };
+}
+
+const DEFAULT_LOCAL_USER: User = {
+  id: 'local-admin',
+  email: 'local@sync-hub',
+  displayName: 'Robin',
+  role: 'admin',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+};
+
+function extractSessionToken(req: FastifyRequest): string | null {
+  const cookieToken = req.cookies?.sync_hub_session;
+  if (cookieToken) return cookieToken;
+
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    return authHeader.slice(7).trim();
+  }
+  return null;
 }
 
 export function createApp(deps: AppDeps): FastifyInstance {
@@ -90,15 +128,47 @@ export function createApp(deps: AppDeps): FastifyInstance {
     }
   }
 
-  // Default Fastify bodyLimit is 1 MiB — fine for every existing route, but a remote-sync push
-  // batch of verbatim messages (tool outputs, diffs, thoughts) routinely exceeds that; raised here
-  // rather than per-route since there's only the one JSON-body route that needs it.
   const app = Fastify({ logger: false, bodyLimit: 25 * 1024 * 1024 });
 
-  app.register(cors, { origin: deps.corsOrigins ?? true });
+  app.register(cors, { origin: deps.corsOrigins ?? true, credentials: true });
+  app.register(fastifyCookie, { secret: deps.cookieSecret ?? 'sync-hub-cookie-secret-key-32chars-min' });
   app.register(fastifyWebsocket);
-  // Exports (esp. ChatGPT's, sharded across dozens of files) can run to several hundred MB.
   app.register(fastifyMultipart, { limits: { fileSize: 2 * 1024 * 1024 * 1024 } });
+
+  // Authentication hook for all requests
+  app.addHook('onRequest', async (req, reply) => {
+    const isAuthDisabled = deps.authDisabled === true || process.env.SYNC_HUB_AUTH_DISABLED === '1' || db.countUsers() === 0;
+
+    const token = extractSessionToken(req);
+    if (token) {
+      const tokenHash = hashSessionToken(token);
+      const sessionResult = db.getSessionByTokenHash(tokenHash);
+      if (sessionResult) {
+        req.user = sessionResult.user;
+      }
+    }
+
+    if (isAuthDisabled && !req.user) {
+      req.user = DEFAULT_LOCAL_USER;
+    }
+
+    const rawUrl = req.raw.url ?? '';
+    const path = rawUrl.split('?')[0];
+
+    const isPublic =
+      (!path.startsWith('/api') && !path.startsWith('/ws')) ||
+      path === '/api/health' ||
+      path === '/api/auth/status' ||
+      path === '/api/auth/setup' ||
+      path === '/api/auth/login' ||
+      path === '/api/sync/push';
+
+    if (isPublic) return;
+
+    if (!req.user) {
+      return reply.code(401).send({ error: 'unauthorized', message: 'Authentication required' });
+    }
+  });
 
   if (deps.clientDistDir && existsSync(deps.clientDistDir)) {
     app.register(fastifyStatic, { root: deps.clientDistDir });
@@ -122,6 +192,221 @@ export function createApp(deps: AppDeps): FastifyInstance {
   });
 
   app.get('/api/health', async () => ({ ok: true }));
+
+  // --- Auth Routes ---
+
+  app.get('/api/auth/status', async (req) => {
+    const isAuthDisabled = deps.authDisabled === true || process.env.SYNC_HUB_AUTH_DISABLED === '1';
+    const totalUsers = db.countUsers();
+    const setupRequired = !isAuthDisabled && totalUsers === 0;
+    const authEnabled = !isAuthDisabled && totalUsers > 0;
+    return {
+      authEnabled,
+      setupRequired,
+      user: req.user ?? null,
+    };
+  });
+
+  app.post<{ Body: { email?: string; displayName?: string; password?: string } }>('/api/auth/setup', async (req, reply) => {
+    if (db.countUsers() > 0) {
+      return reply.code(403).send({ error: 'setup_already_completed', message: 'La configuration initiale a déjà été effectuée.' });
+    }
+    const email = (req.body?.email ?? '').trim();
+    const displayName = (req.body?.displayName ?? '').trim();
+    const password = req.body?.password ?? '';
+
+    if (!email || !email.includes('@')) {
+      return reply.code(400).send({ error: 'invalid_email', message: 'Un email valide est requis' });
+    }
+    if (!displayName) {
+      return reply.code(400).send({ error: 'display_name_required', message: 'Le nom complet est requis' });
+    }
+    if (!password || password.length < 8) {
+      return reply.code(400).send({ error: 'password_too_short', message: 'Le mot de passe doit contenir au moins 8 caractères' });
+    }
+
+    const passwordHash = await hashPassword(password);
+    const user = db.createUser({
+      email,
+      displayName,
+      passwordHash,
+      role: 'admin',
+    });
+
+    const rawToken = generateSessionToken();
+    const tokenHash = hashSessionToken(rawToken);
+    const expiresAt = new Date(Date.now() + 30 * 86400 * 1000).toISOString();
+
+    db.createSession({
+      userId: user.id,
+      tokenHash,
+      expiresAt,
+      userAgent: req.headers['user-agent'],
+      ip: req.ip,
+    });
+
+    reply.setCookie('sync_hub_session', rawToken, {
+      path: '/',
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 30 * 86400,
+      secure: req.protocol === 'https',
+    });
+
+    return { user, token: rawToken };
+  });
+
+  app.post<{ Body: { email?: string; password?: string } }>('/api/auth/login', async (req, reply) => {
+    const email = (req.body?.email ?? '').trim();
+    const password = req.body?.password ?? '';
+
+    if (!email || !password) {
+      return reply.code(400).send({ error: 'credentials_required', message: 'Email et mot de passe requis' });
+    }
+
+    const userWithHash = db.getUserByEmail(email);
+    if (!userWithHash) {
+      return reply.code(401).send({ error: 'invalid_credentials', message: 'Identifiants invalides' });
+    }
+
+    const valid = await verifyPassword(password, userWithHash.passwordHash);
+    if (!valid) {
+      return reply.code(401).send({ error: 'invalid_credentials', message: 'Identifiants invalides' });
+    }
+
+    const rawToken = generateSessionToken();
+    const tokenHash = hashSessionToken(rawToken);
+    const expiresAt = new Date(Date.now() + 30 * 86400 * 1000).toISOString();
+
+    db.createSession({
+      userId: userWithHash.id,
+      tokenHash,
+      expiresAt,
+      userAgent: req.headers['user-agent'],
+      ip: req.ip,
+    });
+
+    reply.setCookie('sync_hub_session', rawToken, {
+      path: '/',
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 30 * 86400,
+      secure: req.protocol === 'https',
+    });
+
+    const { passwordHash: _, ...user } = userWithHash;
+    return { user, token: rawToken };
+  });
+
+  app.post('/api/auth/logout', async (req, reply) => {
+    const token = extractSessionToken(req);
+    if (token) {
+      db.deleteSessionByTokenHash(hashSessionToken(token));
+    }
+    reply.clearCookie('sync_hub_session', { path: '/' });
+    return { ok: true };
+  });
+
+  app.get('/api/auth/me', async (req, reply) => {
+    if (!req.user) {
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+    return { user: req.user };
+  });
+
+  // --- Users Management Routes ---
+
+  app.get('/api/users', async (req, reply) => {
+    if (req.user?.role !== 'admin') {
+      return reply.code(403).send({ error: 'forbidden', message: 'Accès administrateur requis' });
+    }
+    return db.listUsers();
+  });
+
+  app.post<{ Body: { email?: string; displayName?: string; password?: string; role?: UserRole } }>('/api/users', async (req, reply) => {
+    if (req.user?.role !== 'admin') {
+      return reply.code(403).send({ error: 'forbidden', message: 'Accès administrateur requis' });
+    }
+    const email = (req.body?.email ?? '').trim();
+    const displayName = (req.body?.displayName ?? '').trim();
+    const password = req.body?.password ?? '';
+    const role: UserRole = req.body?.role === 'admin' ? 'admin' : 'member';
+
+    if (!email || !email.includes('@')) {
+      return reply.code(400).send({ error: 'invalid_email', message: 'Email valide requis' });
+    }
+    if (!displayName) {
+      return reply.code(400).send({ error: 'display_name_required', message: 'Nom complet requis' });
+    }
+    if (!password || password.length < 8) {
+      return reply.code(400).send({ error: 'password_too_short', message: 'Le mot de passe doit contenir au moins 8 caractères' });
+    }
+
+    if (db.getUserByEmail(email)) {
+      return reply.code(409).send({ error: 'email_already_exists', message: 'Un compte avec cet email existe déjà' });
+    }
+
+    const passwordHash = await hashPassword(password);
+    const user = db.createUser({ email, displayName, passwordHash, role });
+    return user;
+  });
+
+  app.patch<{ Params: { id: string }; Body: { email?: string; displayName?: string; password?: string; role?: UserRole } }>('/api/users/:id', async (req, reply) => {
+    const targetId = req.params.id;
+    const isSelf = req.user?.id === targetId;
+    const isAdmin = req.user?.role === 'admin';
+
+    if (!isSelf && !isAdmin) {
+      return reply.code(403).send({ error: 'forbidden', message: 'Non autorisé' });
+    }
+
+    const updates: { email?: string; displayName?: string; passwordHash?: string; role?: UserRole } = {};
+    if (req.body?.displayName !== undefined) updates.displayName = req.body.displayName;
+    if (req.body?.email !== undefined) {
+      if (req.body.email && !req.body.email.includes('@')) {
+        return reply.code(400).send({ error: 'invalid_email' });
+      }
+      updates.email = req.body.email;
+    }
+    if (req.body?.password) {
+      if (req.body.password.length < 8) {
+        return reply.code(400).send({ error: 'password_too_short' });
+      }
+      updates.passwordHash = await hashPassword(req.body.password);
+    }
+    if (req.body?.role !== undefined) {
+      if (!isAdmin) {
+        return reply.code(403).send({ error: 'forbidden', message: 'Seul un administrateur peut modifier les rôles' });
+      }
+      updates.role = req.body.role;
+    }
+
+    const updated = db.updateUser(targetId, updates);
+    if (!updated) return reply.code(404).send({ error: 'user_not_found' });
+    return updated;
+  });
+
+  app.delete<{ Params: { id: string } }>('/api/users/:id', async (req, reply) => {
+    if (req.user?.role !== 'admin') {
+      return reply.code(403).send({ error: 'forbidden', message: 'Accès administrateur requis' });
+    }
+    const targetId = req.params.id;
+    const targetUser = db.getUserById(targetId);
+    if (!targetUser) return reply.code(404).send({ error: 'user_not_found' });
+
+    if (targetUser.role === 'admin') {
+      const allAdmins = db.listUsers().filter((u) => u.role === 'admin');
+      if (allAdmins.length <= 1) {
+        return reply.code(400).send({ error: 'cannot_delete_last_admin', message: 'Impossible de supprimer le dernier administrateur' });
+      }
+    }
+
+    db.deleteSessionsForUser(targetId);
+    db.deleteUser(targetId);
+    return { ok: true };
+  });
+
+  // --- App Data Routes ---
 
   app.get('/api/stats', async () => computeStats(deps));
 
