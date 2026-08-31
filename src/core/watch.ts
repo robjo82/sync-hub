@@ -24,9 +24,13 @@ interface WatchOptions {
 
 /**
  * Live-tails a growing JSONL file: reads only the bytes appended since the last time we saw it
- * (tracked in-memory by byte offset, per absolute path). A fresh process starts every offset at
- * 0, which just re-triggers a full scan of each file on restart — safe and cheap, because the
- * hash-uniqueness gate in Db.insertMessage makes that idempotent.
+ * (tracked in-memory per absolute path). A fresh process starts with nothing recorded, which just
+ * re-triggers a full scan of each file on restart — safe and cheap, because the hash-uniqueness
+ * gate in Db.insertMessage makes that idempotent.
+ *
+ * Tailing is only attempted when the file is provably the same one, grown. Anything else — a
+ * shrink, a new inode — re-reads from the start, because an offset that no longer matches the
+ * file silently skips content instead of failing loudly.
  */
 function startEngineWatch(
   engine: EngineType,
@@ -35,17 +39,29 @@ function startEngineWatch(
   registry: ProjectRegistry,
   opts: WatchOptions,
 ): FSWatcher {
-  const offsets = new Map<string, number>();
+  // Keyed by absolute path: the size we last consumed, plus the inode we saw it on. Both are
+  // needed to decide whether the next event is a plain append or a file that was replaced.
+  const seen = new Map<string, { size: number; ino: number }>();
 
   const ingest = (filePath: string) => {
     if (!filePath.endsWith('.jsonl')) return;
     let size: number;
+    let ino: number;
     try {
-      size = statSync(filePath).size;
+      const st = statSync(filePath);
+      size = st.size;
+      ino = st.ino;
     } catch {
       return;
     }
-    const fromOffset = offsets.get(filePath);
+    const previous = seen.get(filePath);
+    // Tail from the last offset only when this is provably the same file, grown. A smaller size
+    // means it was truncated or rewritten; a different inode means it was replaced outright
+    // (rename-into-place, rotation). In both cases the recorded offset points into content that
+    // no longer exists there, so re-read from the start — insertMessage's hash gate makes the
+    // repeat free, whereas tailing from a stale offset loses everything before it, permanently.
+    const isAppend = previous !== undefined && previous.ino === ino && size >= previous.size;
+    const fromOffset = isAppend ? previous.size : undefined;
     let inserted = 0;
     if (engine === 'claude-code') {
       inserted = claudeCode.ingestSessionFile(db, registry, claudeCode.refFromFilePath(filePath), fromOffset ? { fromOffset } : {});
@@ -59,7 +75,7 @@ function startEngineWatch(
       if (!ref) return;
       inserted = antigravity.ingestSessionFile(db, registry, ref, fromOffset ? { fromOffset } : {});
     }
-    offsets.set(filePath, size);
+    seen.set(filePath, { size, ino });
     if (inserted > 0) opts.onIngest?.({ engine, filePath, inserted });
   };
 

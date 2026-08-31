@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { Db } from '../db.js';
@@ -7,6 +7,7 @@ import type { ProjectRegistry } from '../registry.js';
 import { computeMessageHash } from '../hash.js';
 import { ensureChatGptProject, loadChatGptProjectNames } from './chatgpt-export.js';
 import { UNASSIGNED_PROJECT_ID, type Message, type MessageRole, type Thread, type ToolCall, type ToolResult, type TokenUsage } from '../../types.js';
+import { readJsonlFrom } from '../jsonl-tail.js';
 
 export const CODEX_SESSIONS_ROOT = join(homedir(), '.codex', 'sessions');
 export const CODEX_ARCHIVED_SESSIONS_ROOT = join(homedir(), '.codex', 'archived_sessions');
@@ -337,11 +338,9 @@ export function ingestSessionFile(
   opts: { fromOffset?: number; chatGptProjectsCacheRoot?: string } = {},
 ): number {
   const eventType = opts.fromOffset ? 'watch_tail' : 'full_scan';
-  let raw: string;
-  try {
-    raw = readFileSync(ref.filePath, 'utf-8');
-  } catch (err: any) {
-    db.logIngestEvent({ engine: 'codex', filePath: ref.filePath, eventType, status: 'error', message: err?.message, timestamp: new Date().toISOString() });
+  const raw = readJsonlFrom(ref.filePath);
+  if (raw === null) {
+    db.logIngestEvent({ engine: 'codex', filePath: ref.filePath, eventType, status: 'error', message: 'unreadable', timestamp: new Date().toISOString() });
     return 0;
   }
 
@@ -380,7 +379,9 @@ export function ingestSessionFile(
     } as Thread);
   }
 
-  const body = opts.fromOffset ? raw.slice(opts.fromOffset) : raw;
+  // The header lives at the top of the file, so `raw` above is always the whole thing; only
+  // the message body is tailed — and that tail is taken in bytes, like the recorded offset.
+  const body = readJsonlFrom(ref.filePath, opts.fromOffset) ?? raw;
   const lines = body.split('\n');
   const parsedLines = mergeReasoningIntoFollowingMessage(parseLinesWithUsage(lines));
 

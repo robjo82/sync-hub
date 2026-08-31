@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync} from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { encode } from 'gpt-tokenizer';
@@ -7,6 +7,7 @@ import type { Db } from '../db.js';
 import type { ProjectRegistry } from '../registry.js';
 import { computeMessageHash } from '../hash.js';
 import { UNASSIGNED_PROJECT_ID, type Message, type MessageRole, type Thread, type ToolCall, type ToolResult } from '../../types.js';
+import { readJsonlFrom } from '../jsonl-tail.js';
 
 export const ANTIGRAVITY_BRAIN_ROOT = join(homedir(), '.gemini', 'antigravity', 'brain');
 export const ANTIGRAVITY_CLI_BRAIN_ROOT = join(homedir(), '.gemini', 'antigravity-cli', 'brain');
@@ -162,23 +163,20 @@ export function ingestSessionFile(
   opts: { fromOffset?: number } = {},
 ): number {
   const eventType = opts.fromOffset ? 'watch_tail' : 'full_scan';
-  let raw: string;
-  try {
-    raw = readFileSync(ref.filePath, 'utf-8');
-  } catch (err: any) {
+  const raw = readJsonlFrom(ref.filePath, opts.fromOffset);
+  if (raw === null) {
     db.logIngestEvent({
       engine: 'antigravity',
       filePath: ref.filePath,
       eventType,
       status: 'error',
-      message: err?.message,
+      message: 'unreadable',
       timestamp: new Date().toISOString(),
     });
     return 0;
   }
 
-  const body = opts.fromOffset ? raw.slice(opts.fromOffset) : raw;
-  const lines = body.split('\n');
+  const lines = raw.split('\n');
   const existingThread = db.getThread(ref.sessionId);
   const projectId = existingThread && existingThread.projectId !== UNASSIGNED_PROJECT_ID ? existingThread.projectId : UNASSIGNED_PROJECT_ID;
 

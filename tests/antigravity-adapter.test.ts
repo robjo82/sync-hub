@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Db } from '../src/core/db.js';
@@ -110,6 +110,49 @@ describe('ingestSessionFile — end to end against a real-shaped Antigravity fix
   afterEach(() => {
     db.close();
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('tails an appended transcript without losing accented lines to a byte/character mismatch', () => {
+    // The regression this pins, seen on the real corpus: the watcher records a byte size and hands
+    // it back as the offset, but the adapter used to slice a decoded string with it. One accented
+    // character is two bytes and one string index, so the tail started too far into the file and
+    // whole turns vanished — silently, since a short read is indistinguishable from "nothing new".
+    const sessionDir = join(dir, 'brain', 'sess-tail', '.system_generated', 'logs');
+    mkdirSync(sessionDir, { recursive: true });
+    const filePath = join(sessionDir, 'transcript_full.jsonl');
+
+    const first =
+      JSON.stringify({
+        source: 'USER_EXPLICIT',
+        type: 'USER_INPUT',
+        created_at: '2026-01-01T00:00:00Z',
+        content: '<USER_REQUEST>Première question très accentuée : éàüœ, déjà mesuré</USER_REQUEST>',
+      }) + '\n';
+    writeFileSync(filePath, first);
+
+    const ref = refFromFilePath(filePath)!;
+    expect(ref).not.toBeNull();
+    expect(ingestSessionFile(db, registry, ref)).toBe(1);
+
+    const offset = statSync(filePath).size;
+    expect(offset).toBeGreaterThan(first.length); // bytes exceed characters — the trap
+
+    const second =
+      JSON.stringify({
+        source: 'MODEL',
+        type: 'PLANNER_RESPONSE',
+        created_at: '2026-01-01T00:01:00Z',
+        content: 'La réponse qui suit, elle aussi accentuée.',
+      }) + '\n';
+    appendFileSync(filePath, second);
+
+    expect(ingestSessionFile(db, registry, ref, { fromOffset: offset })).toBe(1);
+
+    const contents = db.getMessagesForThread('sess-tail').map((m) => m.content);
+    expect(contents).toEqual([
+      'Première question très accentuée : éàüœ, déjà mesuré',
+      'La réponse qui suit, elle aussi accentuée.',
+    ]);
   });
 
   it('ingests every real event in order, lands in "unassigned" (no reliable path signal to resolve against — never guessed), derives a title from the first user message, and dedupes on re-ingestion', () => {
