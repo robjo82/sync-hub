@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
-import { Archive, Check, ChevronDown, ChevronRight, FileText, GitMerge, GripVertical, Pencil, Settings, StickyNote, Tag, Trash2, X } from 'lucide-react';
+import { Archive, Check, ChevronDown, ChevronRight, Download, FileText, GitMerge, GripVertical, Pencil, Settings, StickyNote, Tag, Trash2, X } from 'lucide-react';
 import type { Artifact, Category, Memory, Project, Thread } from '../../types.js';
 import { api } from '../lib/api.js';
 
@@ -376,6 +376,35 @@ function DeletePanel({ project, onConfirm, onCancel }: { project: Project; onCon
   );
 }
 
+function ExportProjectPanel({ project, onClose }: { project: Project; onClose: () => void }) {
+  return (
+    <div className="mb-1 ml-5 flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-card p-1.5 shadow-sm" onClick={(e) => e.stopPropagation()}>
+      <span className="text-[11px] font-medium text-muted-foreground">Exporter « {project.name} » :</span>
+      <a
+        href={`/api/projects/${project.id}/export?format=markdown`}
+        download
+        onClick={onClose}
+        className="flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-xs text-accent-foreground hover:bg-accent hover:text-white transition-colors"
+      >
+        <Download size={12} />
+        <span>Markdown (.md)</span>
+      </a>
+      <a
+        href={`/api/projects/${project.id}/export?format=json`}
+        download
+        onClick={onClose}
+        className="flex items-center gap-1 rounded bg-muted px-2 py-0.5 text-xs text-foreground hover:bg-accent-muted hover:text-accent transition-colors"
+      >
+        <Download size={12} />
+        <span>JSON (.json)</span>
+      </a>
+      <button title="Fermer" onClick={onClose} className={panelCancelClass}>
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
+
 /** Self-contained archive icon for a single thread row: swaps itself for an inline confirm/cancel
  * pair on click, rather than a native confirm() — same reasoning as the panels above. */
 function ThreadArchiveButton({ title, onConfirm }: { title: string; onConfirm: () => void }) {
@@ -470,7 +499,7 @@ function ProjectNode({
 } & Omit<ProjectTreeProps, 'projects' | 'focusThreadId' | 'onFocusHandled'>) {
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<ProjectChildren | null>(null);
-  const [activePanel, setActivePanel] = useState<'rename' | 'category' | 'merge' | 'archive' | 'delete' | null>(null);
+  const [activePanel, setActivePanel] = useState<'rename' | 'category' | 'merge' | 'archive' | 'delete' | 'export' | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const threadRefs = useRef(new Map<string, HTMLDivElement>());
   const isFocusTarget = !!focusProjectId && project.id === focusProjectId;
@@ -510,6 +539,9 @@ function ProjectNode({
           <span className="text-muted-foreground">{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
           <span className="truncate">{project.name}</span>
         </button>
+        <IconButton title="Exporter le projet (Markdown / JSON)" onClick={() => setActivePanel(activePanel === 'export' ? null : 'export')} className="hover:bg-accent-muted hover:text-accent">
+          <Download size={13} />
+        </IconButton>
         <IconButton title="Renommer" onClick={() => setActivePanel('rename')} className="hover:bg-muted hover:text-foreground">
           <Pencil size={13} />
         </IconButton>
@@ -530,6 +562,12 @@ function ProjectNode({
           <Trash2 size={13} />
         </IconButton>
       </div>
+      {activePanel === 'export' && (
+        <ExportProjectPanel
+          project={project}
+          onClose={closePanel}
+        />
+      )}
       {activePanel === 'rename' && (
         <RenamePanel
           project={project}

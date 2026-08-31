@@ -23,7 +23,13 @@ import * as antigravity from '../core/adapters/antigravity.js';
 import { archiveThread, deleteProject, deleteThread, type ArchiveRoots } from '../core/archive.js';
 import { computeCostSummary } from '../core/cost.js';
 import { runPullCycle } from '../core/sync-pull-client.js';
-import { formatThreadAsMarkdown, formatThreadAsJson, sanitizeFilename } from '../core/export.js';
+import {
+  formatThreadAsMarkdown,
+  formatThreadAsJson,
+  formatProjectAsMarkdown,
+  formatProjectAsJson,
+  sanitizeFilename,
+} from '../core/export.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { createMcpServer } from '../core/mcp-server.js';
 import type {
@@ -912,6 +918,31 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const md = formatThreadAsMarkdown(thread, project, messages);
     reply.header('Content-Type', 'text/markdown; charset=utf-8');
     reply.header('Content-Disposition', `attachment; filename="${filenameSlug}.md"`);
+    return reply.send(md);
+  });
+
+  // Export entire project (all conversations, prompts, thought trails and tools) as Markdown or JSON.
+  app.get<{ Params: { id: string }; Querystring: { format?: string } }>('/api/projects/:id/export', async (req, reply) => {
+    const project = db.getProject(req.params.id);
+    if (!project) return reply.code(404).send({ error: 'not_found' });
+    const threads = db.getThreadsForProject(project.id);
+    const threadsWithMessages = threads.map((thread) => ({
+      thread,
+      messages: db.getMessagesForThread(thread.id),
+    }));
+    const format = (req.query.format ?? 'markdown').toLowerCase();
+    const filenameSlug = sanitizeFilename(project.name || 'projet');
+
+    if (format === 'json') {
+      const json = formatProjectAsJson(project, threadsWithMessages);
+      reply.header('Content-Type', 'application/json; charset=utf-8');
+      reply.header('Content-Disposition', `attachment; filename="projet-${filenameSlug}.json"`);
+      return reply.send(json);
+    }
+
+    const md = formatProjectAsMarkdown(project, threadsWithMessages);
+    reply.header('Content-Type', 'text/markdown; charset=utf-8');
+    reply.header('Content-Disposition', `attachment; filename="projet-${filenameSlug}.md"`);
     return reply.send(md);
   });
 

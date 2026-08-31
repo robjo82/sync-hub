@@ -557,4 +557,84 @@ describe('sync-hub HTTP API', () => {
       }
     });
   });
+
+  describe('GET /api/projects/:id/export and /api/threads/:id/export', () => {
+    it('exports a project and its threads as markdown and json', async () => {
+      const testDb = new Db(':memory:');
+      testDb.upsertProject({
+        id: 'proj-export',
+        name: 'Mon Super Projet',
+        canonicalPath: '/path/to/super',
+        aliases: { paths: [], claudeSlugs: [], codexCwds: [] },
+        createdAt: '2026-08-28T10:00:00Z',
+        lastActiveAt: '2026-08-28T12:00:00Z',
+      });
+      testDb.upsertThread({
+        id: 'thread-export-1',
+        projectId: 'proj-export',
+        title: 'Première conversation',
+        originEngine: 'claude-code',
+        engineIds: {},
+        messageCount: 1,
+        createdAt: '2026-08-28T10:00:00Z',
+        updatedAt: '2026-08-28T10:05:00Z',
+        status: 'active',
+      });
+      testDb.insertMessage(
+        message({
+          id: 'msg-exp-1',
+          threadId: 'thread-export-1',
+          projectId: 'proj-export',
+          role: 'user',
+          content: 'Bonjour Sync Hub !',
+          timestamp: '2026-08-28T10:00:00Z',
+        })
+      );
+
+      const testApp = createApp({ db: testDb, authDisabled: true });
+      try {
+        // Project markdown export
+        const projMdRes = await testApp.inject({
+          method: 'GET',
+          url: '/api/projects/proj-export/export?format=markdown',
+        });
+        expect(projMdRes.statusCode).toBe(200);
+        expect(projMdRes.headers['content-type']).toContain('text/markdown');
+        expect(projMdRes.body).toContain('# Projet : Mon Super Projet');
+        expect(projMdRes.body).toContain('Première conversation');
+        expect(projMdRes.body).toContain('Bonjour Sync Hub !');
+
+        // Project json export
+        const projJsonRes = await testApp.inject({
+          method: 'GET',
+          url: '/api/projects/proj-export/export?format=json',
+        });
+        expect(projJsonRes.statusCode).toBe(200);
+        expect(projJsonRes.headers['content-type']).toContain('application/json');
+        const projJson = JSON.parse(projJsonRes.body);
+        expect(projJson.project.name).toBe('Mon Super Projet');
+        expect(projJson.threads).toHaveLength(1);
+        expect(projJson.threads[0].messages[0].content).toBe('Bonjour Sync Hub !');
+
+        // Thread markdown export
+        const threadMdRes = await testApp.inject({
+          method: 'GET',
+          url: '/api/threads/thread-export-1/export?format=markdown',
+        });
+        expect(threadMdRes.statusCode).toBe(200);
+        expect(threadMdRes.body).toContain('# Première conversation');
+
+        // Thread json export
+        const threadJsonRes = await testApp.inject({
+          method: 'GET',
+          url: '/api/threads/thread-export-1/export?format=json',
+        });
+        expect(threadJsonRes.statusCode).toBe(200);
+        const threadJson = JSON.parse(threadJsonRes.body);
+        expect(threadJson.thread.id).toBe('thread-export-1');
+      } finally {
+        await testApp.close();
+      }
+    });
+  });
 });
