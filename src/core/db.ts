@@ -296,6 +296,7 @@ export class Db {
       ensureColumn(this.raw, table, column, definition);
     }
     this.migrateProjectUniqueness();
+    this.adoptOrphanProjectsOnSingleUserStore();
     // The minimum set asked for — seeded once so they always show up in the picker, even before
     // any project has been sorted into one yet. createCategory is idempotent (INSERT OR IGNORE).
     for (const name of DEFAULT_CATEGORIES) this.createCategory(name);
@@ -1697,6 +1698,24 @@ export class Db {
         updatedAt: row.u_updated_at,
       },
     };
+  }
+
+  /**
+   * Adopts ownerless projects when the store has exactly one account.
+   *
+   * /api/auth/setup adopts on the way in, but that only helps an instance whose admin is created
+   * after this code ships. The deployed hub got its admin while ownership did not exist yet, so
+   * its projects carry no owner and — now that reads filter — would be invisible to the very
+   * person who owns the machine.
+   *
+   * Guarded on exactly one user: with a single account there is no ambiguity about whose data
+   * predates multi-user. With two or more, adopting would be a guess, and this does nothing.
+   */
+  private adoptOrphanProjectsOnSingleUserStore(): void {
+    const users = this.raw.prepare(`SELECT id FROM users LIMIT 2`).all() as { id: string }[];
+    if (users.length !== 1) return;
+    const adopted = this.adoptOrphanProjects(users[0].id);
+    if (adopted > 0) console.log(`sync-hub: ${adopted} projet(s) sans propriétaire attribués au seul compte existant`);
   }
 
   /**

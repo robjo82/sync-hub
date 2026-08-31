@@ -1192,3 +1192,56 @@ describe('Db schema migration', () => {
     rmSync(migDir, { recursive: true, force: true });
   });
 });
+
+describe('Project ownership adoption on an existing store', () => {
+  let dir2: string;
+  let path2: string;
+
+  beforeEach(() => {
+    dir2 = mkdtempSync(join(tmpdir(), 'sync-hub-adopt-'));
+    path2 = join(dir2, 'hub.sqlite');
+  });
+
+  afterEach(() => rmSync(dir2, { recursive: true, force: true }));
+
+  it('adopts ownerless projects on reopen when exactly one account exists', () => {
+    // Reproduces the deployed hub: its admin was created while ownership did not exist yet, so
+    // its projects carry no owner. Once reads filter, they would be invisible to their owner.
+    let db2 = new Db(path2);
+    const user = db2.createUser({ email: 'seul@ekonum.fr', displayName: 'Seul', passwordHash: 'x', role: 'admin' });
+    db2.upsertProject({
+      id: 'proj-orphelin',
+      name: 'Antérieur aux comptes',
+      canonicalPath: '/tmp/orphelin',
+      aliases: { paths: [], claudeSlugs: [], codexCwds: [] },
+      createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
+    });
+    expect(db2.visibleProjectIds(user.id)).toHaveLength(0);
+    db2.close();
+
+    db2 = new Db(path2);
+    expect(db2.visibleProjectIds(user.id)).toEqual(['proj-orphelin']);
+    db2.close();
+  });
+
+  it('does not guess once a second account exists', () => {
+    let db2 = new Db(path2);
+    const a = db2.createUser({ email: 'a@ekonum.fr', displayName: 'A', passwordHash: 'x', role: 'admin' });
+    db2.createUser({ email: 'b@ekonum.fr', displayName: 'B', passwordHash: 'x' });
+    db2.upsertProject({
+      id: 'proj-ambigu',
+      name: 'À qui ?',
+      canonicalPath: '/tmp/ambigu',
+      aliases: { paths: [], claudeSlugs: [], codexCwds: [] },
+      createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
+    });
+    db2.close();
+
+    db2 = new Db(path2);
+    // Silently handing it to either account would be a guess about whose data this is.
+    expect(db2.visibleProjectIds(a.id)).toHaveLength(0);
+    db2.close();
+  });
+});
