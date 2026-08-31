@@ -31,6 +31,12 @@ jobs:
       - name: Install
         run: npm ci
 
+      # Before the build, because `npm test` runs vitest, which does not typecheck: without this
+      # step the suite can stay green while `tsc --noEmit` fails, and the errors that accumulate
+      # hide the next real one. Four had piled up that way before this was added.
+      - name: Typecheck
+        run: npm run lint
+
       - name: Build
         run: npm run build
 
