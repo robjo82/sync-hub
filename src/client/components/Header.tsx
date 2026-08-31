@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Cloud, CloudCheck, Moon, RefreshCw, Sun } from 'lucide-react';
+import { Cloud, Moon, RefreshCw, Sun } from 'lucide-react';
 import { UserMenu } from './UserMenu.js';
 import { api } from '../lib/api.js';
 import type { RemoteSyncState } from '../../types.js';

@@ -2,16 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Check,
   Cloud,
-  CloudCheck,
   Computer,
   FolderGit2,
   HardDrive,
   Laptop,
   Loader2,
-  MessageSquare,
   RefreshCw,
   Server,
-  Shield,
   Smartphone,
   Sparkles,
   Upload,
@@ -31,7 +28,9 @@ const KNOWN_ENGINES: { key: EngineType; label: string; colorClass: string }[] = 
   { key: 'claude-code', label: 'Claude Code', colorClass: 'text-engine-claude' },
   { key: 'codex', label: 'Codex / ChatGPT', colorClass: 'text-engine-codex' },
   { key: 'antigravity', label: 'Antigravity', colorClass: 'text-engine-antigravity' },
-  { key: 'cowork', label: 'Cowork', colorClass: 'text-accent' },
+  // No 'cowork' row: Cowork sessions are ingested through the claude-code adapter and carry
+  // sourceEngine 'claude-code', so the server never reports a 'cowork' engine (see app.ts's
+  // engine list). Listing it here only ever produced a column that could not fill.
 ];
 
 type UploadState = { status: 'idle' } | { status: 'uploading' } | { status: 'done'; message: string } | { status: 'error'; message: string };

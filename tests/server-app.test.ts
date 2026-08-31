@@ -591,7 +591,18 @@ describe('sync-hub HTTP API', () => {
         })
       );
 
-      const testApp = createApp({ db: testDb, authDisabled: true });
+      // Every AppDeps field is supplied even though the export routes only read `db`: an
+      // under-specified dependency object type-checks as soon as someone widens what a route
+      // touches, and then fails at runtime instead of at compile time.
+      const testApp = createApp({
+        db: testDb,
+        registry: new ProjectRegistry(testDb),
+        watchHandle: fakeWatchHandle(),
+        rescan: () => {},
+        archiveRoots: { syncHubArchiveRoot: join(dir, 'export-archive'), codexArchiveRoot: join(dir, 'export-codex-archive') },
+        importsDir: join(dir, 'export-imports'),
+        authDisabled: true,
+      });
       try {
         // Project markdown export
         const projMdRes = await testApp.inject({
@@ -634,6 +645,7 @@ describe('sync-hub HTTP API', () => {
         expect(threadJson.thread.id).toBe('thread-export-1');
       } finally {
         await testApp.close();
+        testDb.close();
       }
     });
   });
