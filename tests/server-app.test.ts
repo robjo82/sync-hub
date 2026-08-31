@@ -475,6 +475,46 @@ describe('sync-hub HTTP API', () => {
       expect(res.json().error).toBe('unauthorized');
     });
 
+    it('a pull only returns what the caller owns, and its watermark still moves past what it may not see', async () => {
+      const alice = db.createUser({ email: 'alice@ekonum.fr', displayName: 'Alice', passwordHash: await hashPassword('motdepasse-solide'), role: 'admin' });
+      const bob = db.createUser({ email: 'bob@ekonum.fr', displayName: 'Bob', passwordHash: await hashPassword('motdepasse-solide') });
+      const bobToken = generateSessionToken();
+      db.createApiToken({ userId: bob.id, tokenHash: hashSessionToken(bobToken), name: 'Poste de Bob' });
+
+      // Everything already in the store belongs to Alice — including the beforeEach fixtures.
+      db.insertMessage(message({ id: 'secret-1', hash: 'h-secret-1', content: 'conversation cliente confidentielle' }));
+      db.adoptOrphanProjects(alice.id);
+
+      const hub = createApp({
+        db,
+        registry,
+        watchHandle: fakeWatchHandle(),
+        rescan,
+        archiveRoots: { syncHubArchiveRoot: join(dir, 'sync-hub-archive'), codexArchiveRoot: join(dir, 'codex-archived-sessions') },
+        importsDir: join(dir, 'imports'),
+      });
+      try {
+        const res = await hub.inject({
+          method: 'GET',
+          url: '/api/sync/pull?afterSeq=0&limit=50',
+          headers: { authorization: `Bearer ${bobToken}` },
+        });
+        expect(res.statusCode).toBe(200);
+        const batch = res.json();
+
+        expect(batch.messages).toHaveLength(0);
+        expect(batch.projects).toHaveLength(0);
+        expect(JSON.stringify(batch)).not.toContain('conversation cliente confidentielle');
+
+        // The subtle part: the window is taken before filtering, so Bob's watermark advances past
+        // Alice's messages. Filtering the query itself would return an empty page, leave maxSeq at
+        // 0, and Bob would re-request the same page forever without ever reaching his own data.
+        expect(batch.maxSeq).toBeGreaterThan(0);
+      } finally {
+        await hub.close();
+      }
+    });
+
     it('issues a token once over HTTP, never returns the plaintext again, and revokes it', async () => {
       const owner = db.createUser({
         email: 'porteur@ekonum.fr',

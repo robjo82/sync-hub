@@ -194,7 +194,10 @@ export function createApp(deps: AppDeps): FastifyInstance {
       }
     }
     if (!req.user && deps.remoteToken && bearer === deps.remoteToken) {
-      req.user = DEFAULT_LOCAL_USER;
+      // Resolve to the real admin when there is one, rather than the synthetic DEFAULT_LOCAL_USER:
+      // owner_user_id is a foreign key, so a synthetic id cannot own anything, and applyRemoteBatch
+      // skips a row whose insert fails — the push would answer 200 having stored nothing.
+      req.user = db.getPrimaryAdmin() ?? DEFAULT_LOCAL_USER;
       req.authVia = 'sharedToken';
     }
 
@@ -289,6 +292,12 @@ export function createApp(deps: AppDeps): FastifyInstance {
       passwordHash,
       role: 'admin',
     });
+
+    // Everything ingested before accounts existed has no owner. Reads filter on ownership, so
+    // without this the first admin would log in to an empty dashboard sitting on top of a full
+    // database. The first account to be created is by definition the person whose machine this is.
+    const adopted = db.adoptOrphanProjects(user.id);
+    if (adopted > 0) console.log(`sync-hub: ${adopted} projet(s) existants attribués à ${user.email}`);
 
     const rawToken = generateSessionToken();
     const tokenHash = hashSessionToken(rawToken);
@@ -918,7 +927,11 @@ export function createApp(deps: AppDeps): FastifyInstance {
     if (!body || !Array.isArray(body.projects) || !Array.isArray(body.threads) || !Array.isArray(body.messages)) {
       return reply.code(400).send({ error: 'invalid_body' });
     }
-    const result = db.applyRemoteBatch(body);
+    // No stamping when the identity is the synthetic fallback (an instance with no accounts yet):
+    // it is not a row in `users`, so the foreign key would reject it. Those projects stay
+    // ownerless and get adopted when the first admin account is created.
+    const owner = req.user.id === DEFAULT_LOCAL_USER.id ? undefined : req.user.id;
+    const result = db.applyRemoteBatch(body, owner);
     broadcast({ type: 'stats_updated', data: computeStats(deps) });
     return { ok: true, ...result } satisfies PushResult;
   });
@@ -931,7 +944,9 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const afterSeq = Math.max(Number(req.query.afterSeq ?? 0) || 0, 0);
     const limit = Math.min(Math.max(Number(req.query.limit ?? 50) || 1, 1), 200);
 
-    return db.getPullBatch(afterSeq, limit) satisfies PullBatch;
+    // Scoped to the caller: before this, any holder of the shared secret pulled the whole
+    // corpus — every project, every client conversation — onto their machine.
+    return db.getPullBatch(afterSeq, limit, req.user.id === DEFAULT_LOCAL_USER.id ? undefined : req.user.id) satisfies PullBatch;
   });
 
   // Local-side manual trigger to pull the latest updates from the configured remote hub on demand.

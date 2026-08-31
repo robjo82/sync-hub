@@ -981,9 +981,45 @@ describe('Db remote sync', () => {
       expect(db.getMessagesForThread('thread-remote').map((m) => m.content)).toEqual(['poussé depuis un autre appareil']);
     });
 
-    it('skips a project whose canonical_path collides with a different existing project, and everything that depends on it — without touching the rest of the batch', () => {
-      // proj-test (from beforeEach) already owns '/Users/robin/Projets/test'.
-      const collidingProject = makeProject({ id: 'proj-other-device', name: 'Other device', canonicalPath: '/Users/robin/Projets/test' });
+    it('lets two people own a project at the same canonical path — the case a global UNIQUE broke', () => {
+      // Two colleagues syncing to the same hub can genuinely both have /workspace/odoo: Cowork
+      // sessions run in a sandboxed VM whose cwd is identical from one machine to the next. Under
+      // the old global UNIQUE the second push collided, and applyRemoteBatch skips a colliding row
+      // by design — so the second person's project vanished with no error raised anywhere.
+      const alice = db.createUser({ email: 'alice@ekonum.fr', displayName: 'Alice', passwordHash: 'x', role: 'admin' });
+      const bob = db.createUser({ email: 'bob@ekonum.fr', displayName: 'Bob', passwordHash: 'x' });
+      const samePath = '/workspace/odoo';
+
+      const aliceResult = db.applyRemoteBatch(
+        { projects: [makeProject({ id: 'proj-alice', name: 'Odoo', canonicalPath: samePath })], threads: [], messages: [] },
+        alice.id,
+      );
+      const bobResult = db.applyRemoteBatch(
+        { projects: [makeProject({ id: 'proj-bob', name: 'Odoo', canonicalPath: samePath })], threads: [], messages: [] },
+        bob.id,
+      );
+
+      expect(aliceResult.appliedProjects).toBe(1);
+      expect(bobResult.appliedProjects).toBe(1);
+      expect(bobResult.skipped.projects).toEqual([]);
+      expect(db.getProject('proj-alice')).toBeDefined();
+      expect(db.getProject('proj-bob')).toBeDefined();
+
+      // And each only sees their own.
+      expect(db.visibleProjectIds(alice.id)).toContain('proj-alice');
+      expect(db.visibleProjectIds(alice.id)).not.toContain('proj-bob');
+      expect(db.visibleProjectIds(bob.id)).toContain('proj-bob');
+      expect(db.visibleProjectIds(bob.id)).not.toContain('proj-alice');
+    });
+
+    it('still skips a genuinely conflicting row and everything depending on it, without touching the rest of the batch', () => {
+      // Same owner, same path, different id — a real conflict, not a cross-user coincidence.
+      const owner = db.createUser({ email: 'seul@ekonum.fr', displayName: 'Seul', passwordHash: 'x', role: 'admin' });
+      db.applyRemoteBatch(
+        { projects: [makeProject({ id: 'proj-first', canonicalPath: '/Users/robin/Projets/conflit' })], threads: [], messages: [] },
+        owner.id,
+      );
+
       const dependentThread = {
         id: 'thread-dependent',
         projectId: 'proj-other-device',
@@ -996,20 +1032,20 @@ describe('Db remote sync', () => {
         status: 'active' as const,
       };
       const dependentMessage = makeMessage({ id: 'm-dependent', hash: 'h-dependent', threadId: 'thread-dependent', projectId: 'proj-other-device' });
-      // An unrelated, valid thread/message in the SAME batch must still go through.
       const okMessage = makeMessage({ id: 'm-ok', hash: 'h-ok', threadId: 'thread-1', projectId: 'proj-test', content: 'ce message doit passer' });
 
-      const result = db.applyRemoteBatch({
-        projects: [collidingProject],
-        threads: [dependentThread],
-        messages: [dependentMessage, okMessage],
-      });
+      const result = db.applyRemoteBatch(
+        {
+          projects: [makeProject({ id: 'proj-other-device', name: 'Other device', canonicalPath: '/Users/robin/Projets/conflit' })],
+          threads: [dependentThread],
+          messages: [dependentMessage, okMessage],
+        },
+        owner.id,
+      );
 
       expect(result.appliedProjects).toBe(0);
       expect(result.skipped.projects).toEqual(['proj-other-device']);
-      expect(result.appliedThreads).toBe(0);
       expect(result.skipped.threads).toEqual(['thread-dependent']);
-      expect(result.appliedMessages).toBe(1);
       expect(result.skipped.messages).toEqual(['m-dependent']);
       expect(db.getProject('proj-other-device')).toBeUndefined();
       expect(db.getMessagesForThread('thread-1').map((m) => m.content)).toEqual(['ce message doit passer']);

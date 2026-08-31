@@ -30,12 +30,20 @@ const SCHEMA = `
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  canonical_path TEXT NOT NULL UNIQUE,
+  canonical_path TEXT NOT NULL,
   aliases TEXT NOT NULL DEFAULT '{"paths":[],"claudeSlugs":[],"codexCwds":[]}',
   created_at TEXT NOT NULL,
   last_active_at TEXT NOT NULL,
   archived INTEGER NOT NULL DEFAULT 0,
-  sort_order INTEGER
+  sort_order INTEGER,
+  owner_user_id TEXT REFERENCES users(id),
+  -- Scoped to the owner rather than global. Two people syncing to the same hub can genuinely
+  -- both have /workspace/odoo: Cowork sessions run in a sandboxed VM whose cwd is identical from
+  -- one machine to the next. Under a global UNIQUE the second one collides, and applyRemoteBatch
+  -- skips a colliding row by design — so a colleague's project would disappear with no error
+  -- raised anywhere. NULL owners (a local single-user store) never collide with each other in
+  -- SQLite, which is the behaviour we want there too.
+  UNIQUE (owner_user_id, canonical_path)
 );
 
 CREATE TABLE IF NOT EXISTS threads (
@@ -259,6 +267,7 @@ const EXPECTED_COLUMNS: Array<{ table: string; column: string; definition: strin
   { table: 'projects', column: 'archived', definition: 'INTEGER NOT NULL DEFAULT 0' },
   { table: 'projects', column: 'sort_order', definition: 'INTEGER' },
   { table: 'projects', column: 'category', definition: 'TEXT' },
+  { table: 'projects', column: 'owner_user_id', definition: 'TEXT REFERENCES users(id)' },
   { table: 'threads', column: 'source_ref', definition: 'TEXT' },
   { table: 'threads', column: 'source_file_path', definition: 'TEXT' },
   { table: 'messages', column: 'model', definition: 'TEXT' },
@@ -286,6 +295,7 @@ export class Db {
     for (const { table, column, definition } of EXPECTED_COLUMNS) {
       ensureColumn(this.raw, table, column, definition);
     }
+    this.migrateProjectUniqueness();
     // The minimum set asked for — seeded once so they always show up in the picker, even before
     // any project has been sorted into one yet. createCategory is idempotent (INSERT OR IGNORE).
     for (const name of DEFAULT_CATEGORIES) this.createCategory(name);
@@ -305,6 +315,64 @@ export class Db {
    * strictly-increasing sequence instead, once per row, ordered by rowid over the static
    * pre-existing corpus (safe only because nothing is concurrently deleting rows during this pass).
    */
+  /**
+   * Moves an existing database from projects.canonical_path being globally UNIQUE to
+   * UNIQUE(owner_user_id, canonical_path). SQLite cannot drop a constraint in place, so the table
+   * has to be rebuilt — see the SCHEMA comment for why the global one becomes actively harmful as
+   * soon as more than one person syncs to the same hub.
+   *
+   * Only `projects` is copied: every foreign key points at projects.id, which does not change, so
+   * threads and messages are untouched (166k rows stay where they are). Guarded by a check of the
+   * live index list, so it runs once and is a no-op on every later boot.
+   */
+  private migrateProjectUniqueness(): void {
+    const indexes = this.raw.prepare(`PRAGMA index_list(projects)`).all() as { name: string; unique: number }[];
+    const hasScopedUnique = indexes.some((idx) => {
+      if (!idx.unique) return false;
+      const cols = (this.raw.prepare(`PRAGMA index_info(${JSON.stringify(idx.name)})`).all() as { name: string }[]).map((c) => c.name);
+      return cols.includes('owner_user_id') && cols.includes('canonical_path');
+    });
+    if (hasScopedUnique) return;
+
+    // foreign_keys must be off around the rename, or the child tables' references to `projects`
+    // would be rewritten to point at the temporary table. It is a connection-level pragma and
+    // cannot be changed inside a transaction, hence the ordering here.
+    this.raw.pragma('foreign_keys = OFF');
+    try {
+      this.raw.transaction(() => {
+        this.raw.exec(`
+          CREATE TABLE projects_migrated (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            canonical_path TEXT NOT NULL,
+            aliases TEXT NOT NULL DEFAULT '{"paths":[],"claudeSlugs":[],"codexCwds":[]}',
+            created_at TEXT NOT NULL,
+            last_active_at TEXT NOT NULL,
+            archived INTEGER NOT NULL DEFAULT 0,
+            sort_order INTEGER,
+            category TEXT,
+            owner_user_id TEXT REFERENCES users(id),
+            UNIQUE (owner_user_id, canonical_path)
+          );
+          INSERT INTO projects_migrated
+            (id, name, canonical_path, aliases, created_at, last_active_at, archived, sort_order, category, owner_user_id)
+            SELECT id, name, canonical_path, aliases, created_at, last_active_at, archived, sort_order, category, owner_user_id
+            FROM projects;
+          DROP TABLE projects;
+          ALTER TABLE projects_migrated RENAME TO projects;
+        `);
+      })();
+      const violations = this.raw.prepare(`PRAGMA foreign_key_check`).all();
+      if (violations.length > 0) {
+        // Loud rather than silent: a broken reference here would surface much later as threads
+        // that belong to nothing.
+        console.error(`migrateProjectUniqueness: ${violations.length} foreign key violation(s) after rebuild`, violations.slice(0, 5));
+      }
+    } finally {
+      this.raw.pragma('foreign_keys = ON');
+    }
+  }
+
   private backfillIngestSeq(): void {
     // Declared here rather than in SCHEMA because ingest_seq is added by ensureColumn, which runs
     // after SCHEMA. Serves both directions: the IS NULL probe below (NULLs sort first in a SQLite
@@ -1008,18 +1076,35 @@ export class Db {
    * Produces a batch of data to pull by a secondary device/client, containing messages after `afterSeq`,
    * their referenced threads, and all current projects.
    */
-  getPullBatch(afterSeq: number, limit = 50): PullBatch {
+  /**
+   * One page of the hub's history for a pulling device, oldest first.
+   *
+   * `ownerUserId` scopes it to what that user may see. The window is taken *before* filtering, on
+   * purpose: the watermark has to advance past messages the caller is not allowed to receive.
+   * Filtering the query itself would return an empty page whenever the next `limit` messages all
+   * belong to someone else, the caller's watermark would not move, and it would ask for the same
+   * page forever.
+   */
+  getPullBatch(afterSeq: number, limit = 50, ownerUserId?: string): PullBatch {
     const rows = this.raw
       .prepare('SELECT * FROM messages WHERE ingest_seq > ? ORDER BY ingest_seq ASC LIMIT ?')
       .all(afterSeq, limit) as any[];
-    const messages = rows.map(rowToMessage);
+    // Scanned, not delivered — see above.
     const maxSeq = rows.length ? rows[rows.length - 1].ingest_seq : afterSeq;
+
+    let visible = rows;
+    let projects = this.getProjects();
+    if (ownerUserId !== undefined) {
+      const allowed = new Set(this.visibleProjectIds(ownerUserId));
+      visible = rows.filter((r) => allowed.has(r.project_id));
+      projects = projects.filter((p) => allowed.has(p.id));
+    }
+
+    const messages = visible.map(rowToMessage);
     const threadIds = [...new Set(messages.map((m) => m.threadId))];
-    const threads = this.getThreadsByIds(threadIds);
-    const projects = this.getProjects();
     return {
       projects,
-      threads,
+      threads: this.getThreadsByIds(threadIds),
       messages,
       maxSeq,
       hasMore: rows.length === limit,
@@ -1039,7 +1124,7 @@ export class Db {
     projects: Project[];
     threads: Thread[];
     messages: Message[];
-  }): {
+  }, ownerUserId?: string): {
     appliedProjects: number;
     appliedThreads: number;
     appliedMessages: number;
@@ -1061,7 +1146,12 @@ export class Db {
     const applyAll = this.raw.transaction(() => {
     for (const p of batch.projects) {
       try {
-        isolated(() => this.upsertProject(p));
+        // Ownership is taken from the credential that authenticated the push, never from the
+        // payload: a device could otherwise claim a project belongs to somebody else.
+        isolated(() => {
+          this.upsertProject(p);
+          if (ownerUserId) this.setProjectOwner(p.id, ownerUserId);
+        });
         appliedProjects++;
       } catch (err: any) {
         skippedProjectIds.add(p.id);
@@ -1607,6 +1697,50 @@ export class Db {
         updatedAt: row.u_updated_at,
       },
     };
+  }
+
+  /**
+   * Hands every ownerless project to a user. Called when the first admin account is created: the
+   * store already holds everything ingested before accounts existed (63 projects here), and
+   * leaving those rows unowned would make them invisible the moment reads start filtering.
+   * Idempotent — later calls match nothing.
+   */
+  /**
+   * The oldest admin account, which is the person who set this instance up. Used to give the
+   * legacy shared token a real identity: a synthetic user cannot own a project (owner_user_id is
+   * a foreign key), and applyRemoteBatch skips a row whose insert fails — so a push authenticated
+   * that way would answer 200 while silently storing nothing.
+   */
+  getPrimaryAdmin(): User | undefined {
+    const row = this.raw
+      .prepare(`SELECT id, email, display_name, role, created_at, updated_at FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1`)
+      .get() as any;
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      email: row.email,
+      displayName: row.display_name,
+      role: row.role,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  adoptOrphanProjects(userId: string): number {
+    return this.raw.prepare(`UPDATE projects SET owner_user_id = ? WHERE owner_user_id IS NULL`).run(userId).changes;
+  }
+
+  setProjectOwner(projectId: string, userId: string): boolean {
+    return this.raw.prepare(`UPDATE projects SET owner_user_id = ? WHERE id = ?`).run(userId, projectId).changes > 0;
+  }
+
+  /**
+   * The projects a user may read: their own. Shares land here in phase 3 — kept as one function
+   * so every read path gains them at once rather than each growing its own half-right condition.
+   */
+  visibleProjectIds(userId: string): string[] {
+    const rows = this.raw.prepare(`SELECT id FROM projects WHERE owner_user_id = ?`).all(userId) as { id: string }[];
+    return rows.map((r) => r.id);
   }
 
   createApiToken(token: { id?: string; userId: string; tokenHash: string; name: string }): ApiToken {
