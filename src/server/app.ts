@@ -49,6 +49,13 @@ import { UNASSIGNED_PROJECT_ID } from '../types.js';
 declare module 'fastify' {
   interface FastifyRequest {
     user?: User;
+    /**
+     * How `user` was established. The sync endpoints need this: when no account exists yet the
+     * hook hands every caller DEFAULT_LOCAL_USER so a fresh local install is usable without a
+     * login, and a `user`-only check would let anyone push to, or pull the whole corpus from, a
+     * hub whose admin has not been created yet.
+     */
+    authVia?: 'session' | 'apiToken' | 'sharedToken' | 'authDisabled';
   }
 }
 
@@ -118,6 +125,16 @@ const DEFAULT_LOCAL_USER: User = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
+/**
+ * The sync endpoints accept only a credential someone actually presented — an api_token, or the
+ * legacy shared secret during the migration. Never the DEFAULT_LOCAL_USER handed out when no
+ * account exists yet: that convenience is for a single-user local dashboard, and letting it
+ * through here would leave a not-yet-configured hub open to anyone who can reach it.
+ */
+function hasSyncCredential(req: FastifyRequest): boolean {
+  return req.authVia === 'apiToken' || req.authVia === 'sharedToken';
+}
+
 function extractSessionToken(req: FastifyRequest): string | null {
   const cookieToken = req.cookies?.sync_hub_session;
   if (cookieToken) return cookieToken;
@@ -157,16 +174,33 @@ export function createApp(deps: AppDeps): FastifyInstance {
       const sessionResult = db.getSessionByTokenHash(tokenHash);
       if (sessionResult) {
         req.user = sessionResult.user;
+        req.authVia = 'session';
       }
     }
 
-    const authHeader = req.headers.authorization;
-    if (deps.remoteToken && authHeader === `Bearer ${deps.remoteToken}`) {
+    // A Bearer credential on the sync path resolves to a real user via api_tokens, so a push can
+    // be attributed and a single machine revoked. deps.remoteToken stays honoured as a fallback:
+    // the deployed hub and Robin's daemon are running on it right now, and cutting it here would
+    // stop the sync mid-migration. It maps to DEFAULT_LOCAL_USER, which owns nothing — every
+    // ownership decision keys off a real users.id.
+    const bearer = req.headers.authorization?.startsWith('Bearer ')
+      ? req.headers.authorization.slice('Bearer '.length)
+      : null;
+    if (bearer && !req.user) {
+      const tokenUser = db.getUserByApiToken(hashSessionToken(bearer));
+      if (tokenUser) {
+        req.user = tokenUser;
+        req.authVia = 'apiToken';
+      }
+    }
+    if (!req.user && deps.remoteToken && bearer === deps.remoteToken) {
       req.user = DEFAULT_LOCAL_USER;
+      req.authVia = 'sharedToken';
     }
 
     if (isAuthDisabled && !req.user) {
       req.user = DEFAULT_LOCAL_USER;
+      req.authVia = 'authDisabled';
     }
 
     const rawUrl = req.raw.url ?? '';
@@ -181,9 +215,10 @@ export function createApp(deps: AppDeps): FastifyInstance {
       path === '/api/auth/status' ||
       path === '/api/auth/setup' ||
       path === '/api/auth/login' ||
-      path === '/api/sync/push' ||
-      path === '/api/sync/pull' ||
       path.startsWith('/api/share/');
+    // /api/sync/push and /api/sync/pull are deliberately NOT public: they used to bypass this hook
+    // entirely and answer to a shared secret, which meant any holder of that secret could pull the
+    // whole corpus — every project, every client conversation — onto their machine.
 
     if (isPublic) return;
 
@@ -337,6 +372,35 @@ export function createApp(deps: AppDeps): FastifyInstance {
   });
 
   // --- Users Management Routes ---
+
+  // --- Machine tokens: what a sync-hub daemon authenticates with. Each user manages their own;
+  // there is no admin gate, because a token only ever grants that user's own access.
+  app.get('/api/tokens', async (req, reply) => {
+    if (!req.user) return reply.code(401).send({ error: 'unauthorized' });
+    // tokenHash is dropped: it is not the secret, but it is not useful to a client either, and
+    // sending it around invites someone to treat it as an identifier worth logging.
+    return db.listApiTokens(req.user.id).map(({ tokenHash: _drop, ...rest }) => rest);
+  });
+
+  app.post<{ Body: { name?: string } }>('/api/tokens', async (req, reply) => {
+    if (!req.user) return reply.code(401).send({ error: 'unauthorized' });
+    const name = (req.body?.name ?? '').trim();
+    if (!name) return reply.code(400).send({ error: 'invalid_name', message: 'Un nom est requis pour identifier la machine' });
+
+    const plaintext = generateSessionToken(32);
+    const created = db.createApiToken({ userId: req.user.id, tokenHash: hashSessionToken(plaintext), name });
+    // The only moment the plaintext exists outside the caller's machine. It is not recoverable
+    // afterwards by design — a lost token is revoked and replaced, never looked up.
+    return { id: created.id, name: created.name, createdAt: created.createdAt, token: plaintext };
+  });
+
+  app.post<{ Params: { id: string } }>('/api/tokens/:id/revoke', async (req, reply) => {
+    if (!req.user) return reply.code(401).send({ error: 'unauthorized' });
+    if (!db.revokeApiToken(req.params.id, req.user.id)) {
+      return reply.code(404).send({ error: 'not_found', message: 'Jeton introuvable ou déjà révoqué' });
+    }
+    return { ok: true };
+  });
 
   app.get('/api/users', async (req, reply) => {
     if (req.user?.role !== 'admin') {
@@ -847,8 +911,9 @@ export function createApp(deps: AppDeps): FastifyInstance {
   // local ingestion — this route is what makes an instance a "remote hub" rather than a purely
   // local store. Fails closed: no configured token means no writes accepted, never the reverse.
   app.post<{ Body: PushBatch }>('/api/sync/push', async (req, reply) => {
-    if (!deps.remoteToken) return reply.code(403).send({ error: 'push_disabled' });
-    if (req.headers.authorization !== `Bearer ${deps.remoteToken}`) return reply.code(401).send({ error: 'unauthorized' });
+    // Identity comes from the onRequest hook, which resolves an api_tokens credential to its
+    // owner. There is no longer a shared secret standing in for "somebody".
+    if (!req.user || !hasSyncCredential(req)) return reply.code(401).send({ error: 'unauthorized' });
     const body = req.body;
     if (!body || !Array.isArray(body.projects) || !Array.isArray(body.threads) || !Array.isArray(body.messages)) {
       return reply.code(400).send({ error: 'invalid_body' });
@@ -861,8 +926,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
   // Pulling end of remote sync (see core/sync-pull-client.ts for the pulling client). Returns a batch
   // of messages after `afterSeq` with referenced threads and projects for secondary devices.
   app.get<{ Querystring: { afterSeq?: string; limit?: string } }>('/api/sync/pull', async (req, reply) => {
-    if (!deps.remoteToken) return reply.code(403).send({ error: 'pull_disabled' });
-    if (req.headers.authorization !== `Bearer ${deps.remoteToken}`) return reply.code(401).send({ error: 'unauthorized' });
+    if (!req.user || !hasSyncCredential(req)) return reply.code(401).send({ error: 'unauthorized' });
 
     const afterSeq = Math.max(Number(req.query.afterSeq ?? 0) || 0, 0);
     const limit = Math.min(Math.max(Number(req.query.limit ?? 50) || 1, 1), 200);

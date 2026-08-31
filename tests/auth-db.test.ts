@@ -113,3 +113,80 @@ describe('Auth database operations', () => {
     expect(cleaned).toBe(1);
   });
 });
+
+describe('API tokens — the machine credentials the sync path authenticates with', () => {
+  let tmpDir: string;
+  let db: Db;
+  let userId: string;
+
+  beforeEach(async () => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'sync-hub-apitoken-test-'));
+    db = new Db(join(tmpDir, 'test.sqlite'));
+    userId = db.createUser({
+      email: 'robin@ekonum.fr',
+      displayName: 'Robin',
+      passwordHash: await hashPassword('motdepasse-solide'),
+      role: 'admin',
+    }).id;
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('resolves a token to its owner, so a push can be attributed to a real account', () => {
+    const plaintext = generateSessionToken();
+    db.createApiToken({ userId, tokenHash: hashSessionToken(plaintext), name: 'MacBook Robin' });
+
+    const resolved = db.getUserByApiToken(hashSessionToken(plaintext));
+    expect(resolved?.id).toBe(userId);
+    expect(resolved?.email).toBe('robin@ekonum.fr');
+  });
+
+  it('does not resolve an unknown token', () => {
+    expect(db.getUserByApiToken(hashSessionToken('jamais-émis'))).toBeUndefined();
+  });
+
+  it('stops resolving once revoked — this is what lets one machine be cut off alone', () => {
+    const plaintext = generateSessionToken();
+    const token = db.createApiToken({ userId, tokenHash: hashSessionToken(plaintext), name: 'Vieux portable' });
+    expect(db.getUserByApiToken(hashSessionToken(plaintext))?.id).toBe(userId);
+
+    expect(db.revokeApiToken(token.id, userId)).toBe(true);
+    expect(db.getUserByApiToken(hashSessionToken(plaintext))).toBeUndefined();
+    // Revoking twice is not an error the caller should have to special-case, but it changes nothing.
+    expect(db.revokeApiToken(token.id, userId)).toBe(false);
+  });
+
+  it('refuses to revoke a token belonging to someone else', async () => {
+    const other = db.createUser({
+      email: 'collegue@ekonum.fr',
+      displayName: 'Collègue',
+      passwordHash: await hashPassword('un-autre-mot-de-passe'),
+    });
+    const plaintext = generateSessionToken();
+    const token = db.createApiToken({ userId, tokenHash: hashSessionToken(plaintext), name: 'MacBook Robin' });
+
+    expect(db.revokeApiToken(token.id, other.id)).toBe(false);
+    expect(db.getUserByApiToken(hashSessionToken(plaintext))?.id).toBe(userId);
+  });
+
+  it('records last use, so a token nobody has used in months can be spotted and cleaned up', () => {
+    const plaintext = generateSessionToken();
+    const token = db.createApiToken({ userId, tokenHash: hashSessionToken(plaintext), name: 'CI' });
+    expect(db.listApiTokens(userId).find((t) => t.id === token.id)?.lastUsedAt).toBeUndefined();
+
+    db.getUserByApiToken(hashSessionToken(plaintext));
+    expect(db.listApiTokens(userId).find((t) => t.id === token.id)?.lastUsedAt).toBeTruthy();
+  });
+
+  it('never stores the plaintext token anywhere', () => {
+    const plaintext = generateSessionToken();
+    db.createApiToken({ userId, tokenHash: hashSessionToken(plaintext), name: 'MacBook Robin' });
+
+    const stored = db.listApiTokens(userId)[0];
+    expect(stored.tokenHash).not.toBe(plaintext);
+    expect(JSON.stringify(stored)).not.toContain(plaintext);
+  });
+});

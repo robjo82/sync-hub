@@ -3,32 +3,7 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { encode } from 'gpt-tokenizer';
-import type {
-  AccountSyncOverview,
-  Artifact,
-  CreateSharedThreadInput,
-  DeviceSession,
-  EngineStats,
-  EngineType,
-  IngestEventStatus,
-  IngestLogEntry,
-  McpCallLogEntry,
-  Memory,
-  Message,
-  Project,
-  ProjectAliases,
-  PullBatch,
-  RemoteSyncState,
-  Session,
-  SharedThread,
-  SyncOverview,
-  Thread,
-  TokenUsage,
-  UpdateSharedThreadInput,
-  User,
-  UserRole,
-  UserWithPasswordHash,
-} from '../types.js';
+import type { AccountSyncOverview, ApiToken, Artifact, CreateSharedThreadInput, DeviceSession, EngineStats, EngineType, IngestEventStatus, IngestLogEntry, McpCallLogEntry, Memory, Message, Project, ProjectAliases, PullBatch, RemoteSyncState, Session, SharedThread, SyncOverview, Thread, TokenUsage, UpdateSharedThreadInput, User, UserRole, UserWithPasswordHash } from '../types.js';
 
 export interface UsageScope {
   projectId?: string;
@@ -223,6 +198,23 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+-- Long-lived machine credentials, one per user per device, for the sync path. Distinct from
+-- sessions: a session belongs to a human in front of a browser and expires; an api_token
+-- belongs to a daemon that must keep pushing unattended, and only ever stops when revoked.
+-- Replaces the single shared SYNC_HUB_REMOTE_TOKEN, which could not attribute a push to anyone
+-- nor be revoked for one person without cutting off everybody.
+CREATE TABLE IF NOT EXISTS api_tokens (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT,
+  revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
 
 -- Shared threads for public/external read-only link access.
 CREATE TABLE IF NOT EXISTS shared_threads (
@@ -1615,6 +1607,62 @@ export class Db {
         updatedAt: row.u_updated_at,
       },
     };
+  }
+
+  createApiToken(token: { id?: string; userId: string; tokenHash: string; name: string }): ApiToken {
+    const id = token.id ?? randomUUID();
+    const now = new Date().toISOString();
+    this.raw.prepare(`
+      INSERT INTO api_tokens (id, user_id, token_hash, name, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(id, token.userId, token.tokenHash, token.name, now);
+    return { id, userId: token.userId, tokenHash: token.tokenHash, name: token.name, createdAt: now };
+  }
+
+  /**
+   * Resolves a machine token to its owner, or undefined if it is unknown or revoked. Also stamps
+   * last_used_at, which is what makes an unused-since-months token identifiable when cleaning up.
+   */
+  getUserByApiToken(tokenHash: string): User | undefined {
+    const row = this.raw.prepare(`
+      SELECT u.id, u.email, u.display_name, u.role, u.created_at, u.updated_at
+      FROM api_tokens t JOIN users u ON u.id = t.user_id
+      WHERE t.token_hash = ? AND t.revoked_at IS NULL
+    `).get(tokenHash) as any;
+    if (!row) return undefined;
+    this.raw.prepare(`UPDATE api_tokens SET last_used_at = ? WHERE token_hash = ?`).run(new Date().toISOString(), tokenHash);
+    return {
+      id: row.id,
+      email: row.email,
+      displayName: row.display_name,
+      role: row.role,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  listApiTokens(userId: string): ApiToken[] {
+    const rows = this.raw.prepare(`
+      SELECT id, user_id, token_hash, name, created_at, last_used_at, revoked_at
+      FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC
+    `).all(userId) as any[];
+    return rows.map((r) => ({
+      id: r.id,
+      userId: r.user_id,
+      tokenHash: r.token_hash,
+      name: r.name,
+      createdAt: r.created_at,
+      lastUsedAt: r.last_used_at ?? undefined,
+      revokedAt: r.revoked_at ?? undefined,
+    }));
+  }
+
+  /** Revoked rather than deleted, so a token that turns up in a log stays identifiable afterwards. */
+  revokeApiToken(id: string, userId: string): boolean {
+    const res = this.raw
+      .prepare(`UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL`)
+      .run(new Date().toISOString(), id, userId);
+    return res.changes > 0;
   }
 
   deleteSessionByTokenHash(tokenHash: string): boolean {

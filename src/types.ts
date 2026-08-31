@@ -248,6 +248,18 @@ export interface UserWithPasswordHash extends User {
   passwordHash: string;
 }
 
+export interface ApiToken {
+  id: string;
+  userId: string;
+  /** SHA-256 of the token — the plaintext is shown once at creation and never stored. */
+  tokenHash: string;
+  /** Human label so a user can tell their machines apart when revoking ("MacBook Robin"). */
+  name: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  revokedAt?: string;
+}
+
 export interface Session {
   id: string;
   userId: string;

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { Db } from '../src/core/db.js';
 import { ProjectRegistry } from '../src/core/registry.js';
+import { hashPassword, hashSessionToken, generateSessionToken } from '../src/core/crypto.js';
 import { createApp } from '../src/server/app.js';
 import type { WatchHandle } from '../src/core/watch.js';
 import type { Message, Project } from '../src/types.js';
@@ -464,11 +465,149 @@ describe('sync-hub HTTP API', () => {
   });
 
   describe('POST /api/sync/push — remote-hub receiving end (see core/sync-push-client.ts for the pushing side)', () => {
-    it('refuses every request when no remoteToken is configured — fails closed, not open', async () => {
-      // `app` from the top-level beforeEach has no remoteToken set.
+    it('refuses a caller with no credential, even on an instance that has no accounts yet', async () => {
+      // `app` from the top-level beforeEach has no remoteToken and no users, so the auth hook
+      // hands the request DEFAULT_LOCAL_USER to keep a fresh local dashboard usable. The sync
+      // endpoints must not accept that: otherwise a hub reachable before its admin is created
+      // would let anyone push into it, or pull the whole corpus out.
       const res = await app.inject({ method: 'POST', url: '/api/sync/push', payload: { projects: [], threads: [], messages: [] } });
-      expect(res.statusCode).toBe(403);
-      expect(res.json().error).toBe('push_disabled');
+      expect(res.statusCode).toBe(401);
+      expect(res.json().error).toBe('unauthorized');
+    });
+
+    it('issues a token once over HTTP, never returns the plaintext again, and revokes it', async () => {
+      const owner = db.createUser({
+        email: 'porteur@ekonum.fr',
+        displayName: 'Porteur',
+        passwordHash: await hashPassword('motdepasse-solide'),
+        role: 'admin',
+      });
+      const sessionToken = generateSessionToken();
+      db.createSession({
+        userId: owner.id,
+        tokenHash: hashSessionToken(sessionToken),
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      });
+      const cookie = { cookie: `sync_hub_session=${sessionToken}` };
+
+      const hub = createApp({
+        db,
+        registry,
+        watchHandle: fakeWatchHandle(),
+        rescan,
+        archiveRoots: { syncHubArchiveRoot: join(dir, 'sync-hub-archive'), codexArchiveRoot: join(dir, 'codex-archived-sessions') },
+        importsDir: join(dir, 'imports'),
+      });
+      try {
+        const created = await hub.inject({ method: 'POST', url: '/api/tokens', headers: cookie, payload: { name: 'MacBook Robin' } });
+        expect(created.statusCode).toBe(200);
+        const plaintext = created.json().token;
+        expect(plaintext).toBeTruthy();
+
+        // It works as a sync credential...
+        const push = await hub.inject({
+          method: 'POST',
+          url: '/api/sync/push',
+          headers: { authorization: `Bearer ${plaintext}` },
+          payload: { projects: [], threads: [], messages: [] },
+        });
+        expect(push.statusCode).toBe(200);
+
+        // ...but listing tokens never hands the secret back, nor the hash standing in for it.
+        const listed = await hub.inject({ method: 'GET', url: '/api/tokens', headers: cookie });
+        expect(listed.json()).toHaveLength(1);
+        expect(JSON.stringify(listed.json())).not.toContain(plaintext);
+        expect(listed.json()[0].tokenHash).toBeUndefined();
+
+        const revoked = await hub.inject({ method: 'POST', url: `/api/tokens/${created.json().id}/revoke`, headers: cookie });
+        expect(revoked.statusCode).toBe(200);
+        const afterRevoke = await hub.inject({
+          method: 'POST',
+          url: '/api/sync/push',
+          headers: { authorization: `Bearer ${plaintext}` },
+          payload: { projects: [], threads: [], messages: [] },
+        });
+        expect(afterRevoke.statusCode).toBe(401);
+      } finally {
+        await hub.close();
+      }
+    });
+
+    it('authenticates a push with a per-user API token and attributes it to that account', async () => {
+      const owner = db.createUser({
+        email: 'robin@ekonum.fr',
+        displayName: 'Robin',
+        passwordHash: await hashPassword('motdepasse-solide'),
+        role: 'admin',
+      });
+      const plaintext = generateSessionToken();
+      db.createApiToken({ userId: owner.id, tokenHash: hashSessionToken(plaintext), name: 'MacBook Robin' });
+
+      const hub = createApp({
+        db,
+        registry,
+        watchHandle: fakeWatchHandle(),
+        rescan,
+        archiveRoots: { syncHubArchiveRoot: join(dir, 'sync-hub-archive'), codexArchiveRoot: join(dir, 'codex-archived-sessions') },
+        importsDir: join(dir, 'imports'),
+      });
+      try {
+        // No shared remoteToken is configured at all — the token alone carries the identity.
+        const ok = await hub.inject({
+          method: 'POST',
+          url: '/api/sync/push',
+          headers: { authorization: `Bearer ${plaintext}` },
+          payload: { projects: [], threads: [], messages: [] },
+        });
+        expect(ok.statusCode).toBe(200);
+
+        const revokedToken = db.listApiTokens(owner.id)[0];
+        db.revokeApiToken(revokedToken.id, owner.id);
+        const afterRevoke = await hub.inject({
+          method: 'POST',
+          url: '/api/sync/push',
+          headers: { authorization: `Bearer ${plaintext}` },
+          payload: { projects: [], threads: [], messages: [] },
+        });
+        expect(afterRevoke.statusCode).toBe(401);
+      } finally {
+        await hub.close();
+      }
+    });
+
+    it('does not let a browser session stand in for a machine credential on the sync path', async () => {
+      // A logged-in human is not a pushing device: session cookies must not authorise sync, or a
+      // stolen/borrowed browser session would be able to drain the corpus through /api/sync/pull.
+      const user = db.createUser({
+        email: 'membre@ekonum.fr',
+        displayName: 'Membre',
+        passwordHash: await hashPassword('motdepasse-solide'),
+      });
+      const sessionToken = generateSessionToken();
+      db.createSession({
+        userId: user.id,
+        tokenHash: hashSessionToken(sessionToken),
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      });
+
+      const hub = createApp({
+        db,
+        registry,
+        watchHandle: fakeWatchHandle(),
+        rescan,
+        archiveRoots: { syncHubArchiveRoot: join(dir, 'sync-hub-archive'), codexArchiveRoot: join(dir, 'codex-archived-sessions') },
+        importsDir: join(dir, 'imports'),
+      });
+      try {
+        const res = await hub.inject({
+          method: 'GET',
+          url: '/api/sync/pull?afterSeq=0&limit=10',
+          headers: { cookie: `sync_hub_session=${sessionToken}` },
+        });
+        expect(res.statusCode).toBe(401);
+      } finally {
+        await hub.close();
+      }
     });
 
     it('rejects a missing or wrong Authorization header once a token is configured', async () => {
