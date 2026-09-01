@@ -4,8 +4,9 @@
 # désactivé — il n'y a rien à scanner dans le conteneur. Elle ne fait que recevoir les
 # POST /api/sync/push des instances locales et les stocker.
 #
-# SYNC_HUB_REMOTE_TOKEN doit valoir exactement la même chose des deux côtés (hub et instance
-# locale qui pousse). Il est fourni par Portainer au déploiement, jamais écrit dans ce fichier.
+# Le hub n'a plus de secret partagé : chaque machine s'authentifie avec son propre jeton
+# d'appareil (table api_tokens), créé depuis le menu compte du dashboard. Un secret unique ne
+# pouvait attribuer un push à personne, ni être révoqué pour une machine sans couper les autres.
 
 services:
   remote-hub:
@@ -19,7 +20,6 @@ services:
       PORT: "4000"
       SYNC_HUB_DATA_DIR: /data
       SYNC_HUB_DISABLE_LOCAL_INGEST: "1"
-      SYNC_HUB_REMOTE_TOKEN: ${SYNC_HUB_REMOTE_TOKEN}
     labels:
       # Watchtower tourne sur ce serveur en --label-enable : il ne met à jour que les conteneurs
       # qui le demandent explicitement. Avec ce label, un push sur main suffit — la CI pousse
