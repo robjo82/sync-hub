@@ -75,7 +75,12 @@ export const api = {
     ),
   restartSecretScan: () => jsonFetch<{ ok: true }>('/api/secrets/scan/restart', { method: 'POST' }),
   redactSecret: (value: string) =>
-    jsonFetch<{ ok: true; messagesChanged: number; occurrences: number }>('/api/secrets/redact', {
+    jsonFetch<{
+      ok: true;
+      messagesChanged: number;
+      occurrences: number;
+      remote: { ok: boolean; messagesChanged?: number; occurrences?: number; error?: string } | null;
+    }>('/api/secrets/redact', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ value }),

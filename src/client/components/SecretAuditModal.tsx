@@ -69,7 +69,15 @@ export function SecretAuditModal({ isOpen, onClose }: Props) {
     setError(null);
     try {
       const res = await api.redactSecret(value.trim());
-      setDone(`${res.occurrences} occurrence(s) retirée(s) dans ${res.messagesChanged} message(s).`);
+      // Say plainly what happened on each side: a redaction that only landed locally leaves the
+      // secret on the machine everyone shares, and that is not something to discover later.
+      const here = `${res.occurrences} occurrence(s) retirée(s) dans ${res.messagesChanged} message(s) ici`;
+      const there = !res.remote
+        ? ' (aucun hub configuré)'
+        : res.remote.ok
+          ? `, et ${res.remote.occurrences ?? 0} sur le hub`
+          : `. ⚠ Échec sur le hub (${res.remote.error}) — le secret y est toujours.`;
+      setDone(here + there);
       await scan();
     } catch {
       setError("Valeur incorrecte, ou rien ne correspond. Rien n'a été modifié.");
@@ -144,7 +152,8 @@ export function SecretAuditModal({ isOpen, onClose }: Props) {
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
           <span>
             Retirer un secret modifie l'historique de façon irréversible et ne révoque rien : fais-le tourner
-            chez son émetteur. Les autres appareils et le hub gardent leur copie jusqu'à leur prochaine synchro.
+            chez son émetteur d'abord. Le retrait est appliqué ici et sur le hub dans le même geste ; les
+            autres appareils déjà synchronisés gardent leur copie.
           </span>
         </div>
       </div>

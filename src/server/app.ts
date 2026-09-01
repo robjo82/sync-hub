@@ -477,7 +477,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
    * redacting requires holding the secret already. That is the friction we want on an irreversible
    * operation against verbatim history — a mis-click cannot destroy a conversation.
    */
-  app.post<{ Body: { value?: string } }>('/api/secrets/redact', async (req, reply) => {
+  app.post<{ Body: { value?: string; propagate?: boolean } }>('/api/secrets/redact', async (req, reply) => {
     if (req.user?.role !== 'admin') return reply.code(403).send({ error: 'forbidden', message: 'Accès administrateur requis' });
     const value = req.body?.value ?? '';
     if (value.length < 8) return reply.code(400).send({ error: 'invalid_value', message: 'Valeur trop courte pour être un secret' });
@@ -485,7 +485,31 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const result = db.redactSecret(value);
     secretScan = null; // the list it produced is now stale by construction
     broadcast({ type: 'stats_updated', data: computeStats(deps) });
-    return { ok: true, ...result };
+
+    // The hub keeps its own copy, and a redaction never reaches it on its own: push only sends
+    // messages newer than the watermark, and an edited message keeps its rank. Without this,
+    // cleaning locally leaves the secret sitting on the machine everyone shares.
+    // `propagate: false` is how the hub itself answers this call without bouncing it onward.
+    let remote: { ok: boolean; messagesChanged?: number; occurrences?: number; error?: string } | null = null;
+    if (req.body?.propagate !== false && deps.remoteUrl && deps.remoteToken) {
+      try {
+        const res = await fetch(`${deps.remoteUrl.replace(/\/$/, '')}/api/secrets/redact`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${deps.remoteToken}` },
+          body: JSON.stringify({ value, propagate: false }),
+          signal: AbortSignal.timeout(120_000),
+        });
+        remote = res.ok
+          ? { ok: true, ...(await res.json()) }
+          : { ok: false, error: res.status === 403 ? "Compte non administrateur sur le hub" : `HTTP ${res.status}` };
+      } catch {
+        // Reported rather than swallowed: a local-only redaction is a half-done job, and someone
+        // who thinks it finished will not come back to it.
+        remote = { ok: false, error: 'Hub injoignable' };
+      }
+    }
+
+    return { ok: true, ...result, remote };
   });
 
   // --- Project sharing between colleagues. Only the owner may hand a project out: a share does

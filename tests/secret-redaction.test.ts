@@ -119,3 +119,88 @@ describe('redactSecret', () => {
     expect((await db.scanForSecrets()).find((r) => r.kind === 'Jeton GitHub')).toBeUndefined();
   });
 });
+
+describe('Redaction propagation to the hub', () => {
+  it('applies on the hub in the same action, and says so', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { ProjectRegistry } = await import('../src/core/registry.js');
+    const { createApp } = await import('../src/server/app.js');
+
+    const hubDir = mkdtempSync(join(tmpdir(), 'sync-hub-hub-'));
+    const hubDb = new Db(join(hubDir, 'hub.sqlite'));
+    const now = new Date().toISOString();
+    hubDb.upsertProject({ id: 'p1', name: 'P', canonicalPath: '/tmp/p', aliases: { paths: [], claudeSlugs: [], codexCwds: [] }, createdAt: now, lastActiveAt: now });
+    hubDb.upsertThread({ id: 't1', projectId: 'p1', title: 'T', originEngine: 'claude-code', engineIds: {}, messageCount: 0, createdAt: now, updatedAt: now, status: 'active' });
+    hubDb.insertMessage({
+      id: 'hub-m1', threadId: 't1', projectId: 'p1', sourceEngine: 'claude-code', role: 'user',
+      content: `copie côté hub avec ${SECRET} dedans`, timestamp: now, sequence: 0, hash: 'hub-hash',
+    });
+
+    const fakeWatch = { isActive: () => true, ready: () => Promise.resolve(), close: async () => {} };
+    const hubApp = createApp({
+      db: hubDb,
+      registry: new ProjectRegistry(hubDb),
+      watchHandle: fakeWatch,
+      rescan: () => {},
+      archiveRoots: { syncHubArchiveRoot: join(hubDir, 'a'), codexArchiveRoot: join(hubDir, 'b') },
+      importsDir: join(hubDir, 'i'),
+    });
+    const address = await hubApp.listen({ port: 0, host: '127.0.0.1' });
+
+    // The local instance, pointed at that hub.
+    addMessage('local-m1', { content: `copie locale avec ${SECRET}` });
+    const localApp = createApp({
+      db,
+      registry: new ProjectRegistry(db),
+      watchHandle: fakeWatch,
+      rescan: () => {},
+      archiveRoots: { syncHubArchiveRoot: join(dir, 'a'), codexArchiveRoot: join(dir, 'b') },
+      importsDir: join(dir, 'i'),
+      remoteUrl: address,
+      remoteToken: 'peu-importe',
+    });
+
+    try {
+      const res = await localApp.inject({ method: 'POST', url: '/api/secrets/redact', payload: { value: SECRET } });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().occurrences).toBe(1);
+      expect(res.json().remote?.ok).toBe(true);
+      expect(res.json().remote?.occurrences).toBe(1);
+
+      // Gone on both sides, not just the one the click happened on.
+      expect(JSON.stringify(db.getMessagesForThread('t1'))).not.toContain(SECRET);
+      expect(JSON.stringify(hubDb.getMessagesForThread('t1'))).not.toContain(SECRET);
+    } finally {
+      await localApp.close();
+      await hubApp.close();
+      hubDb.close();
+      rmSync(hubDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not bounce onward when the hub itself is the one redacting', async () => {
+    const { ProjectRegistry } = await import('../src/core/registry.js');
+    const { createApp } = await import('../src/server/app.js');
+    addMessage('m1', { content: `avec ${SECRET}` });
+
+    // remoteUrl points nowhere reachable: with propagate:false it must never be called at all,
+    // so this succeeds rather than reporting an unreachable hub.
+    const app = createApp({
+      db,
+      registry: new ProjectRegistry(db),
+      watchHandle: { isActive: () => true, ready: () => Promise.resolve(), close: async () => {} },
+      rescan: () => {},
+      archiveRoots: { syncHubArchiveRoot: join(dir, 'a'), codexArchiveRoot: join(dir, 'b') },
+      importsDir: join(dir, 'i'),
+      remoteUrl: 'http://127.0.0.1:1',
+      remoteToken: 'x',
+    });
+    try {
+      const res = await app.inject({ method: 'POST', url: '/api/secrets/redact', payload: { value: SECRET, propagate: false } });
+      expect(res.json().remote).toBeNull();
+      expect(res.json().occurrences).toBe(1);
+    } finally {
+      await app.close();
+    }
+  });
+});
