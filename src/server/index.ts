@@ -47,6 +47,50 @@ function fullScan(): void {
   updateAllPointerFiles(db);
 }
 
+/** Hands the event loop back so pending HTTP requests get served between two files. */
+const yieldToEventLoop = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+/**
+ * The same scan, one file at a time, yielding in between.
+ *
+ * The synchronous version blocks for as long as it takes — measured from a clean clone against a
+ * real history: over six minutes, during which the dashboard answered nothing at all. Node runs
+ * this on one thread, so listening earlier is not enough on its own; the loop has to be given
+ * back. A newcomer now gets a dashboard immediately, and watches it fill.
+ */
+async function fullScanProgressively(): Promise<void> {
+  if (DISABLE_LOCAL_INGEST) return;
+  let files = 0;
+
+  const engines: Array<{ refs: unknown[]; ingest: (ref: any) => void }> = [
+    { refs: claudeCode.discoverSessionFiles(), ingest: (r) => claudeCode.ingestSessionFile(db, registry, r) },
+    { refs: codex.discoverSessionFiles(), ingest: (r) => codex.ingestSessionFile(db, registry, r) },
+    { refs: antigravity.discoverSessionFiles(), ingest: (r) => antigravity.ingestSessionFile(db, registry, r) },
+    { refs: antigravity.discoverSessionFiles(antigravity.ANTIGRAVITY_CLI_BRAIN_ROOT), ingest: (r) => antigravity.ingestSessionFile(db, registry, r) },
+  ];
+
+  for (const engine of engines) {
+    for (const ref of engine.refs) {
+      try {
+        engine.ingest(ref);
+      } catch (err) {
+        // One unreadable session must not abort the whole first run.
+        console.error('sync-hub: fichier ignoré pendant le scan initial', err);
+      }
+      files++;
+      await yieldToEventLoop();
+    }
+  }
+
+  // Small enough to run whole: these read a handful of files, not a session history.
+  cowork.ingestAll(db, registry);
+  ingestAllMemories(db, registry);
+  ingestClaudeExport(db, join(IMPORTS_DIR, 'claude'));
+  ingestChatGptExport(db, join(IMPORTS_DIR, 'chatgpt'));
+  updateAllPointerFiles(db);
+  console.log(`sync-hub: scan initial terminé (${files} fichiers de session).`);
+}
+
 let syncTimer: ReturnType<typeof setTimeout> | undefined;
 let syncInterval: ReturnType<typeof setInterval> | undefined;
 
@@ -79,9 +123,8 @@ function startSyncInterval(): void {
 if (DISABLE_LOCAL_INGEST) {
   console.log('sync-hub: rôle hub distant — pas de scan local, en attente de sync…');
 } else {
-  console.log('sync-hub: scan initial en cours (peut prendre 15-20s la première fois)…');
+  console.log('sync-hub: dashboard disponible immédiatement, scan initial en arrière-plan…');
 }
-fullScan();
 scheduleSync();
 startSyncInterval();
 
@@ -108,6 +151,12 @@ const app = createApp({
 
 const address = await app.listen({ port: PORT, host: HOST });
 app.log.info(`sync-hub écoute sur ${address}`);
+
+// Deliberately after listen() and deliberately not awaited: the first run on a real history takes
+// minutes, and there is no reason to keep the dashboard dark for it.
+void fullScanProgressively()
+  .then(() => scheduleSync())
+  .catch((err) => console.error('sync-hub: scan initial en échec', err));
 
 async function shutdown(): Promise<void> {
   if (syncTimer) clearTimeout(syncTimer);
