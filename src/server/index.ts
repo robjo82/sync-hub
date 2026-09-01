@@ -1,5 +1,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { Db } from '../core/db.js';
 import { ProjectRegistry } from '../core/registry.js';
 import { startWatching, type WatchHandle } from '../core/watch.js';
@@ -28,8 +30,20 @@ const HOST = process.env.HOST ?? '127.0.0.1'; // local-only by default — this 
 const DISABLE_LOCAL_INGEST = process.env.SYNC_HUB_DISABLE_LOCAL_INGEST === '1';
 // Configures the OUTGOING/INCOMING sync side (this instance synchronizing with a remote hub) — opt-in, no-op on any
 // instance that hasn't set both.
-const REMOTE_URL = process.env.SYNC_HUB_REMOTE_URL;
-const REMOTE_TOKEN = process.env.SYNC_HUB_REMOTE_TOKEN;
+// Mutable, so enrolling from the dashboard takes effect immediately rather than on next boot —
+// a newcomer pasting a token should see the sync start, not be told to restart a service.
+// Persisted in the keychain (token) and a small file (URL) so a restart keeps the enrolment.
+const ENROLMENT_FILE = join(DATA_DIR, 'remote.json');
+let REMOTE_URL = process.env.SYNC_HUB_REMOTE_URL;
+let REMOTE_TOKEN = process.env.SYNC_HUB_REMOTE_TOKEN;
+
+if (!REMOTE_URL) {
+  try {
+    REMOTE_URL = JSON.parse(readFileSync(ENROLMENT_FILE, 'utf-8')).remoteUrl || undefined;
+  } catch {
+    // No file yet, or unreadable — this instance simply is not enrolled.
+  }
+}
 
 const db = new Db(join(DATA_DIR, 'hub.sqlite'));
 const registry = new ProjectRegistry(db);
@@ -137,17 +151,33 @@ const watchHandle: WatchHandle = DISABLE_LOCAL_INGEST
       },
     });
 
-const app = createApp({
+const appDeps: Parameters<typeof createApp>[0] = {
   db,
   registry,
   watchHandle,
   rescan: fullScan,
+  onEnrol: (hubUrl, token) => {
+    REMOTE_URL = hubUrl;
+    REMOTE_TOKEN = token;
+    // The handlers read deps at request time, so mutating the very object we passed is what makes
+    // an enrolment visible immediately instead of only after the next boot.
+    appDeps.remoteUrl = hubUrl;
+    appDeps.remoteToken = token;
+    // The token goes to the keychain, never to the JSON file: run_daemon.sh reads it back from
+    // there at boot, and a file under data/ would put a live credential on disk in cleartext.
+    execFileSync('security', ['add-generic-password', '-a', process.env.USER ?? 'sync-hub', '-s', 'sync-hub-remote-token', '-w', token, '-U']);
+    writeFileSync(ENROLMENT_FILE, JSON.stringify({ remoteUrl: hubUrl }, null, 2));
+    startSyncInterval();
+    void syncNow();
+  },
   clientDistDir: CLIENT_DIST,
   archiveRoots: { syncHubArchiveRoot: join(DATA_DIR, 'archived-sessions') },
   importsDir: IMPORTS_DIR,
   remoteUrl: REMOTE_URL,
   remoteToken: REMOTE_TOKEN,
-});
+};
+
+const app = createApp(appDeps);
 
 const address = await app.listen({ port: PORT, host: HOST });
 app.log.info(`sync-hub écoute sur ${address}`);

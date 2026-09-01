@@ -78,6 +78,11 @@ export interface AppDeps {
   remoteToken?: string;
   /** When true, authentication is disabled/bypassed (e.g. for purely local personal use). */
   authDisabled?: boolean;
+  /**
+   * Applies an enrolment made from the dashboard: persist the credential and start syncing now.
+   * Absent on the hub, which is enrolled with nobody — it receives, it does not push.
+   */
+  onEnrol?: (hubUrl: string, token: string) => void;
   /** Secret used to sign session cookies. */
   cookieSecret?: string;
 }
@@ -381,6 +386,42 @@ export function createApp(deps: AppDeps): FastifyInstance {
   });
 
   // --- Users Management Routes ---
+
+  /**
+   * Enrols this machine with a hub from the dashboard, so a newcomer never has to open a terminal.
+   *
+   * Local-only by design: the daemon binds 127.0.0.1, and anything that can reach it could equally
+   * run `security` itself, so this adds no reach it did not already have. The token is checked
+   * against the hub before being stored — a truncated paste fails here, visibly, rather than as a
+   * sync that silently never happens.
+   */
+  app.post<{ Body: { hubUrl?: string; token?: string } }>('/api/enrol', async (req, reply) => {
+    if (!deps.onEnrol) return reply.code(400).send({ error: 'not_supported', message: "Cette instance ne peut pas s'enrôler" });
+
+    const hubUrl = (req.body?.hubUrl ?? '').trim().replace(/\/$/, '');
+    const token = (req.body?.token ?? '').trim();
+    if (!hubUrl || !token) return reply.code(400).send({ error: 'invalid_body', message: 'URL du hub et jeton requis' });
+
+    let status: number;
+    try {
+      const res = await fetch(`${hubUrl}/api/sync/push`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        // An empty batch: valid enough to authenticate, and changes nothing on the hub.
+        body: JSON.stringify({ projects: [], threads: [], messages: [] }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      status = res.status;
+    } catch {
+      return reply.code(502).send({ error: 'hub_unreachable', message: `Hub injoignable à ${hubUrl}` });
+    }
+
+    if (status === 401) return reply.code(401).send({ error: 'token_rejected', message: 'Jeton refusé — vérifie qu\'il est complet et non révoqué' });
+    if (status !== 200) return reply.code(502).send({ error: 'hub_error', message: `Réponse inattendue du hub (HTTP ${status})` });
+
+    deps.onEnrol(hubUrl, token);
+    return { ok: true, hubUrl };
+  });
 
   // --- Project sharing between colleagues. Only the owner may hand a project out: a share does
   // not confer the right to re-share, or access would spread without the owner ever knowing.

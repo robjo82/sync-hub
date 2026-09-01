@@ -119,16 +119,7 @@ export function WelcomeChecklist() {
               sont sauvegardées et te suivent d'un appareil à l'autre.
             </p>
           ) : (
-            <div className="text-xs text-muted-foreground">
-              <p className="mb-1.5">
-                Cet appareil travaille en local : rien n'est sauvegardé à distance, et tu ne verras pas ce
-                qu'on partage avec toi.
-              </p>
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">
-                ./scripts/enroll.sh
-              </code>
-              <span className="ml-1.5">depuis le dossier sync-hub, puis relance le service.</span>
-            </div>
+            <EnrolForm onDone={load} />
           )}
         </Step>
 
@@ -187,6 +178,66 @@ export function WelcomeChecklistLoading() {
     <div className="flex items-center gap-2 p-6 text-xs text-muted-foreground">
       <Loader2 className="h-3.5 w-3.5 animate-spin" />
       Chargement…
+    </div>
+  );
+}
+
+/**
+ * Enrolment without leaving the dashboard. The server verifies the token against the hub before
+ * storing it, so a truncated paste is reported here rather than becoming a sync that never runs.
+ */
+function EnrolForm({ onDone }: { onDone: () => void }) {
+  const [hubUrl, setHubUrl] = useState('https://sync-hub.robin-joseph.fr');
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (!hubUrl.trim() || !token.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.enrol(hubUrl.trim(), token.trim());
+      setToken('');
+      onDone();
+    } catch (err: any) {
+      setError(err?.message?.includes('401') ? 'Jeton refusé — vérifie qu\'il est complet et non révoqué.' : "Hub injoignable ou jeton invalide.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="text-xs text-muted-foreground">
+      <p className="mb-2">
+        Cet appareil travaille en local : rien n'est sauvegardé à distance, et tu ne verras pas ce qu'on
+        partage avec toi. Crée un jeton depuis le hub (menu compte → « Jetons d'appareil »), puis colle-le
+        ici.
+      </p>
+      <div className="flex flex-col gap-1.5 sm:flex-row">
+        <input
+          value={hubUrl}
+          onChange={(e) => setHubUrl(e.target.value)}
+          placeholder="URL du hub"
+          className="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-xs text-foreground"
+        />
+        <input
+          type="password"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && submit()}
+          placeholder="jeton d'appareil"
+          className="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-xs text-foreground"
+        />
+        <button
+          onClick={submit}
+          disabled={busy || !token.trim()}
+          className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground disabled:opacity-40"
+        >
+          {busy ? 'Vérification…' : 'Enrôler'}
+        </button>
+      </div>
+      {error && <p className="mt-1.5 text-destructive">{error}</p>}
     </div>
   );
 }

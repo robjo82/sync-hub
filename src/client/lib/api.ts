@@ -191,6 +191,12 @@ export const api = {
   syncStatus: () =>
     jsonFetch<{ configured: boolean; remoteUrl: string | null; syncState: RemoteSyncState | null }>('/api/sync/status'),
   syncOverview: () => jsonFetch<SyncOverview>('/api/sync/overview'),
+  enrol: (hubUrl: string, token: string) =>
+    jsonFetch<{ ok: true; hubUrl: string }>('/api/enrol', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hubUrl, token }),
+    }),
   syncPull: () =>
     jsonFetch<{ ok: true; result: PullResult; syncState: RemoteSyncState }>('/api/sync/pull', { method: 'POST' }),
   archiveThread: (threadId: string) =>
