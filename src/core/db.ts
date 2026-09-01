@@ -3,6 +3,7 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { encode } from 'gpt-tokenizer';
+import { modelForEra, providerForThread } from './era-models.js';
 import { scanText, maskSecret } from './secret-scan.js';
 import type { AccountSyncOverview, ApiToken, Artifact, CreateSharedThreadInput, DeviceSession, EngineStats, EngineType, IngestEventStatus, IngestLogEntry, McpCallLogEntry, Memory, Message, Project, ProjectAliases, PullBatch, RemoteSyncState, SecretScanResult, Session, SharedThread, SyncOverview, Thread, TokenUsage, UpdateSharedThreadInput, User, UserRole, UserWithPasswordHash } from '../types.js';
 
@@ -25,6 +26,12 @@ export interface UsageRecord {
   usage: TokenUsage;
   /** True for Antigravity's text-length-derived estimate — never a real, engine-reported figure. */
   isEstimated: boolean;
+  /**
+   * True when even the model is a guess: a Claude.ai / ChatGPT archive names no model, so the
+   * flagship of that date stands in (see era-models.ts). Counted as an upper bound and kept out
+   * of the headline total — the rate assumed is the dearest one on offer at the time.
+   */
+  isInferredModel?: boolean;
 }
 
 const SCHEMA = `
@@ -1265,7 +1272,65 @@ export class Db {
     // transcript format) — estimated separately below rather than folded into the real-usage SQL,
     // since a proper estimate needs to walk each thread in order (see estimateAntigravityUsage).
     const estimated = !scope.engine || scope.engine === 'antigravity' ? this.estimateAntigravityUsage(scope) : [];
-    return [...real, ...estimated].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const archived = this.estimateArchiveUsage(scope);
+    return [...real, ...estimated, ...archived].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  }
+
+  /**
+   * Archived Claude.ai / ChatGPT conversations, priced against the flagship model of their date.
+   *
+   * These exports carry neither usage nor model — 62k messages that scored nothing at all before
+   * this. The tokens are counted (arithmetic, not a guess); the model is inferred from the app and
+   * the date, which is a guess, and knowingly a high one. User turns count as input and assistant
+   * turns as output: an export has no finer split, and the two rates differ by up to 6×, so
+   * lumping them together would be worse than this.
+   */
+  private estimateArchiveUsage(scope: UsageScope): UsageRecord[] {
+    if (scope.engine) return []; // no archive belongs to a single live engine
+    let sql = `SELECT thread_id, project_id, source_engine, role, timestamp, estimated_tokens
+               FROM messages
+               WHERE usage IS NULL AND estimated_tokens IS NOT NULL
+                 AND (thread_id LIKE 'chatgpt-export%' OR thread_id LIKE 'claude-export%')`;
+    const params: string[] = [];
+    if (scope.projectId) {
+      sql += ' AND project_id = ?';
+      params.push(scope.projectId);
+    }
+    if (scope.threadId) {
+      sql += ' AND thread_id = ?';
+      params.push(scope.threadId);
+    }
+    if (scope.startDate) {
+      sql += ' AND timestamp >= ?';
+      params.push(scope.startDate.includes('T') ? scope.startDate : `${scope.startDate}T00:00:00.000Z`);
+    }
+    if (scope.endDate) {
+      sql += ' AND timestamp <= ?';
+      params.push(scope.endDate.includes('T') ? scope.endDate : `${scope.endDate}T23:59:59.999Z`);
+    }
+
+    const records: UsageRecord[] = [];
+    for (const row of this.raw.prepare(sql).all(...params) as any[]) {
+      const provider = providerForThread(row.thread_id);
+      if (!provider) continue;
+      const model = modelForEra(provider, row.timestamp);
+      if (!model) continue; // predates anything with a published rate — left uncounted, not invented
+      const tokens = row.estimated_tokens as number;
+      records.push({
+        timestamp: row.timestamp,
+        projectId: row.project_id,
+        threadId: row.thread_id,
+        sourceEngine: row.source_engine,
+        model,
+        usage:
+          row.role === 'assistant'
+            ? { inputTokens: 0, outputTokens: tokens }
+            : { inputTokens: tokens, outputTokens: 0 },
+        isEstimated: true,
+        isInferredModel: true,
+      });
+    }
+    return records;
   }
 
   /** Messages with a real, engine-reported model + token usage. */

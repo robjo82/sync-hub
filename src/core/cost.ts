@@ -87,6 +87,13 @@ export interface CostSummary {
   measuredCostUsd: number;
   interpolatedCostUsd: number;
   interpolatedMessageCount: number;
+  /**
+   * Claude.ai / ChatGPT archives, priced at the flagship rate of their date because the export
+   * names no model. An upper bound, excluded from totalCostUsd and from the daily series.
+   */
+  upperBoundCostUsd: number;
+  upperBoundMessageCount: number;
+  upperBoundTokens: number;
   eurRate: number;
   byModel: ModelCostBreakdown[];
   byEngine: EngineCostBreakdown[];
@@ -146,6 +153,9 @@ export function computeCostSummary(db: Db, scope: CostScope = {}): CostSummary {
 
   let unpriced = 0;
   let interpolatedMessages = 0;
+  let upperBoundCostUsd = 0;
+  let upperBoundMessages = 0;
+  let upperBoundTokens = 0;
   let interpolatedCostUsd = 0;
   let measuredCostUsd = 0;
   let totalInputTokens = 0;
@@ -155,6 +165,20 @@ export function computeCostSummary(db: Db, scope: CostScope = {}): CostSummary {
 
   for (const r of records) {
     const { model, usage, sourceEngine, projectId, timestamp } = r;
+
+    // An archive whose model had to be guessed is an upper bound, not a cost. It is accumulated
+    // on its own and deliberately left out of every total below — including the daily series —
+    // so nothing a reader treats as spend is contaminated by the dearest-rate assumption.
+    if (r.isInferredModel) {
+      const bound = estimateCostUsd(model, usage);
+      if (bound !== null) {
+        upperBoundCostUsd += bound;
+        upperBoundMessages++;
+        upperBoundTokens += (usage.inputTokens || 0) + (usage.outputTokens || 0);
+      }
+      continue;
+    }
+
     // No model means "don't know which one" (never guessed — see UsageRecord/getUsageRecords) —
     // unpriced by construction, same as estimateCostUsd would say, but narrows `model` to string
     // for the rest of this iteration.
@@ -365,6 +389,9 @@ export function computeCostSummary(db: Db, scope: CostScope = {}): CostSummary {
     totalMessages,
     unpricedMessageCount: unpriced,
     measuredCostUsd,
+    upperBoundCostUsd,
+    upperBoundMessageCount: upperBoundMessages,
+    upperBoundTokens,
     interpolatedCostUsd,
     interpolatedMessageCount: interpolatedMessages,
     eurRate,

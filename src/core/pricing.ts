@@ -61,6 +61,20 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'gpt-5-mini': { inputPerMTok: 0.25, outputPerMTok: 2, cachedInputPerMTok: 0.025 },
   'gpt-5-nano': { inputPerMTok: 0.05, outputPerMTok: 0.4, cachedInputPerMTok: 0.005 },
   'gpt-5-pro': { inputPerMTok: 15, outputPerMTok: 120 },
+  // Earlier generations, kept because the Claude.ai / ChatGPT archives reach back to Dec 2022 and
+  // a 2023 conversation cannot be priced with a 2026 rate. These are the published list prices of
+  // the time; where a model was repriced during its life (gpt-4o launched at 5/15 before settling
+  // at 2.50/10) the later, longer-lived rate is used.
+  'gpt-4.1': { inputPerMTok: 2, outputPerMTok: 8, cachedInputPerMTok: 0.5 },
+  'gpt-4o': { inputPerMTok: 2.5, outputPerMTok: 10, cachedInputPerMTok: 1.25 },
+  'gpt-4o-mini': { inputPerMTok: 0.15, outputPerMTok: 0.6, cachedInputPerMTok: 0.075 },
+  'gpt-4-turbo': { inputPerMTok: 10, outputPerMTok: 30 },
+  'gpt-4': { inputPerMTok: 30, outputPerMTok: 60 },
+  'gpt-3.5-turbo': { inputPerMTok: 0.5, outputPerMTok: 1.5 },
+  'claude-3-opus': { inputPerMTok: 15, outputPerMTok: 75, cacheWrite5mPerMTok: 18.75, cacheReadPerMTok: 1.5 },
+  'claude-3-5-sonnet': { inputPerMTok: 3, outputPerMTok: 15, cacheWrite5mPerMTok: 3.75, cacheReadPerMTok: 0.3 },
+  'claude-3-haiku': { inputPerMTok: 0.25, outputPerMTok: 1.25, cacheWrite5mPerMTok: 0.3, cacheReadPerMTok: 0.03 },
+
   // Google Gemini / Antigravity (ai.google.dev/pricing)
   'gemini-2.5-pro': { inputPerMTok: 1.25, outputPerMTok: 5.0, cachedInputPerMTok: 0.3125 },
   'gemini-2.5-flash': { inputPerMTok: 0.075, outputPerMTok: 0.3, cachedInputPerMTok: 0.01875 },

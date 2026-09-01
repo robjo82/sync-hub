@@ -500,7 +500,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
           signal: AbortSignal.timeout(120_000),
         });
         remote = res.ok
-          ? { ok: true, ...(await res.json()) }
+          ? { ok: true, ...((await res.json()) as { messagesChanged?: number; occurrences?: number }) }
           : { ok: false, error: res.status === 403 ? "Compte non administrateur sur le hub" : `HTTP ${res.status}` };
       } catch {
         // Reported rather than swallowed: a local-only redaction is a half-done job, and someone

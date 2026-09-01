@@ -7,6 +7,7 @@ import {
   Cpu,
   DollarSign,
   Download,
+  Info,
   Euro,
   FolderKanban,
   Layers,
@@ -41,6 +42,11 @@ function formatCurrency(amount: number, currency: 'EUR' | 'USD'): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+/** Same amount, in whichever currency the toggle is showing. */
+function formatInCurrency(usd: number, currency: 'EUR' | 'USD' | string, eurRate: number): string {
+  return currency === 'USD' ? formatCurrency(usd, 'USD') : formatCurrency(usd * eurRate, 'EUR');
 }
 
 function formatTokensCompact(n: number): string {
@@ -493,6 +499,60 @@ export function CostsView({ projects }: { projects: Project[] }) {
                 Top modèle : <span className="font-mono text-foreground">{summary.byModel[0]?.model ?? 'N/A'}</span>
               </div>
             </div>
+          </div>
+
+          {/* Where each figure comes from. Without this the headline read as one measured number
+              while quietly ignoring unpriced models and 62k archived messages — the angle blind
+              spot that made costs look like they began in May. */}
+          <div className="rounded-xl border border-border bg-card px-5 py-4 shadow-xs">
+            <div className="flex items-center gap-2 mb-3">
+              <Info className="h-4 w-4 text-accent" />
+              <h3 className="text-sm font-semibold text-foreground">Provenance des chiffres</h3>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border border-border/60 bg-background/50 p-3">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  Mesuré
+                </div>
+                <div className="mt-1 text-lg font-bold text-foreground">{formatInCurrency(summary.measuredCostUsd, currency, summary.eurRate)}</div>
+                <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                  Consommation rapportée par l'outil, tarif publié par l'éditeur.
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-border/60 bg-background/50 p-3">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                  <span className="h-2 w-2 rounded-full bg-amber-500" />
+                  Interpolé
+                </div>
+                <div className="mt-1 text-lg font-bold text-foreground">{formatInCurrency(summary.interpolatedCostUsd, currency, summary.eurRate)}</div>
+                <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                  {summary.interpolatedMessageCount.toLocaleString('fr-FR')} message(s) sur un modèle sans tarif publié —
+                  taux déduit de ses deux voisins immédiats. Compris dans le total.
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-dashed border-border bg-background/50 p-3">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                  <span className="h-2 w-2 rounded-full bg-muted-foreground/50" />
+                  Archives — borne haute
+                </div>
+                <div className="mt-1 text-lg font-bold text-muted-foreground">≤ {formatInCurrency(summary.upperBoundCostUsd, currency, summary.eurRate)}</div>
+                <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                  {summary.upperBoundMessageCount.toLocaleString('fr-FR')} message(s) importés de Claude.ai / ChatGPT
+                  ({formatTokensCompact(summary.upperBoundTokens)} tokens). Un export ne dit pas quel modèle a répondu :
+                  le modèle phare de l'époque est supposé, donc le tarif le plus cher.{' '}
+                  <strong className="text-foreground">Exclu du total et du graphique.</strong>
+                </p>
+              </div>
+            </div>
+            {summary.unpricedMessageCount > 0 && (
+              <p className="mt-3 text-[11px] text-muted-foreground">
+                {summary.unpricedMessageCount.toLocaleString('fr-FR')} message(s) restent non chiffrés : ni modèle connu,
+                ni tarif déductible. Ils comptent dans les tokens, pas dans le coût.
+              </p>
+            )}
           </div>
 
           {/* Interactive Time-Series Chart */}
