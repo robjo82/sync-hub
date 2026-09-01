@@ -1,5 +1,8 @@
 import type { Db } from './db.js';
-import { DEFAULT_EUR_USD_RATE, ENGINE_PROVIDER_MAP, estimateCostUsd, getProviderForModel, usdToEur } from './pricing.js';
+import { DEFAULT_EUR_USD_RATE, ENGINE_PROVIDER_MAP, costFromPricing, estimateCostUsd, getProviderForModel, interpolatePricing, usdToEur } from './pricing.js';
+
+/** How a figure was arrived at — measured from published rates, or interpolated between them. */
+export type CostTier = 'measured' | 'interpolated';
 import type { EngineType } from '../types.js';
 
 export interface ModelCostBreakdown {
@@ -76,6 +79,14 @@ export interface CostSummary {
   totalCachedTokens: number;
   totalMessages: number;
   unpricedMessageCount: number;
+  /**
+   * Split of the headline figure by how it was obtained. totalCostUsd is the sum; these say how
+   * much of it is a published rate and how much is interpolated between two known neighbours, so
+   * a reader can tell a measured euro from a deduced one.
+   */
+  measuredCostUsd: number;
+  interpolatedCostUsd: number;
+  interpolatedMessageCount: number;
   eurRate: number;
   byModel: ModelCostBreakdown[];
   byEngine: EngineCostBreakdown[];
@@ -134,6 +145,9 @@ export function computeCostSummary(db: Db, scope: CostScope = {}): CostSummary {
   }>();
 
   let unpriced = 0;
+  let interpolatedMessages = 0;
+  let interpolatedCostUsd = 0;
+  let measuredCostUsd = 0;
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let totalCachedTokens = 0;
@@ -148,11 +162,25 @@ export function computeCostSummary(db: Db, scope: CostScope = {}): CostSummary {
       unpriced++;
       continue;
     }
-    const cost = estimateCostUsd(model, usage);
+    // Three tiers, kept apart on purpose. A measured cost and a guessed one must never be summed
+    // into a single number the reader takes for fact — that is the whole rule this feature had to
+    // respect to exist at all.
+    let cost = estimateCostUsd(model, usage);
+    let tier: CostTier = 'measured';
+    if (cost === null) {
+      const interpolated = interpolatePricing(model);
+      if (interpolated && usage) {
+        cost = costFromPricing(interpolated, usage);
+        tier = 'interpolated';
+        interpolatedMessages++;
+      }
+    }
     if (cost === null) {
       unpriced++;
       continue;
     }
+    if (tier === 'interpolated') interpolatedCostUsd += cost;
+    else measuredCostUsd += cost;
 
     const inputToks = usage.inputTokens || 0;
     const outputToks = usage.outputTokens || 0;
@@ -336,6 +364,9 @@ export function computeCostSummary(db: Db, scope: CostScope = {}): CostSummary {
     totalCachedTokens,
     totalMessages,
     unpricedMessageCount: unpriced,
+    measuredCostUsd,
+    interpolatedCostUsd,
+    interpolatedMessageCount: interpolatedMessages,
     eurRate,
     byModel,
     byEngine,

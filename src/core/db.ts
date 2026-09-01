@@ -313,6 +313,27 @@ function maskEverySecret(excerpt: string, reported: string): string {
   return out;
 }
 
+
+/**
+ * Token count for arbitrary stored text.
+ *
+ * The exported ChatGPT archives contain literal control markers like `<|im_sep|>` as ordinary
+ * characters, and gpt-tokenizer rejects those outright — which crashed the daemon at startup,
+ * before it could serve anything, the first time archives were counted. They are just text here,
+ * so the check is disabled; a failure still falls back to a rough estimate rather than taking
+ * the process down over a token count.
+ */
+function countTokens(text: string): number {
+  try {
+    // 'all' : these markers are ordinary characters in an exported transcript, not instructions.
+    return encode(text, { allowedSpecial: 'all' }).length;
+  } catch {
+    // ~4 characters per token is the usual English/French ballpark — wrong, but bounded, and
+    // infinitely better than refusing to start.
+    return Math.ceil(text.length / 4);
+  }
+}
+
 export class Db {
   readonly raw: Database.Database;
   /** Next value to assign to messages.ingest_seq — see backfillIngestSeq's doc for why this exists
@@ -463,15 +484,26 @@ export class Db {
    * reports real usage and never needs this.
    */
   private backfillEstimatedTokens(): void {
+    // Antigravity reports no usage at all, and neither do the Claude.ai / ChatGPT archives — a web
+    // export simply has no token field to read. Counting the tokens ourselves needs no pricing and
+    // guesses nothing: it is arithmetic on text we already hold, and it is what makes those 62k
+    // archived messages visible as volume instead of absent from every total.
     const rows = this.raw
-      .prepare(`SELECT id, content, thought, tool_calls, tool_results FROM messages WHERE source_engine = 'antigravity' AND estimated_tokens IS NULL`)
+      .prepare(
+        `SELECT m.id, m.content, m.thought, m.tool_calls, m.tool_results
+         FROM messages m
+         WHERE m.estimated_tokens IS NULL AND m.usage IS NULL
+           AND (m.source_engine = 'antigravity'
+                OR m.thread_id LIKE 'chatgpt-export%'
+                OR m.thread_id LIKE 'claude-export%')`,
+      )
       .all() as any[];
     if (rows.length === 0) return;
     const update = this.raw.prepare('UPDATE messages SET estimated_tokens = ? WHERE id = ?');
     const tx = this.raw.transaction(() => {
       for (const row of rows) {
         const text = [row.content, row.thought, row.tool_calls, row.tool_results].filter(Boolean).join('\n');
-        update.run(text ? encode(text).length : 0, row.id);
+        update.run(text ? countTokens(text) : 0, row.id);
       }
     });
     tx();

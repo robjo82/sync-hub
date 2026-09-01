@@ -114,7 +114,11 @@ export function estimateCostUsd(model: string | undefined, usage: TokenUsage | u
   if (!model || !usage) return null;
   const pricing = resolvePricing(model);
   if (!pricing) return null;
+  return costFromPricing(pricing, usage);
+}
 
+/** The cost formula itself, shared so an interpolated rate is applied exactly like a published one. */
+export function costFromPricing(pricing: ModelPricing, usage: TokenUsage): number {
   let cost = (usage.inputTokens * pricing.inputPerMTok) / 1_000_000 + (usage.outputTokens * pricing.outputPerMTok) / 1_000_000;
   if (usage.cacheCreation5mInputTokens && pricing.cacheWrite5mPerMTok) {
     cost += (usage.cacheCreation5mInputTokens * pricing.cacheWrite5mPerMTok) / 1_000_000;
@@ -129,6 +133,65 @@ export function estimateCostUsd(model: string | undefined, usage: TokenUsage | u
     cost += (usage.cachedInputTokens * pricing.cachedInputPerMTok) / 1_000_000;
   }
   return cost;
+}
+
+/**
+ * A rate for a model with no published price, derived from its immediate neighbours in the same
+ * family — gpt-5.3-codex sits between gpt-5.2 (1.75/14) and gpt-5.4 (2.50/15).
+ *
+ * Interpolation only, never extrapolation. There is no usable global trend to extend: across this
+ * very table OpenAI's flagship input rate rose 4× over the 5.x line while Claude Opus fell 3×, so
+ * projecting one shape onto everything would be wrong in both directions. Between two known
+ * adjacent versions of one family, the guess is bounded by real numbers on either side.
+ *
+ * Returns null when the model is outside the known range, which keeps it honestly uncounted
+ * rather than confidently wrong.
+ */
+export function interpolatePricing(model: string | undefined): ModelPricing | null {
+  if (!model) return null;
+  const target = parseFamilyVersion(model);
+  if (!target) return null;
+
+  let below: { version: number; pricing: ModelPricing } | null = null;
+  let above: { version: number; pricing: ModelPricing } | null = null;
+
+  for (const [name, pricing] of Object.entries(MODEL_PRICING)) {
+    const candidate = parseFamilyVersion(name);
+    if (!candidate || candidate.family !== target.family) continue;
+    if (candidate.version <= target.version && (!below || candidate.version > below.version)) below = { version: candidate.version, pricing };
+    if (candidate.version >= target.version && (!above || candidate.version < above.version)) above = { version: candidate.version, pricing };
+  }
+
+  if (!below || !above) return null;
+  if (below.version === above.version) return below.pricing;
+
+  const ratio = (target.version - below.version) / (above.version - below.version);
+  const mix = (a: number | undefined, b: number | undefined): number | undefined =>
+    a === undefined || b === undefined ? undefined : a + (b - a) * ratio;
+
+  return {
+    inputPerMTok: mix(below.pricing.inputPerMTok, above.pricing.inputPerMTok)!,
+    outputPerMTok: mix(below.pricing.outputPerMTok, above.pricing.outputPerMTok)!,
+    cachedInputPerMTok: mix(below.pricing.cachedInputPerMTok, above.pricing.cachedInputPerMTok),
+    cacheWrite5mPerMTok: mix(below.pricing.cacheWrite5mPerMTok, above.pricing.cacheWrite5mPerMTok),
+    cacheWrite1hPerMTok: mix(below.pricing.cacheWrite1hPerMTok, above.pricing.cacheWrite1hPerMTok),
+    cacheReadPerMTok: mix(below.pricing.cacheReadPerMTok, above.pricing.cacheReadPerMTok),
+  };
+}
+
+/**
+ * Splits `gpt-5.3-codex` into family `gpt` and version 5.3, so neighbours can be compared.
+ * A trailing qualifier (-codex, -pro, -mini) is deliberately dropped: it names a variant, and
+ * mixing tiers would interpolate a nano rate towards a pro one.
+ */
+function parseFamilyVersion(model: string): { family: string; version: number } | null {
+  const match = /^([a-z]+(?:-[a-z]+)*?)-(\d+)(?:[.-](\d+))?/.exec(model.toLowerCase());
+  if (!match) return null;
+  const [, family, major, minor] = match;
+  // Only plain versioned models take part: a qualifier means a different price tier entirely.
+  const rest = model.toLowerCase().slice(match[0].length);
+  if (rest && !/^-codex$/.test(rest)) return null;
+  return { family, version: Number(major) + (minor ? Number(minor) / 100 : 0) };
 }
 
 /** Whether a model has a published price at all — lets callers distinguish "$0" from "unknown". */
