@@ -248,6 +248,18 @@ export interface UserWithPasswordHash extends User {
   passwordHash: string;
 }
 
+export interface SecretScanResult {
+  /** Masked — the plaintext never leaves the server. */
+  masked: string;
+  kind: string;
+  confidence: 'certain' | 'probable';
+  occurrences: number;
+  messageIds: string[];
+  /** Surrounding text with the secret itself masked, so a reviewer can judge without it reappearing. */
+  sample: string;
+  field: string;
+}
+
 export interface ApiToken {
   id: string;
   userId: string;

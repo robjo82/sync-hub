@@ -3,7 +3,8 @@ import { useAuth } from '../context/AuthContext.js';
 import { UserManagementModal } from './UserManagementModal.js';
 import { SharedLinksListModal } from './SharedLinksListModal.js';
 import { ApiTokensModal } from './ApiTokensModal.js';
-import { Users, LogOut, ChevronDown, Globe, KeyRound } from 'lucide-react';
+import { SecretAuditModal } from './SecretAuditModal.js';
+import { Users, LogOut, ChevronDown, Globe, KeyRound, ShieldAlert } from 'lucide-react';
 
 export function UserMenu() {
   const { user, authEnabled, logout } = useAuth();
@@ -11,6 +12,7 @@ export function UserMenu() {
   const [usersModalOpen, setUsersModalOpen] = useState(false);
   const [sharesModalOpen, setSharesModalOpen] = useState(false);
   const [tokensModalOpen, setTokensModalOpen] = useState(false);
+  const [secretsModalOpen, setSecretsModalOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -85,6 +87,19 @@ export function UserMenu() {
             <button
               onClick={() => {
                 setMenuOpen(false);
+                setSecretsModalOpen(true);
+              }}
+              className="w-full px-3.5 py-2 text-left text-xs text-foreground hover:bg-muted flex items-center gap-2 transition-colors cursor-pointer"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-muted-foreground" />
+              Secrets dans l'historique
+            </button>
+          )}
+
+          {user.role === 'admin' && (
+            <button
+              onClick={() => {
+                setMenuOpen(false);
                 setUsersModalOpen(true);
               }}
               className="w-full px-3.5 py-2 text-left text-xs text-foreground hover:bg-muted flex items-center gap-2 transition-colors cursor-pointer"
@@ -111,6 +126,7 @@ export function UserMenu() {
 
       <UserManagementModal isOpen={usersModalOpen} onClose={() => setUsersModalOpen(false)} />
       <ApiTokensModal isOpen={tokensModalOpen} onClose={() => setTokensModalOpen(false)} />
+      <SecretAuditModal isOpen={secretsModalOpen} onClose={() => setSecretsModalOpen(false)} />
       {sharesModalOpen && <SharedLinksListModal onClose={() => setSharesModalOpen(false)} />}
     </div>
   );

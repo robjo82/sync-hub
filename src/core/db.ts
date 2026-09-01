@@ -3,7 +3,8 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { encode } from 'gpt-tokenizer';
-import type { AccountSyncOverview, ApiToken, Artifact, CreateSharedThreadInput, DeviceSession, EngineStats, EngineType, IngestEventStatus, IngestLogEntry, McpCallLogEntry, Memory, Message, Project, ProjectAliases, PullBatch, RemoteSyncState, Session, SharedThread, SyncOverview, Thread, TokenUsage, UpdateSharedThreadInput, User, UserRole, UserWithPasswordHash } from '../types.js';
+import { scanText, maskSecret } from './secret-scan.js';
+import type { AccountSyncOverview, ApiToken, Artifact, CreateSharedThreadInput, DeviceSession, EngineStats, EngineType, IngestEventStatus, IngestLogEntry, McpCallLogEntry, Memory, Message, Project, ProjectAliases, PullBatch, RemoteSyncState, SecretScanResult, Session, SharedThread, SyncOverview, Thread, TokenUsage, UpdateSharedThreadInput, User, UserRole, UserWithPasswordHash } from '../types.js';
 
 export interface UsageScope {
   projectId?: string;
@@ -293,6 +294,24 @@ const EXPECTED_COLUMNS: Array<{ table: string; column: string; definition: strin
 ];
 
 const DEFAULT_CATEGORIES = ['ekonum', 'client', 'perso'];
+
+
+/**
+ * Masks every credential in an excerpt, not only the one being reported.
+ *
+ * The context window around a finding routinely contains a second secret — an Authorization
+ * header next to a URL, two keys in one env block. Masking only the reported value would leave
+ * the others printed in full on the very screen built to stop that happening.
+ */
+function maskEverySecret(excerpt: string, reported: string): string {
+  let out = excerpt;
+  const values = new Set<string>([reported, ...scanText(excerpt).map((f) => f.value)]);
+  for (const value of [...values].sort((a, b) => b.length - a.length)) {
+    if (!value) continue;
+    out = out.split(value).join(`«${maskSecret(value)}»`);
+  }
+  return out;
+}
 
 export class Db {
   readonly raw: Database.Database;
@@ -1832,6 +1851,117 @@ export class Db {
       permission: r.permission,
       createdAt: r.created_at,
     }));
+  }
+
+  /**
+   * Walks the corpus looking for credentials, grouped by the secret itself rather than by message.
+   *
+   * Grouped because the same token typically appears dozens of times — 995 occurrences across 19
+   * distinct values on this store — and a reviewer decides about a credential once, not once per
+   * message. Read-only: nothing is changed until redactSecret is called with an explicit value.
+   */
+  async scanForSecrets(onProgress?: (scanned: number) => void): Promise<SecretScanResult[]> {
+    // Paged rather than iterated. better-sqlite3 keeps the connection busy for the whole life of
+    // an iterator, so yielding mid-iteration lets ingestion hit the same connection and throw
+    // "database connection is busy" — which crashed the daemon outright when it happened here.
+    // A page is a query that finishes before we hand the loop back.
+    const PAGE = 500;
+    const page = this.raw.prepare(
+      `SELECT rowid AS rid, id, content, thought, tool_calls, tool_results FROM messages WHERE rowid > ? ORDER BY rowid LIMIT ?`,
+    );
+    const groups = new Map<string, SecretScanResult>();
+
+    let scanned = 0;
+    let cursor = 0;
+    for (;;) {
+      const rows = page.all(cursor, PAGE) as any[];
+      if (rows.length === 0) break;
+      cursor = rows[rows.length - 1].rid;
+
+      for (const row of rows) {
+        scanned++;
+        for (const [field, text] of [
+        ['content', row.content],
+        ['thought', row.thought],
+        ['tool_calls', row.tool_calls],
+        ['tool_results', row.tool_results],
+      ] as const) {
+        if (!text) continue;
+        for (const finding of scanText(text)) {
+          const existing = groups.get(finding.value);
+          if (existing) {
+            existing.occurrences++;
+            if (!existing.messageIds.includes(row.id) && existing.messageIds.length < 200) existing.messageIds.push(row.id);
+            continue;
+          }
+          groups.set(finding.value, {
+            masked: maskSecret(finding.value),
+            kind: finding.kind,
+            confidence: finding.confidence,
+            occurrences: 1,
+            messageIds: [row.id],
+            // Enough surrounding text to judge, with the secret itself masked out: a review screen
+            // that reprints credentials in full has simply moved the leak somewhere else.
+            sample: maskEverySecret(text.slice(Math.max(0, finding.start - 60), finding.end + 30), finding.value)
+              .replace(/\s+/g, ' ')
+              .trim(),
+            field,
+          });
+          }
+        }
+      }
+
+      // Thirteen patterns over hundreds of megabytes is minutes of CPU on one thread. Without
+      // this the dashboard is frozen for the duration — measured at 180s on this store.
+      onProgress?.(scanned);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+
+    return [...groups.values()].sort(
+      (a, b) => (a.confidence === b.confidence ? b.occurrences - a.occurrences : a.confidence === 'certain' ? -1 : 1),
+    );
+  }
+
+  /**
+   * Replaces one credential everywhere it appears, across every field and the search index.
+   *
+   * Takes the literal value rather than a finding id: the caller already holds it, and matching on
+   * the value is what guarantees no occurrence is missed because a scan went stale in between.
+   * Irreversible by design — the point is that the secret stops existing here.
+   */
+  redactSecret(value: string): { messagesChanged: number; occurrences: number } {
+    if (!value) return { messagesChanged: 0, occurrences: 0 };
+    const rows = this.raw
+      .prepare(
+        `SELECT id, content, thought, tool_calls, tool_results FROM messages
+         WHERE instr(COALESCE(content,''), ?) > 0 OR instr(COALESCE(thought,''), ?) > 0
+            OR instr(COALESCE(tool_calls,''), ?) > 0 OR instr(COALESCE(tool_results,''), ?) > 0`,
+      )
+      .all(value, value, value, value) as any[];
+
+    let messagesChanged = 0;
+    let occurrences = 0;
+    const update = this.raw.prepare(
+      `UPDATE messages SET content = ?, thought = ?, tool_calls = ?, tool_results = ? WHERE id = ?`,
+    );
+
+    this.raw.transaction(() => {
+      for (const row of rows) {
+        const replaced = ['content', 'thought', 'tool_calls', 'tool_results'].map((field) => {
+          const text: string | null = row[field];
+          if (!text || !text.includes(value)) return text;
+          occurrences += text.split(value).length - 1;
+          return text.split(value).join('[secret retiré]');
+        });
+        update.run(replaced[0], replaced[1], replaced[2], replaced[3], row.id);
+        // The search index holds its own copy of the content — leaving it would keep the secret
+        // findable by typing it into the search box.
+        this.syncMessageFts(row.id, (replaced[0] as string | null) ?? '');
+        messagesChanged++;
+      }
+    })();
+
+    return { messagesChanged, occurrences };
   }
 
   createApiToken(token: { id?: string; userId: string; tokenHash: string; name: string }): ApiToken {

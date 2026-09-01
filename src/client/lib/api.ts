@@ -1,23 +1,4 @@
-import type {
-  Artifact,
-  AuthStatus,
-  Category,
-  CreateSharedThreadInput,
-  Memory,
-  Message,
-  Project,
-  PublicSharedThreadData,
-  PullResult,
-  RemoteSyncState,
-  SharedThread,
-  SyncOverview,
-  SyncStats,
-  Thread,
-  UpdateSharedThreadInput,
-  User,
-  UserRole,
-  WebSocketEvent,
-} from '../../types.js';
+import type { Artifact, AuthStatus, Category, CreateSharedThreadInput, Memory, Message, Project, PublicSharedThreadData, PullResult, RemoteSyncState, SecretScanResult, SharedThread, SyncOverview, SyncStats, Thread, UpdateSharedThreadInput, User, UserRole, WebSocketEvent } from '../../types.js';
 import type { CostSummary } from '../../core/cost.js';
 
 export interface ApiTokenSummary {
@@ -88,6 +69,18 @@ export const api = {
 
   // Machine tokens — what a sync-hub daemon authenticates with. The plaintext comes back only
   // from create(); afterwards the server has nothing but its hash to return.
+  scanSecrets: () =>
+    jsonFetch<{ status: 'running' | 'done'; scanned: number; results: SecretScanResult[]; finishedAt?: string }>(
+      '/api/secrets/scan',
+    ),
+  restartSecretScan: () => jsonFetch<{ ok: true }>('/api/secrets/scan/restart', { method: 'POST' }),
+  redactSecret: (value: string) =>
+    jsonFetch<{ ok: true; messagesChanged: number; occurrences: number }>('/api/secrets/redact', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value }),
+    }),
+
   tokens: () => jsonFetch<ApiTokenSummary[]>('/api/tokens'),
   createToken: (name: string) =>
     jsonFetch<{ id: string; name: string; createdAt: string; token: string }>('/api/tokens', {

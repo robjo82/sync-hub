@@ -38,6 +38,7 @@ import type {
   PullBatch,
   PushBatch,
   PushResult,
+  SecretScanResult,
   SyncOverview,
   SyncStats,
   User,
@@ -421,6 +422,70 @@ export function createApp(deps: AppDeps): FastifyInstance {
 
     deps.onEnrol(hubUrl, token);
     return { ok: true, hubUrl };
+  });
+
+  /**
+   * Credential audit of the corpus. Admin-only: it lists, in one place, every secret sitting in
+   * the store — a map worth having, and worth not handing to everyone with an account.
+   */
+  // Kept in memory rather than persisted: a completed scan is a list of where credentials live,
+  // which is not something to write to disk next to the credentials themselves.
+  interface SecretScanJob {
+    status: 'running' | 'done';
+    scanned: number;
+    results: SecretScanResult[];
+    finishedAt?: string;
+  }
+  let secretScan: SecretScanJob | null = null;
+
+  app.get('/api/secrets/scan', async (req, reply) => {
+    if (req.user?.role !== 'admin') return reply.code(403).send({ error: 'forbidden', message: 'Accès administrateur requis' });
+
+    if (!secretScan) {
+      // A full pass is minutes of CPU on a real corpus, so it runs as a job and the client polls.
+      // Answering it inline would hold an HTTP request open for three minutes and time out first.
+      const job: SecretScanJob = { status: 'running', scanned: 0, results: [] };
+      secretScan = job;
+      void db
+        .scanForSecrets((scanned) => {
+          job.scanned = scanned;
+        })
+        .then((results) => {
+          job.results = results;
+          job.status = 'done';
+          job.finishedAt = new Date().toISOString();
+        })
+        .catch((err) => {
+          console.error('secret scan failed', err);
+          secretScan = null;
+        });
+    }
+    return secretScan;
+  });
+
+  /** Discards a finished scan so the next GET starts a fresh one. */
+  app.post('/api/secrets/scan/restart', async (req, reply) => {
+    if (req.user?.role !== 'admin') return reply.code(403).send({ error: 'forbidden', message: 'Accès administrateur requis' });
+    secretScan = null;
+    return { ok: true };
+  });
+
+  /**
+   * Removes one credential from every message and from the search index.
+   *
+   * Takes the plaintext, which the caller pastes back deliberately: the scan never returns it, so
+   * redacting requires holding the secret already. That is the friction we want on an irreversible
+   * operation against verbatim history — a mis-click cannot destroy a conversation.
+   */
+  app.post<{ Body: { value?: string } }>('/api/secrets/redact', async (req, reply) => {
+    if (req.user?.role !== 'admin') return reply.code(403).send({ error: 'forbidden', message: 'Accès administrateur requis' });
+    const value = req.body?.value ?? '';
+    if (value.length < 8) return reply.code(400).send({ error: 'invalid_value', message: 'Valeur trop courte pour être un secret' });
+
+    const result = db.redactSecret(value);
+    secretScan = null; // the list it produced is now stale by construction
+    broadcast({ type: 'stats_updated', data: computeStats(deps) });
+    return { ok: true, ...result };
   });
 
   // --- Project sharing between colleagues. Only the owner may hand a project out: a share does
