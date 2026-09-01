@@ -68,6 +68,15 @@ launchctl load "$PLIST_PATH"
 
 echo "sync-hub installé comme service (${LABEL})."
 echo "Dashboard : http://127.0.0.1:4000"
+
+# Sans jeton la synchro distante ne démarre simplement pas — silencieusement, par conception.
+# Le dire ici évite qu'un nouvel arrivant croie être connecté au hub alors qu'il travaille en local.
+if ! security find-generic-password -s "sync-hub-remote-token" >/dev/null 2>&1; then
+  echo
+  echo "!  Cette machine n'est pas encore enrolee aupres d'un hub :"
+  echo "   tes conversations restent en local et ne sont pas sauvegardees a distance."
+  echo "   Pour l'enroler : ./scripts/enroll.sh"
+fi
 echo "Logs      : ${LOG_DIR}/service.log (et service_err.log)"
 echo "Arrêter   : launchctl unload ${PLIST_PATH}"
 echo "Désinstaller complètement : scripts/uninstall_service.sh"

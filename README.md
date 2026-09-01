@@ -31,12 +31,45 @@ git clone <url-de-ce-repo>
 cd sync-hub
 npm install
 npm run build
-./scripts/install_service.sh   # installe un service launchd macOS (démarre à la connexion)
+./scripts/enroll.sh            # rattache la machine au hub d'équipe (voir ci-dessous)
+./scripts/install_service.sh   # service launchd macOS, démarre à la connexion
 ```
 
-Le dashboard est servi sur `http://127.0.0.1:4000` (local uniquement par défaut).
+Le dashboard est servi sur `http://127.0.0.1:4000` (local uniquement par défaut). Au premier
+lancement il affiche les applications IA détectées sur la machine, l'état d'enrôlement et où
+déposer les archives cloud.
 
 Pour désinstaller : `./scripts/uninstall_service.sh`.
+
+## Rejoindre le hub d'équipe
+
+Chaque personne installe sync-hub sur sa propre machine. Le démon local lit ce que les outils IA
+ont déjà écrit sur le disque, puis pousse vers un hub commun qui sert de sauvegarde et de point de
+partage. Rien n'y est visible par les autres tant que le projet n'a pas été explicitement partagé.
+
+1. **Se faire créer un compte** sur le hub par un administrateur (menu compte → *Gérer les
+   utilisateurs*).
+2. **Créer un jeton d'appareil** : se connecter au hub, menu compte → *Jetons d'appareil*, nommer
+   la machine. Le jeton n'est affiché qu'une fois.
+3. **Enrôler la machine** : `./scripts/enroll.sh`. Le script vérifie le jeton auprès du hub avant
+   de le ranger dans le trousseau macOS — il n'est jamais écrit dans un fichier ni passé en
+   argument de commande, où l'historique du shell le garderait.
+
+Un jeton par machine : perdre un portable se règle en révoquant son jeton, sans toucher à ceux des
+autres. Une machine non enrôlée fonctionne normalement en local, simplement sans sauvegarde
+distante — l'installateur le signale plutôt que de laisser croire le contraire.
+
+### Partager un projet
+
+Depuis l'arborescence, l'icône de partage sur un projet, puis l'email du collègue. Le partage donne
+la lecture ; seul le propriétaire peut partager, et il peut retirer l'accès à tout moment. Pour
+quelqu'un sans compte, les liens publics par conversation restent la bonne option.
+
+### Conversations cloud
+
+Claude.ai et ChatGPT ne stockent rien sur la machine : leur historique n'arrive que par un export.
+Demander l'archive dans les réglages de chaque outil, puis déposer le `.zip` dans l'onglet
+*Synchronisation & Appareils* (ou depuis l'écran d'accueil au premier lancement).
 
 ### Variables d'environnement (toutes optionnelles)
 
@@ -47,6 +80,10 @@ Pour désinstaller : `./scripts/uninstall_service.sh`.
 | `SYNC_HUB_IMPORTS_DIR`     | `<repo>/imports`           | Dossier des exports bulk (ChatGPT, Claude.ai) |
 | `PORT`                     | `4000`                    | Port du dashboard/API                    |
 | `HOST`                     | `127.0.0.1`                | Interface d'écoute (reste local par défaut) |
+| `SYNC_HUB_REMOTE_URL`      | *(aucun)*                 | Hub d'équipe vers lequel pousser/tirer |
+| `SYNC_HUB_REMOTE_TOKEN`    | *(trousseau)*             | Jeton d'appareil — normalement lu du trousseau par `run_daemon.sh`, pas défini à la main |
+| `SYNC_HUB_DISABLE_LOCAL_INGEST` | `0`                  | `1` sur le hub : il reçoit, il ne scanne aucun fichier |
+| `SYNC_HUB_AUTH_DISABLED`   | `0`                       | `1` pour désactiver l'authentification (instance mono-utilisateur) |
 
 ## Connecter le serveur MCP
 

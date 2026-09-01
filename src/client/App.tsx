@@ -4,6 +4,7 @@ import { UNASSIGNED_PROJECT_ID } from '../types.js';
 import { api, connectSocket } from './lib/api.js';
 import { Header } from './components/Header.js';
 import { ProjectTree, type SelectedItem } from './components/ProjectTree.js';
+import { WelcomeChecklist } from './components/WelcomeChecklist.js';
 import { ChatView } from './components/ChatView.js';
 import { DocumentViewer } from './components/DocumentViewer.js';
 import { CoverageView } from './components/CoverageView.js';
@@ -160,8 +161,13 @@ function MainDashboard() {
               )}
               {(selected?.kind === 'memory' || selected?.kind === 'artifact') && <DocumentViewer document={selected} />}
               {!selected && (
-                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                  Sélectionne un fil, une mémoire ou un artefact dans l'arbre.
+                <div className="h-full overflow-y-auto">
+                  {/* Renders nothing once the machine is set up and carrying data, so the usual
+                      empty panel comes back for everyday use. */}
+                  <WelcomeChecklist />
+                  <div className="flex items-center justify-center p-6 text-sm text-muted-foreground">
+                    Sélectionne un fil, une mémoire ou un artefact dans l'arbre.
+                  </div>
                 </div>
               )}
             </main>

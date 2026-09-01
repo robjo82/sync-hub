@@ -35,7 +35,7 @@ const KNOWN_ENGINES: { key: EngineType; label: string; colorClass: string }[] = 
 
 type UploadState = { status: 'idle' } | { status: 'uploading' } | { status: 'done'; message: string } | { status: 'error'; message: string };
 
-function ImportDropZone({ tool, label, onImported }: { tool: 'claude' | 'chatgpt'; label: string; onImported: () => void }) {
+export function ImportDropZone({ tool, label, onImported }: { tool: 'claude' | 'chatgpt'; label: string; onImported: () => void }) {
   const [state, setState] = useState<UploadState>({ status: 'idle' });
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
