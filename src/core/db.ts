@@ -224,6 +224,20 @@ CREATE TABLE IF NOT EXISTS api_tokens (
 CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash);
 CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
 
+-- Who, besides its owner, may read a project. Distinct from shared_threads, which mints a public
+-- link for one conversation to someone with no account: this grants a named colleague standing
+-- access to a whole project. Project-grained on purpose — a thread belongs to exactly one
+-- project, so threads and messages inherit visibility by join and need no column of their own.
+CREATE TABLE IF NOT EXISTS project_shares (
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  permission TEXT NOT NULL DEFAULT 'read',
+  created_at TEXT NOT NULL,
+  created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  PRIMARY KEY (project_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_project_shares_user ON project_shares(user_id);
+
 -- Shared threads for public/external read-only link access.
 CREATE TABLE IF NOT EXISTS shared_threads (
   id TEXT PRIMARY KEY,
@@ -1758,8 +1772,66 @@ export class Db {
    * so every read path gains them at once rather than each growing its own half-right condition.
    */
   visibleProjectIds(userId: string): string[] {
-    const rows = this.raw.prepare(`SELECT id FROM projects WHERE owner_user_id = ?`).all(userId) as { id: string }[];
+    const rows = this.raw
+      .prepare(
+        `SELECT id FROM projects WHERE owner_user_id = ?
+         UNION
+         SELECT project_id FROM project_shares WHERE user_id = ?`,
+      )
+      .all(userId, userId) as { id: string }[];
     return rows.map((r) => r.id);
+  }
+
+  /** True when the user owns the project or it has been shared with them. */
+  canReadProject(userId: string, projectId: string): boolean {
+    const row = this.raw
+      .prepare(
+        `SELECT 1 AS ok FROM projects WHERE id = ? AND owner_user_id = ?
+         UNION
+         SELECT 1 AS ok FROM project_shares WHERE project_id = ? AND user_id = ?
+         LIMIT 1`,
+      )
+      .get(projectId, userId, projectId, userId) as { ok: number } | undefined;
+    return row !== undefined;
+  }
+
+  /** Only the owner may hand a project out — a share does not confer the right to re-share. */
+  ownsProject(userId: string, projectId: string): boolean {
+    const row = this.raw.prepare(`SELECT 1 AS ok FROM projects WHERE id = ? AND owner_user_id = ?`).get(projectId, userId) as
+      | { ok: number }
+      | undefined;
+    return row !== undefined;
+  }
+
+  shareProject(projectId: string, userId: string, createdByUserId: string, permission: 'read' | 'write' = 'read'): void {
+    this.raw
+      .prepare(
+        `INSERT INTO project_shares (project_id, user_id, permission, created_at, created_by_user_id)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(project_id, user_id) DO UPDATE SET permission = excluded.permission`,
+      )
+      .run(projectId, userId, permission, new Date().toISOString(), createdByUserId);
+  }
+
+  unshareProject(projectId: string, userId: string): boolean {
+    return this.raw.prepare(`DELETE FROM project_shares WHERE project_id = ? AND user_id = ?`).run(projectId, userId).changes > 0;
+  }
+
+  listProjectShares(projectId: string): { userId: string; email: string; displayName: string; permission: string; createdAt: string }[] {
+    const rows = this.raw
+      .prepare(
+        `SELECT s.user_id, u.email, u.display_name, s.permission, s.created_at
+         FROM project_shares s JOIN users u ON u.id = s.user_id
+         WHERE s.project_id = ? ORDER BY u.display_name`,
+      )
+      .all(projectId) as any[];
+    return rows.map((r) => ({
+      userId: r.user_id,
+      email: r.email,
+      displayName: r.display_name,
+      permission: r.permission,
+      createdAt: r.created_at,
+    }));
   }
 
   createApiToken(token: { id?: string; userId: string; tokenHash: string; name: string }): ApiToken {

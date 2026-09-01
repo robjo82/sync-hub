@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
@@ -382,6 +382,39 @@ export function createApp(deps: AppDeps): FastifyInstance {
 
   // --- Users Management Routes ---
 
+  // --- Project sharing between colleagues. Only the owner may hand a project out: a share does
+  // not confer the right to re-share, or access would spread without the owner ever knowing.
+  app.get<{ Params: { id: string } }>('/api/projects/:id/shares', async (req, reply) => {
+    if (!req.user) return reply.code(401).send({ error: 'unauthorized' });
+    if (denyIfProjectHidden(req, reply, req.params.id)) return;
+    return db.listProjectShares(req.params.id);
+  });
+
+  app.post<{ Params: { id: string }; Body: { email?: string; permission?: 'read' | 'write' } }>(
+    '/api/projects/:id/shares',
+    async (req, reply) => {
+      if (!req.user) return reply.code(401).send({ error: 'unauthorized' });
+      if (!db.ownsProject(req.user.id, req.params.id)) return reply.code(404).send({ error: 'not_found' });
+
+      const email = (req.body?.email ?? '').trim();
+      const target = email ? db.getUserByEmail(email) : undefined;
+      if (!target) return reply.code(404).send({ error: 'user_not_found', message: 'Aucun compte avec cet email' });
+      if (target.id === req.user.id) {
+        return reply.code(400).send({ error: 'cannot_share_with_self', message: 'Ce projet vous appartient déjà' });
+      }
+
+      db.shareProject(req.params.id, target.id, req.user.id, req.body?.permission === 'write' ? 'write' : 'read');
+      return { ok: true, shares: db.listProjectShares(req.params.id) };
+    },
+  );
+
+  app.post<{ Params: { id: string; userId: string } }>('/api/projects/:id/shares/:userId/revoke', async (req, reply) => {
+    if (!req.user) return reply.code(401).send({ error: 'unauthorized' });
+    if (!db.ownsProject(req.user.id, req.params.id)) return reply.code(404).send({ error: 'not_found' });
+    if (!db.unshareProject(req.params.id, req.params.userId)) return reply.code(404).send({ error: 'not_found' });
+    return { ok: true, shares: db.listProjectShares(req.params.id) };
+  });
+
   // --- Machine tokens: what a sync-hub daemon authenticates with. Each user manages their own;
   // there is no admin gate, because a token only ever grants that user's own access.
   app.get('/api/tokens', async (req, reply) => {
@@ -505,8 +538,42 @@ export function createApp(deps: AppDeps): FastifyInstance {
 
   app.get('/api/stats', async () => computeStats(deps));
 
+  /**
+   * The set of project ids this request may see, or null when visibility does not apply.
+   *
+   * null is the local single-user case: the dashboard runs with no accounts, the hook hands every
+   * request DEFAULT_LOCAL_USER, nothing is owned, and filtering would show an empty screen on top
+   * of a full database. On the hub, where accounts exist, every read goes through this.
+   */
+  function visibleScope(req: FastifyRequest): Set<string> | null {
+    if (req.authVia === 'authDisabled' || !req.user) return req.user ? null : new Set();
+    if (req.user.id === DEFAULT_LOCAL_USER.id) return null;
+    return new Set(db.visibleProjectIds(req.user.id));
+  }
+
+  /** Same guard for a thread, resolved through the project it belongs to. */
+  function denyIfThreadHidden(req: FastifyRequest, reply: FastifyReply, threadId: string): boolean {
+    const scope = visibleScope(req);
+    if (scope === null) return false;
+    const thread = db.getThread(threadId);
+    // A thread that does not exist and one the caller may not see answer identically on purpose.
+    if (thread && scope.has(thread.projectId)) return false;
+    reply.code(404).send({ error: 'not_found' });
+    return true;
+  }
+
+  /** Guard for a single project: 404 rather than 403, so a probe cannot enumerate what exists. */
+  function denyIfProjectHidden(req: FastifyRequest, reply: FastifyReply, projectId: string): boolean {
+    const scope = visibleScope(req);
+    if (scope === null || scope.has(projectId)) return false;
+    reply.code(404).send({ error: 'not_found' });
+    return true;
+  }
+
   app.get<{ Querystring: { includeArchived?: string } }>('/api/projects', async (req) => {
-    const projects = db.getProjects();
+    const scope = visibleScope(req);
+    let projects = db.getProjects();
+    if (scope !== null) projects = projects.filter((p) => scope.has(p.id));
     return req.query.includeArchived === 'true' ? projects : projects.filter((p) => !p.archived);
   });
 
@@ -523,7 +590,11 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const query = (req.query.q ?? '').trim();
     if (!query) return [];
     const limit = req.query.limit ? Number(req.query.limit) : 50;
-    return db.searchTranscripts(query, limit).map((m) => ({
+    // Search reads across every project at once, so without this it walks straight around the
+    // per-project guards: a colleague could find a client conversation by keyword.
+    const scope = visibleScope(req);
+    const hits = db.searchTranscripts(query, limit).filter((m) => scope === null || scope.has(m.projectId));
+    return hits.map((m) => ({
       message: m,
       projectName: db.getProject(m.projectId)?.name ?? m.projectId,
       threadTitle: db.getThread(m.threadId)?.title ?? m.threadId,
@@ -558,21 +629,30 @@ export function createApp(deps: AppDeps): FastifyInstance {
   );
 
   app.get<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
+    if (denyIfProjectHidden(req, reply, req.params.id)) return;
     const project = db.getProject(req.params.id);
     if (!project) return reply.code(404).send({ error: 'not_found' });
     return project;
   });
 
-  app.get<{ Params: { id: string }; Querystring: { includeArchived?: string } }>('/api/projects/:id/threads', async (req) => {
+  app.get<{ Params: { id: string }; Querystring: { includeArchived?: string } }>('/api/projects/:id/threads', async (req, reply) => {
+    if (denyIfProjectHidden(req, reply, req.params.id)) return;
     const threads = db.getThreadsForProject(req.params.id);
     return req.query.includeArchived === 'true' ? threads : threads.filter((t) => t.status !== 'archived');
   });
 
-  app.get<{ Params: { id: string } }>('/api/projects/:id/memories', async (req) => db.getMemoriesForProject(req.params.id));
+  app.get<{ Params: { id: string } }>('/api/projects/:id/memories', async (req, reply) => {
+    if (denyIfProjectHidden(req, reply, req.params.id)) return;
+    return db.getMemoriesForProject(req.params.id);
+  });
 
-  app.get<{ Params: { id: string } }>('/api/projects/:id/artifacts', async (req) => db.getArtifactsForProject(req.params.id));
+  app.get<{ Params: { id: string } }>('/api/projects/:id/artifacts', async (req, reply) => {
+    if (denyIfProjectHidden(req, reply, req.params.id)) return;
+    return db.getArtifactsForProject(req.params.id);
+  });
 
   app.get<{ Params: { id: string } }>('/api/threads/:id', async (req, reply) => {
+    if (denyIfThreadHidden(req, reply, req.params.id)) return;
     const thread = db.getThread(req.params.id);
     if (!thread) return reply.code(404).send({ error: 'not_found' });
     return thread;
@@ -581,6 +661,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
   app.get<{ Params: { id: string }; Querystring: { offset?: string; limit?: string } }>(
     '/api/threads/:id/messages',
     async (req, reply) => {
+      if (denyIfThreadHidden(req, reply, req.params.id)) return;
       const thread = db.getThread(req.params.id);
       if (!thread) return reply.code(404).send({ error: 'not_found' });
 
@@ -597,6 +678,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
   );
 
   app.get<{ Params: { id: string } }>('/api/threads/:id/outline', async (req, reply) => {
+    if (denyIfThreadHidden(req, reply, req.params.id)) return;
     const thread = db.getThread(req.params.id);
     if (!thread) return reply.code(404).send({ error: 'not_found' });
     return db.getThreadOutline(req.params.id);
