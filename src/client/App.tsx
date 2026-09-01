@@ -197,7 +197,11 @@ function AppContent() {
     );
   }
 
-  if (setupRequired) {
+  // Only when authentication is actually in play. A local instance runs with no accounts on
+  // purpose — the machine's own login is the boundary, and the SQLite file is readable anyway —
+  // so forcing an account here would put a login screen in front of a single-user personal tool
+  // without protecting anything. The hub, which has accounts, still gets the setup flow.
+  if (setupRequired && authEnabled) {
     return <SetupView />;
   }
 

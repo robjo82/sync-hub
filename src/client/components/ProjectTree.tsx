@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
-import { Archive, Check, ChevronDown, ChevronRight, Download, FileText, GitMerge, GripVertical, Pencil, Settings, StickyNote, Tag, Trash2, X } from 'lucide-react';
+import { Archive, Check, ChevronDown, ChevronRight, Download, FileText, GitMerge, GripVertical, Pencil, Settings, Share2, StickyNote, Tag, Trash2, X } from 'lucide-react';
 import type { Artifact, Category, Memory, Project, Thread } from '../../types.js';
-import { api } from '../lib/api.js';
+import { api, type ProjectShare } from '../lib/api.js';
 
 const ENGINE_DOT: Record<string, string> = {
   'claude-code': 'bg-engine-claude',
@@ -376,6 +376,81 @@ function DeletePanel({ project, onConfirm, onCancel }: { project: Project; onCon
   );
 }
 
+function ShareProjectPanel({ project, onClose }: { project: Project; onClose: () => void }) {
+  const [shares, setShares] = useState<ProjectShare[]>([]);
+  const [email, setEmail] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.projectShares(project.id).then(setShares).catch(() => setShares([]));
+  }, [project.id]);
+
+  const add = async () => {
+    if (!email.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.shareProject(project.id, email.trim());
+      setShares(res.shares);
+      setEmail('');
+    } catch {
+      // The server answers 404 both for an unknown account and for a project the caller does not
+      // own; neither is worth spelling out differently to the person typing.
+      setError("Aucun compte avec cet email, ou projet non partageable par vous");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mb-1 ml-5 rounded-lg border border-border bg-card p-2 shadow-sm" onClick={(e) => e.stopPropagation()}>
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-[11px] font-medium text-muted-foreground">Partager « {project.name} »</span>
+        <button title="Fermer" onClick={onClose} className={panelCancelClass}>
+          <X size={14} />
+        </button>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && add()}
+          placeholder="email du collègue"
+          className="flex-1 rounded border border-border bg-card px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground"
+        />
+        <button onClick={add} disabled={busy || !email.trim()} className="rounded bg-accent-muted px-2 py-1 text-xs text-accent-foreground disabled:opacity-40">
+          Partager
+        </button>
+      </div>
+      {error && <p className="mt-1 text-[11px] text-destructive">{error}</p>}
+      {shares.length > 0 && (
+        <ul className="mt-1.5 space-y-1">
+          {shares.map((sh) => (
+            <li key={sh.userId} className="flex items-center justify-between text-[11px] text-foreground">
+              <span className="truncate">
+                {sh.displayName} <span className="text-muted-foreground">({sh.email})</span>
+              </span>
+              <button
+                onClick={async () => {
+                  const res = await api.revokeProjectShare(project.id, sh.userId);
+                  setShares(res.shares);
+                }}
+                className="ml-2 shrink-0 text-destructive hover:underline"
+              >
+                Retirer
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {shares.length === 0 && !error && (
+        <p className="mt-1 text-[11px] text-muted-foreground">Personne d'autre n'y a accès pour l'instant.</p>
+      )}
+    </div>
+  );
+}
+
 function ExportProjectPanel({ project, onClose }: { project: Project; onClose: () => void }) {
   return (
     <div className="mb-1 ml-5 flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-card p-1.5 shadow-sm" onClick={(e) => e.stopPropagation()}>
@@ -499,7 +574,7 @@ function ProjectNode({
 } & Omit<ProjectTreeProps, 'projects' | 'focusThreadId' | 'onFocusHandled'>) {
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<ProjectChildren | null>(null);
-  const [activePanel, setActivePanel] = useState<'rename' | 'category' | 'merge' | 'archive' | 'delete' | 'export' | null>(null);
+  const [activePanel, setActivePanel] = useState<'rename' | 'category' | 'merge' | 'archive' | 'delete' | 'export' | 'share' | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const threadRefs = useRef(new Map<string, HTMLDivElement>());
   const isFocusTarget = !!focusProjectId && project.id === focusProjectId;
@@ -542,6 +617,9 @@ function ProjectNode({
         <IconButton title="Exporter le projet (Markdown / JSON)" onClick={() => setActivePanel(activePanel === 'export' ? null : 'export')} className="hover:bg-accent-muted hover:text-accent">
           <Download size={13} />
         </IconButton>
+        <IconButton title="Partager avec un collègue" onClick={() => setActivePanel(activePanel === 'share' ? null : 'share')} className="hover:bg-accent-muted hover:text-accent">
+          <Share2 size={13} />
+        </IconButton>
         <IconButton title="Renommer" onClick={() => setActivePanel('rename')} className="hover:bg-muted hover:text-foreground">
           <Pencil size={13} />
         </IconButton>
@@ -562,6 +640,7 @@ function ProjectNode({
           <Trash2 size={13} />
         </IconButton>
       </div>
+      {activePanel === 'share' && <ShareProjectPanel project={project} onClose={() => setActivePanel(null)} />}
       {activePanel === 'export' && (
         <ExportProjectPanel
           project={project}

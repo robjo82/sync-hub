@@ -2,13 +2,15 @@ import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext.js';
 import { UserManagementModal } from './UserManagementModal.js';
 import { SharedLinksListModal } from './SharedLinksListModal.js';
-import { Users, LogOut, ChevronDown, Globe } from 'lucide-react';
+import { ApiTokensModal } from './ApiTokensModal.js';
+import { Users, LogOut, ChevronDown, Globe, KeyRound } from 'lucide-react';
 
 export function UserMenu() {
   const { user, authEnabled, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [usersModalOpen, setUsersModalOpen] = useState(false);
   const [sharesModalOpen, setSharesModalOpen] = useState(false);
+  const [tokensModalOpen, setTokensModalOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -68,6 +70,17 @@ export function UserMenu() {
             Liens partagés
           </button>
 
+          <button
+            onClick={() => {
+              setMenuOpen(false);
+              setTokensModalOpen(true);
+            }}
+            className="w-full px-3.5 py-2 text-left text-xs text-foreground hover:bg-muted flex items-center gap-2 transition-colors cursor-pointer"
+          >
+            <KeyRound className="w-3.5 h-3.5 text-muted-foreground" />
+            Jetons d'appareil
+          </button>
+
           {user.role === 'admin' && (
             <button
               onClick={() => {
@@ -97,6 +110,7 @@ export function UserMenu() {
       )}
 
       <UserManagementModal isOpen={usersModalOpen} onClose={() => setUsersModalOpen(false)} />
+      <ApiTokensModal isOpen={tokensModalOpen} onClose={() => setTokensModalOpen(false)} />
       {sharesModalOpen && <SharedLinksListModal onClose={() => setSharesModalOpen(false)} />}
     </div>
   );

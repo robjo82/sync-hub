@@ -20,6 +20,22 @@ import type {
 } from '../../types.js';
 import type { CostSummary } from '../../core/cost.js';
 
+export interface ApiTokenSummary {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  revokedAt?: string;
+}
+
+export interface ProjectShare {
+  userId: string;
+  email: string;
+  displayName: string;
+  permission: string;
+  createdAt: string;
+}
+
 export interface ThreadOutlineEntry {
   id: string;
   /** 0-based index in the full thread — the offset to load the window from. */
@@ -69,6 +85,27 @@ export const api = {
 
   // --- Users Management ---
   users: () => jsonFetch<User[]>('/api/users'),
+
+  // Machine tokens — what a sync-hub daemon authenticates with. The plaintext comes back only
+  // from create(); afterwards the server has nothing but its hash to return.
+  tokens: () => jsonFetch<ApiTokenSummary[]>('/api/tokens'),
+  createToken: (name: string) =>
+    jsonFetch<{ id: string; name: string; createdAt: string; token: string }>('/api/tokens', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    }),
+  revokeToken: (id: string) => jsonFetch<{ ok: true }>(`/api/tokens/${id}/revoke`, { method: 'POST' }),
+
+  projectShares: (projectId: string) => jsonFetch<ProjectShare[]>(`/api/projects/${projectId}/shares`),
+  shareProject: (projectId: string, email: string) =>
+    jsonFetch<{ ok: true; shares: ProjectShare[] }>(`/api/projects/${projectId}/shares`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    }),
+  revokeProjectShare: (projectId: string, userId: string) =>
+    jsonFetch<{ ok: true; shares: ProjectShare[] }>(`/api/projects/${projectId}/shares/${userId}/revoke`, { method: 'POST' }),
   createUser: (data: { email: string; displayName: string; password: string; role?: UserRole }) =>
     jsonFetch<User>('/api/users', {
       method: 'POST',
