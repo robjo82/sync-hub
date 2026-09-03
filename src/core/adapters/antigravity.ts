@@ -8,6 +8,7 @@ import type { ProjectRegistry } from '../registry.js';
 import { computeMessageHash } from '../hash.js';
 import { UNASSIGNED_PROJECT_ID, type Message, type MessageRole, type Thread, type ToolCall, type ToolResult } from '../../types.js';
 import { readJsonlFrom } from '../jsonl-tail.js';
+import { deriveThreadTitle } from '../thread-title.js';
 
 export const ANTIGRAVITY_BRAIN_ROOT = join(homedir(), '.gemini', 'antigravity', 'brain');
 export const ANTIGRAVITY_CLI_BRAIN_ROOT = join(homedir(), '.gemini', 'antigravity-cli', 'brain');
@@ -140,11 +141,7 @@ export function parseLine(rawLine: string, sessionId: string): ParsedLine | null
   return null;
 }
 
-function deriveTitle(firstUserContent: string | undefined, sessionId: string): string {
-  if (!firstUserContent) return `Session ${sessionId.slice(0, 8)}`;
-  const oneLine = firstUserContent.replace(/\s+/g, ' ').trim();
-  return oneLine.length > 80 ? `${oneLine.slice(0, 80)}…` : oneLine || `Session ${sessionId.slice(0, 8)}`;
-}
+const deriveTitle = deriveThreadTitle;
 
 /**
  * Full ingestion of one Antigravity session. Unlike Claude Code/Codex, there is no reliable real

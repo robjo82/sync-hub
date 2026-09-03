@@ -8,6 +8,7 @@ import { computeMessageHash } from '../hash.js';
 import { ensureChatGptProject, loadChatGptProjectNames } from './chatgpt-export.js';
 import { UNASSIGNED_PROJECT_ID, type Message, type MessageRole, type Thread, type ToolCall, type ToolResult, type TokenUsage } from '../../types.js';
 import { readJsonlFrom } from '../jsonl-tail.js';
+import { deriveThreadTitle } from '../thread-title.js';
 
 export const CLAUDE_CODE_STORAGE_ROOT = join(homedir(), '.claude', 'projects');
 
@@ -178,11 +179,7 @@ export function parseLine(rawLine: string): ParsedLine | null {
   };
 }
 
-function deriveTitle(firstUserContent: string | undefined, sessionId: string): string {
-  if (!firstUserContent) return `Session ${sessionId.slice(0, 8)}`;
-  const oneLine = firstUserContent.replace(/\s+/g, ' ').trim();
-  return oneLine.length > 80 ? `${oneLine.slice(0, 80)}…` : oneLine || `Session ${sessionId.slice(0, 8)}`;
-}
+const deriveTitle = deriveThreadTitle;
 
 /**
  * Claude Code lets a session carry a real title distinct from the raw first prompt — an

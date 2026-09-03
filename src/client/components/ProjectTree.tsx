@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
-import { Archive, Check, ChevronDown, ChevronRight, Download, FileText, GitMerge, GripVertical, Pencil, Settings, Share2, StickyNote, Tag, Trash2, X } from 'lucide-react';
+import { Archive, Check, ChevronDown, ChevronRight, Download, FileText, GitMerge, GripVertical, MoreHorizontal, Pencil, Settings, Share2, StickyNote, Tag, Trash2, X } from 'lucide-react';
 import type { Artifact, Category, Memory, Project, Thread } from '../../types.js';
 import { api, type ProjectShare } from '../lib/api.js';
 
@@ -38,6 +38,88 @@ interface ProjectChildren {
 // "prompt() is not supported." in at least one real environment sync-hub runs in). Every
 // destructive/edit action below is an inline panel instead, matching MergeProjectPanel's existing
 // pattern — no dependency on a native dialog actually being allowed to open.
+
+type ProjectPanel = 'export' | 'share' | 'rename' | 'category' | 'merge' | 'archive' | 'delete';
+
+/**
+ * The project row's actions, behind one button.
+ *
+ * There were seven icons sitting on every row — export, share, rename, categorise, merge, archive,
+ * delete — in a sidebar barely wide enough for the project's name, which was truncated to make
+ * room for them. Seven undifferentiated icons also give no sense of which are routine and which
+ * are irreversible: delete sat next to rename, the same size, one pixel apart.
+ *
+ * One button now, and a menu that groups them: everyday, occasional, then the destructive pair set
+ * apart below a rule.
+ */
+function ProjectActionsMenu({ onPick }: { onPick: (panel: ProjectPanel) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  const pick = (panel: ProjectPanel) => {
+    setOpen(false);
+    onPick(panel);
+  };
+
+  const item = (panel: ProjectPanel, icon: ReactNode, label: string, tone?: 'warning' | 'destructive') => (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        pick(panel);
+      }}
+      className={`flex w-full cursor-pointer items-center gap-2 px-4 py-2 text-left text-sm transition-colors ${
+        tone === 'destructive'
+          ? 'text-destructive hover:bg-destructive-muted'
+          : tone === 'warning'
+            ? 'text-warning hover:bg-warning-muted'
+            : 'text-foreground hover:bg-muted'
+      }`}
+    >
+      <span className="shrink-0 text-muted-foreground">{icon}</span>
+      {label}
+    </button>
+  );
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        title="Actions du projet"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((o) => !o);
+        }}
+        className={`ml-2 shrink-0 items-center rounded-xl p-2 text-muted-foreground hover:bg-muted hover:text-foreground ${
+          open ? 'flex' : 'hidden group-hover:flex'
+        }`}
+      >
+        <MoreHorizontal size={16} />
+      </button>
+      {open && (
+        <div className="absolute right-0 z-50 mt-2 w-64 overflow-hidden whitespace-nowrap rounded-xl border border-border bg-card py-2 shadow-lg">
+          {item('rename', <Pencil size={14} />, 'Renommer')}
+          {item('category', <Tag size={14} />, 'Catégoriser')}
+          <div className="my-2 border-t border-border" />
+          {item('share', <Share2 size={14} />, 'Partager avec un collègue')}
+          {item('export', <Download size={14} />, 'Exporter (Markdown / JSON)')}
+          {item('merge', <GitMerge size={14} />, 'Fusionner dans un autre projet')}
+          {/* Below the rule: the two that are hard or impossible to undo. */}
+          <div className="my-2 border-t border-border" />
+          {item('archive', <Archive size={14} />, 'Archiver', 'warning')}
+          {item('delete', <Trash2 size={14} />, 'Supprimer le projet', 'destructive')}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function IconButton({ title, onClick, className, children }: { title: string; onClick: () => void; className: string; children: ReactNode }) {
   return (
@@ -617,31 +699,7 @@ function ProjectNode({
           <span className="text-muted-foreground">{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
           <span className="truncate">{project.name}</span>
         </button>
-        <IconButton title="Exporter le projet (Markdown / JSON)" onClick={() => setActivePanel(activePanel === 'export' ? null : 'export')} className="hover:bg-accent-muted hover:text-accent">
-          <Download size={13} />
-        </IconButton>
-        <IconButton title="Partager avec un collègue" onClick={() => setActivePanel(activePanel === 'share' ? null : 'share')} className="hover:bg-accent-muted hover:text-accent">
-          <Share2 size={13} />
-        </IconButton>
-        <IconButton title="Renommer" onClick={() => setActivePanel('rename')} className="hover:bg-muted hover:text-foreground">
-          <Pencil size={13} />
-        </IconButton>
-        <IconButton title="Catégoriser" onClick={() => setActivePanel('category')} className="hover:bg-accent-muted hover:text-accent">
-          <Tag size={13} />
-        </IconButton>
-        <IconButton title="Fusionner dans un autre projet" onClick={() => setActivePanel('merge')} className="hover:bg-accent-muted hover:text-accent">
-          <GitMerge size={13} />
-        </IconButton>
-        <IconButton title="Archiver" onClick={() => setActivePanel('archive')} className="hover:bg-warning-muted hover:text-warning">
-          <Archive size={13} />
-        </IconButton>
-        <IconButton
-          title="Supprimer le projet (déplace le dossier vers la Corbeille)"
-          onClick={() => setActivePanel('delete')}
-          className="hover:bg-destructive-muted hover:text-destructive"
-        >
-          <Trash2 size={13} />
-        </IconButton>
+        <ProjectActionsMenu onPick={(panel) => setActivePanel(panel)} />
       </div>
       {activePanel === 'share' && <ShareProjectPanel project={project} onClose={() => setActivePanel(null)} />}
       {activePanel === 'export' && (

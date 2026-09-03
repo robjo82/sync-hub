@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import type { Db } from '../db.js';
 import type { ProjectRegistry } from '../registry.js';
 import { computeMessageHash } from '../hash.js';
+import { deriveThreadTitle } from '../thread-title.js';
 import { ensureChatGptProject, loadChatGptProjectNames } from './chatgpt-export.js';
 import { UNASSIGNED_PROJECT_ID, type Message, type MessageRole, type Thread, type ToolCall, type ToolResult, type TokenUsage } from '../../types.js';
 import { readJsonlFrom } from '../jsonl-tail.js';
@@ -323,12 +324,9 @@ function readSessionHeader(lines: string[]): SessionHeader | null {
 }
 
 function deriveTitle(header: SessionHeader, firstUserContent: string | undefined): string {
+  // A name Codex itself recorded beats anything derived from the text.
   if (header.threadName) return header.threadName;
-  if (firstUserContent) {
-    const oneLine = firstUserContent.replace(/\s+/g, ' ').trim();
-    if (oneLine) return oneLine.length > 80 ? `${oneLine.slice(0, 80)}…` : oneLine;
-  }
-  return `Session ${header.sessionId.slice(0, 8)}`;
+  return deriveThreadTitle(firstUserContent, header.sessionId);
 }
 
 export function ingestSessionFile(

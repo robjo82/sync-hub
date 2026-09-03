@@ -292,6 +292,8 @@ const EXPECTED_COLUMNS: Array<{ table: string; column: string; definition: strin
   { table: 'projects', column: 'owner_user_id', definition: 'TEXT REFERENCES users(id)' },
   { table: 'threads', column: 'source_ref', definition: 'TEXT' },
   { table: 'threads', column: 'source_file_path', definition: 'TEXT' },
+  // Set once a human names the thread, so re-ingesting its session file cannot undo that.
+  { table: 'threads', column: 'title_custom', definition: 'INTEGER NOT NULL DEFAULT 0' },
   { table: 'messages', column: 'model', definition: 'TEXT' },
   { table: 'messages', column: 'usage', definition: 'TEXT' },
   { table: 'messages', column: 'estimated_tokens', definition: 'INTEGER' },
@@ -582,7 +584,7 @@ export class Db {
    * for good. This is the escape hatch, and it is explicit: nothing renames a thread on its own.
    */
   renameThread(id: string, title: string): void {
-    this.raw.prepare('UPDATE threads SET title = ? WHERE id = ?').run(title, id);
+    this.raw.prepare('UPDATE threads SET title = ?, title_custom = 1 WHERE id = ?').run(title, id);
     this.raw.prepare('UPDATE threads_fts SET title = ? WHERE thread_id = ?').run(title, id);
   }
 
@@ -757,7 +759,10 @@ export class Db {
          VALUES (@id, @projectId, @title, @originEngine, @engineIds, @sourceRef, @sourceFilePath, @createdAt, @updatedAt, @status)
          ON CONFLICT(id) DO UPDATE SET
            project_id = excluded.project_id,
-           title = excluded.title,
+           -- Codex recomputes a thread's title from its first message on every ingest, so without
+           -- this a rename survived only until the session file next changed — which is to say,
+           -- until the next message. A title someone chose outranks one we derived.
+           title = CASE WHEN title_custom = 1 THEN title ELSE excluded.title END,
            engine_ids = excluded.engine_ids,
            source_ref = excluded.source_ref,
            source_file_path = excluded.source_file_path,
