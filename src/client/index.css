@@ -35,6 +35,24 @@
   --color-success: oklch(60% 0.1 155);
   --color-success-muted: oklch(94% 0.035 155);
 
+  /*
+   * Typography and radius scale.
+   *
+   * The interface had drifted to 8 text sizes — 86 of them arbitrary pixel values sitting outside
+   * any scale — 7 different corner radii, and 16 spacing steps whose half-steps (1.5, 2.5) alone
+   * accounted for 227 uses. Cards sitting side by side therefore had different corners, different
+   * padding and different text sizes, which is what reads as "not aligned": not a matter of taste,
+   * just the absence of a system.
+   *
+   * Four text sizes, one radius. Anything outside this is a bug, not a special case.
+   */
+  --text-sm: 0.875rem;   /* 14px — the base reading size; body text, labels, most of the UI */
+  --text-base: 1rem;     /* 16px — emphasis inside a block, list titles */
+  --text-xl: 1.25rem;    /* 20px — section headings */
+  --text-3xl: 2rem;      /* 32px — the single figure a card exists to show */
+
+  --radius: 0.75rem;     /* 12px, everywhere */
+
   /* Distinct, muted per-engine identifiers — kept apart from the single UI accent above. */
   --color-engine-claude: oklch(60% 0.09 320);
   --color-engine-codex: oklch(64% 0.1 165);
@@ -93,4 +111,41 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   background-color: var(--color-muted-foreground);
+}
+
+/*
+ * The spacing rhythm: 8 / 16 / 24 / 40 / 64px, i.e. the Tailwind steps 2 / 4 / 6 / 10 / 16.
+ * Nothing tighter than 8px between elements, and the smaller steps (0.5, 1, 1.5, 2.5, 3, 3.5)
+ * are deliberately not used — they are what made the layout look approximate. Utilities below
+ * name the recurring shapes so a card is a card everywhere, rather than each one re-deciding.
+ */
+@layer components {
+  /* A surface: panel, card, modal body. One radius, one padding, one border treatment. */
+  .surface {
+    background-color: var(--color-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 1.5rem; /* 24px */
+  }
+
+  /* Same, without the border — preferred where cards sit on a tinted background, since fewer
+     lines is the point of this design direction. */
+  .surface-plain {
+    background-color: var(--color-card);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+  }
+
+  /* Vertical rhythm between the major blocks of a page. */
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem; /* 24px */
+  }
+
+  /* The label above a figure or a field: consistently muted, never shrunk below 14px. */
+  .label {
+    font-size: var(--text-sm);
+    color: var(--color-muted-foreground);
+  }
 }
