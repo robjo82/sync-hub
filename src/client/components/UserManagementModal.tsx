@@ -3,13 +3,16 @@ import type { User, UserRole } from '../../types.js';
 import { api } from '../lib/api.js';
 import { useAuth } from '../context/AuthContext.js';
 import { X, UserPlus, Trash2, Shield, User as UserIcon, Loader2, Check } from 'lucide-react';
+import { PanelShell } from './PanelShell.js';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  /** 'panel' renders it as a section of the account screen instead of a floating modal. */
+  variant?: 'modal' | 'panel';
 }
 
-export function UserManagementModal({ isOpen, onClose }: Props) {
+export function UserManagementModal({ isOpen, onClose, variant = 'modal' }: Props) {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,7 +48,7 @@ export function UserManagementModal({ isOpen, onClose }: Props) {
     }
   }, [isOpen]);
 
-  if (!isOpen) return null;
+  if (!isOpen && variant === 'modal') return null;
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,26 +106,13 @@ export function UserManagementModal({ isOpen, onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl bg-card border border-border rounded-xl shadow-xl overflow-hidden flex flex-col max-h-[85vh]">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-8 h-8 rounded-xl bg-accent-muted text-accent-muted-foreground flex items-center justify-center">
-              <Shield className="w-4 h-4 text-accent" />
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-foreground">Gestion des Utilisateurs & Accès</h2>
-              <p className="text-sm text-muted-foreground">Gérez les comptes d'accès à l'instance Sync Hub</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+    <PanelShell
+      variant={variant}
+      onClose={onClose}
+      icon={<Shield className="h-5 w-5" />}
+      title="Utilisateurs & accès"
+      subtitle="Les comptes autorisés sur cette instance"
+    >
 
         {/* Feedback banners */}
         {error && (
@@ -295,15 +285,16 @@ export function UserManagementModal({ isOpen, onClose }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-border bg-card flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 rounded-xl transition-colors cursor-pointer"
-          >
-            Fermer
-          </button>
-        </div>
-      </div>
-    </div>
+        {variant === 'modal' && (
+          <div className="px-6 py-4 border-t border-border bg-card flex justify-end">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground bg-muted hover:bg-muted/80 rounded-xl transition-colors cursor-pointer"
+            >
+              Fermer
+            </button>
+          </div>
+        )}
+    </PanelShell>
   );
 }

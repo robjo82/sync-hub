@@ -4,7 +4,7 @@ import { UserMenu } from './UserMenu.js';
 import { api } from '../lib/api.js';
 import type { RemoteSyncState } from '../../types.js';
 
-type Tab = 'projects' | 'coverage' | 'unassigned' | 'search' | 'costs';
+type Tab = 'projects' | 'coverage' | 'unassigned' | 'search' | 'costs' | 'account';
 
 interface HeaderProps {
   connected: boolean;
@@ -113,7 +113,7 @@ export function Header({ connected, scanning, onRescan, tab, onTabChange, unassi
         </button>
       )}
 
-      <UserMenu />
+      <UserMenu onOpenAccount={() => onTabChange('account')} />
     </header>
   );
 }

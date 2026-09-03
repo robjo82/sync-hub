@@ -1,17 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { X, KeyRound, Plus, Loader2, Copy, Check, Ban } from 'lucide-react';
+import { KeyRound, Plus, Loader2, Copy, Check, Ban } from 'lucide-react';
+import { PanelShell } from './PanelShell.js';
 import { api, type ApiTokenSummary } from '../lib/api.js';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  /** 'panel' renders it as a section of the account screen instead of a floating modal. */
+  variant?: 'modal' | 'panel';
 }
 
 /**
  * Machine tokens: what a sync-hub daemon presents to push to, or pull from, the hub. One per
  * device, so a lost laptop is revoked on its own instead of rotating a secret shared by everyone.
  */
-export function ApiTokensModal({ isOpen, onClose }: Props) {
+export function ApiTokensModal({ isOpen, onClose, variant = 'modal' }: Props) {
   const [tokens, setTokens] = useState<ApiTokenSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +49,7 @@ export function ApiTokensModal({ isOpen, onClose }: Props) {
     return () => clearTimeout(t);
   }, [copied]);
 
-  if (!isOpen) return null;
+  if (!isOpen && variant === 'modal') return null;
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,25 +81,13 @@ export function ApiTokensModal({ isOpen, onClose }: Props) {
   const revoked = tokens.filter((t) => t.revokedAt);
 
   return (
-    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl bg-card border border-border rounded-xl shadow-xl overflow-hidden flex flex-col max-h-[85vh]">
-        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-8 h-8 rounded-xl bg-accent-muted flex items-center justify-center">
-              <KeyRound className="w-4 h-4 text-accent" />
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-foreground">Jetons d'appareil</h2>
-              <p className="text-sm text-muted-foreground">Ce que chaque machine présente pour synchroniser</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+    <PanelShell
+      variant={variant}
+      onClose={onClose}
+      icon={<KeyRound className="h-5 w-5" />}
+      title="Jetons d'appareil"
+      subtitle="Ce que chaque machine présente pour synchroniser"
+    >
 
         <div className="px-6 py-4 overflow-y-auto">
           {error && (
@@ -184,7 +175,6 @@ export function ApiTokensModal({ isOpen, onClose }: Props) {
             </p>
           )}
         </div>
-      </div>
-    </div>
+    </PanelShell>
   );
 }

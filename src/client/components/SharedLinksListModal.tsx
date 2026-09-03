@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react';
-import { Check, Copy, ExternalLink, Globe, Trash2, X, Eye, Clock, AlertCircle } from 'lucide-react';
+import { Check, Copy, ExternalLink, Globe, Trash2, Eye, Clock, AlertCircle } from 'lucide-react';
+import { PanelShell } from './PanelShell.js';
 import type { SharedThread } from '../../types.js';
 import { api } from '../lib/api.js';
 
 interface SharedLinksListModalProps {
   onClose: () => void;
   onSelectThread?: (threadId: string) => void;
+  /** 'panel' renders it as a section of the account screen instead of a floating modal. */
+  variant?: 'modal' | 'panel';
 }
 
 type ShareItem = SharedThread & { threadTitle: string; projectName?: string };
 
-export function SharedLinksListModal({ onClose, onSelectThread }: SharedLinksListModalProps) {
+export function SharedLinksListModal({ onClose, onSelectThread, variant = 'modal' }: SharedLinksListModalProps) {
   const [shares, setShares] = useState<ShareItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
@@ -63,31 +66,13 @@ export function SharedLinksListModal({ onClose, onSelectThread }: SharedLinksLis
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-      <div
-        className="w-full max-w-2xl rounded-xl border border-border bg-card shadow-xl overflow-hidden flex flex-col max-h-[85vh]"
-        role="dialog"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-card">
-          <div className="flex items-center gap-4">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-accent-muted text-accent-muted-foreground">
-              <Globe size={16} className="text-accent" />
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-foreground">Gestion des liens partagés</h2>
-              <p className="text-sm text-muted-foreground">
-                Toutes les conversations actuellement accessibles via un lien public
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded-xl p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
-          >
-            <X size={16} />
-          </button>
-        </div>
+    <PanelShell
+      variant={variant}
+      onClose={onClose}
+      icon={<Globe size={20} />}
+      title="Liens partagés"
+      subtitle="Les conversations accessibles par un lien public"
+    >
 
         {/* Content */}
         <div className="p-6 overflow-y-auto space-y-4 flex-1">
@@ -227,6 +212,7 @@ export function SharedLinksListModal({ onClose, onSelectThread }: SharedLinksLis
         </div>
 
         {/* Footer */}
+        {variant === 'modal' && (
         <div className="border-t border-border px-6 py-4 bg-card flex justify-end">
           <button
             type="button"
@@ -236,7 +222,7 @@ export function SharedLinksListModal({ onClose, onSelectThread }: SharedLinksLis
             Fermer
           </button>
         </div>
-      </div>
-    </div>
+        )}
+    </PanelShell>
   );
 }

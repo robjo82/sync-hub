@@ -1,18 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext.js';
-import { UserManagementModal } from './UserManagementModal.js';
-import { SharedLinksListModal } from './SharedLinksListModal.js';
-import { ApiTokensModal } from './ApiTokensModal.js';
-import { SecretAuditModal } from './SecretAuditModal.js';
-import { Users, LogOut, ChevronDown, Globe, KeyRound, ShieldAlert } from 'lucide-react';
+import { LogOut, ChevronDown, UserCog } from 'lucide-react';
 
-export function UserMenu() {
+export function UserMenu({ onOpenAccount }: { onOpenAccount?: () => void }) {
   const { user, authEnabled, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [usersModalOpen, setUsersModalOpen] = useState(false);
-  const [sharesModalOpen, setSharesModalOpen] = useState(false);
-  const [tokensModalOpen, setTokensModalOpen] = useState(false);
-  const [secretsModalOpen, setSecretsModalOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,53 +53,17 @@ export function UserMenu() {
             <p className="text-sm text-muted-foreground truncate">{user.email}</p>
           </div>
 
+          {/* One way in, instead of four dialogs that each showed a slice of the same account. */}
           <button
             onClick={() => {
               setMenuOpen(false);
-              setSharesModalOpen(true);
+              onOpenAccount?.();
             }}
-            className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2 transition-colors cursor-pointer"
+            className="flex w-full cursor-pointer items-center gap-2 px-4 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted"
           >
-            <Globe className="w-3.5 h-3.5 text-muted-foreground" />
-            Liens partagés
+            <UserCog className="h-4 w-4 text-muted-foreground" />
+            Mon compte
           </button>
-
-          <button
-            onClick={() => {
-              setMenuOpen(false);
-              setTokensModalOpen(true);
-            }}
-            className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2 transition-colors cursor-pointer"
-          >
-            <KeyRound className="w-3.5 h-3.5 text-muted-foreground" />
-            Jetons d'appareil
-          </button>
-
-          {user.role === 'admin' && (
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                setSecretsModalOpen(true);
-              }}
-              className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2 transition-colors cursor-pointer"
-            >
-              <ShieldAlert className="w-3.5 h-3.5 text-muted-foreground" />
-              Secrets dans l'historique
-            </button>
-          )}
-
-          {user.role === 'admin' && (
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                setUsersModalOpen(true);
-              }}
-              className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2 transition-colors cursor-pointer"
-            >
-              <Users className="w-3.5 h-3.5 text-muted-foreground" />
-              Gérer les utilisateurs
-            </button>
-          )}
 
           {authEnabled && (
             <button
@@ -124,10 +80,6 @@ export function UserMenu() {
         </div>
       )}
 
-      <UserManagementModal isOpen={usersModalOpen} onClose={() => setUsersModalOpen(false)} />
-      <ApiTokensModal isOpen={tokensModalOpen} onClose={() => setTokensModalOpen(false)} />
-      <SecretAuditModal isOpen={secretsModalOpen} onClose={() => setSecretsModalOpen(false)} />
-      {sharesModalOpen && <SharedLinksListModal onClose={() => setSharesModalOpen(false)} />}
     </div>
   );
 }

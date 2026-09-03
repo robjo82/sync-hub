@@ -11,13 +11,14 @@ import { DocumentViewer } from './components/DocumentViewer.js';
 import { CoverageView } from './components/CoverageView.js';
 import { UnassignedView } from './components/UnassignedView.js';
 import { SearchView } from './components/SearchView.js';
+import { AccountView } from './components/AccountView.js';
 import { CostsView } from './components/CostsView.js';
 import { AuthProvider, useAuth } from './context/AuthContext.js';
 import { SetupView } from './components/SetupView.js';
 import { LoginView } from './components/LoginView.js';
 import { SharedThreadView } from './components/SharedThreadView.js';
 
-type Tab = 'projects' | 'coverage' | 'unassigned' | 'search' | 'costs';
+type Tab = 'projects' | 'coverage' | 'unassigned' | 'search' | 'costs' | 'account';
 
 function getShareTokenFromUrl(): string | null {
   const path = window.location.pathname;
@@ -191,6 +192,14 @@ function MainDashboard() {
         {tab === 'unassigned' && <UnassignedView projects={projects} />}
         {tab === 'search' && <SearchView onOpenThread={openThread} />}
         {tab === 'costs' && <CostsView projects={projects} />}
+        {tab === 'account' && (
+          <AccountView
+            onSelectThread={(id) => {
+              setTab('projects');
+              setFocusThreadId(id);
+            }}
+          />
+        )}
       </div>
     </div>
   );
