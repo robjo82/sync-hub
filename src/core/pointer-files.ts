@@ -74,8 +74,21 @@ export function updatePointerFiles(db: Db, project: Project, now: Date = new Dat
   upsertBlock(join(project.canonicalPath, 'AGENTS.md'), block);
 }
 
-export function updateAllPointerFiles(db: Db, now: Date = new Date()): void {
+/**
+ * Refreshes the pointer block in every project, or — given `changedSince` — only in those active
+ * since that moment.
+ *
+ * The full pass costs ~2.8s of CPU across 67 projects: a database query plus two file reads and
+ * two file writes each. It used to run on every single ingest event, so simply having an assistant
+ * append to its own transcript, which happens every few seconds while working, kept a core busy
+ * and rewrote 134 files each time. Nearly all of that work restated what the files already said.
+ */
+export function updateAllPointerFiles(db: Db, now: Date = new Date(), changedSince?: Date): void {
+  const cutoff = changedSince?.toISOString();
   for (const project of db.getProjects()) {
+    // lastActiveAt moves whenever a project gains a message, so an untouched project's block is
+    // already correct and rewriting it changes nothing but the file's mtime.
+    if (cutoff && project.lastActiveAt && project.lastActiveAt < cutoff) continue;
     updatePointerFiles(db, project, now);
   }
 }
