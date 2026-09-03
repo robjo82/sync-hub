@@ -182,13 +182,15 @@ export function ActivityView({ projects }: { projects: Project[] }) {
                 Heure la plus chargée : {String(peakHour.hour).padStart(2, '0')}h — {hours(peakHour.typingMs + peakHour.thinkingMs)}
               </p>
             )}
-            <div className="mt-6 flex h-40 items-end gap-2">
+            <div className="mt-6 flex h-48 items-stretch gap-2">
               {HOURS.map((h) => {
                 const bucket = summary.byHour[h];
                 const total = bucket.typingMs + bucket.thinkingMs;
                 const height = Math.round((total / maxHourMs) * 100);
                 return (
-                  <div key={h} className="group flex flex-1 flex-col items-center justify-end gap-2" title={`${String(h).padStart(2, '0')}h — ${hours(total)}`}>
+                  // h-full matters: without a resolved height on the column, the bar's percentage
+                  // height resolves against `auto` and every bar came out at 0 pixels.
+                  <div key={h} className="group flex h-full flex-1 flex-col items-center justify-end gap-2" title={`${String(h).padStart(2, '0')}h — ${hours(total)}`}>
                     <div
                       className="w-full rounded-xl bg-accent/70 transition-colors group-hover:bg-accent"
                       style={{ height: `${Math.max(total > 0 ? 2 : 0, height)}%` }}
