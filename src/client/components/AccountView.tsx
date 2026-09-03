@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Cloud, Laptop, Mail, ShieldAlert } from 'lucide-react';
+import { Cloud, Keyboard, Laptop, Mail, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.js';
 import { api } from '../lib/api.js';
 import { ApiTokensModal } from './ApiTokensModal.js';
@@ -93,6 +93,11 @@ export function AccountView({ onSelectThread }: { onSelectThread?: (threadId: st
         )}
       </section>
 
+      {/* The typing pace the composition estimate rests on. Belongs to the person, not to the
+          installation: it is their hands being measured, and lowering it under-bills rather than
+          over-bills, which is the safer direction for an invoice. */}
+      <TypingPacePanel />
+
       {/* Device tokens live on the hub: you create one there, then paste it into the machine you
           are enrolling. A local instance holds none of its own, so listing them there showed an
           empty list and told you to create one — in the one place where that does nothing. */}
@@ -136,5 +141,68 @@ function SecretAuditLauncher() {
       </button>
       <SecretAuditModal isOpen={open} onClose={() => setOpen(false)} />
     </>
+  );
+}
+
+/** Sets the keystrokes-per-minute the "Temps passé" estimate is computed from. */
+function TypingPacePanel() {
+  const [pace, setPace] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api
+      .activity()
+      .then((s) => setPace(s.keystrokesPerMinute))
+      .catch(() => {});
+  }, []);
+
+  const save = async (value: number) => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      const res = await api.setTypingPace(value);
+      setPace(res.keystrokesPerMinute);
+      setSaved(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="rounded-xl border border-border bg-card p-6">
+      <div className="flex items-start gap-4">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-muted text-accent">
+          <Keyboard className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-base font-semibold text-foreground">Rythme de frappe</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Sert à estimer le temps de rédaction dans <span className="text-foreground">Temps passé</span>. Un rythme
+            bas sous-estime plutôt qu'il ne surestime — le bon sens pour une facture. Le temps compté ne dépasse
+            jamais le temps réellement écoulé entre deux messages.
+          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-4">
+            <input
+              type="number"
+              min={5}
+              max={600}
+              value={pace ?? ''}
+              onChange={(e) => setPace(e.target.value ? Number(e.target.value) : null)}
+              className="w-28 rounded-xl border border-border bg-background px-4 py-2 text-sm text-foreground"
+            />
+            <span className="text-sm text-muted-foreground">frappes / minute</span>
+            <button
+              onClick={() => pace && save(pace)}
+              disabled={saving || !pace}
+              className="cursor-pointer rounded-xl border border-border px-4 py-2 text-sm text-foreground hover:bg-muted disabled:opacity-50"
+            >
+              {saving ? 'Enregistrement…' : 'Enregistrer'}
+            </button>
+            {saved && <span className="text-sm text-success">Enregistré</span>}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }

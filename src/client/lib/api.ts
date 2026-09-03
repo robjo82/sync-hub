@@ -1,5 +1,6 @@
 import type { Artifact, AuthStatus, Category, CreateSharedThreadInput, Memory, Message, Project, PublicSharedThreadData, PullResult, RemoteSyncState, SecretScanResult, SharedThread, SyncOverview, SyncStats, Thread, UpdateSharedThreadInput, User, UserRole, WebSocketEvent } from '../../types.js';
 import type { CostSummary } from '../../core/cost.js';
+import type { ActivitySummary } from '../../core/activity.js';
 
 export interface ApiTokenSummary {
   id: string;
@@ -183,6 +184,22 @@ export const api = {
     const qs = params.toString();
     return jsonFetch<CostSummary>(`/api/costs${qs ? `?${qs}` : ''}`);
   },
+  activity: (scope?: { projectId?: string; threadId?: string; category?: string; startDate?: string; endDate?: string }) => {
+    const params = new URLSearchParams();
+    if (scope?.projectId) params.set('projectId', scope.projectId);
+    if (scope?.threadId) params.set('threadId', scope.threadId);
+    if (scope?.category) params.set('category', scope.category);
+    if (scope?.startDate) params.set('startDate', scope.startDate);
+    if (scope?.endDate) params.set('endDate', scope.endDate);
+    const qs = params.toString();
+    return jsonFetch<ActivitySummary>(`/api/activity${qs ? `?${qs}` : ''}`);
+  },
+  setTypingPace: (keystrokesPerMinute: number | null) =>
+    jsonFetch<{ ok: true; keystrokesPerMinute: number }>('/api/account/typing-pace', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keystrokesPerMinute }),
+    }),
   search: (q: string) =>
     jsonFetch<{ message: Message; projectName: string; threadTitle: string }[]>(`/api/search?q=${encodeURIComponent(q)}`),
   rescan: () => jsonFetch<{ ok: true; stats: SyncStats }>('/api/sync/rescan', { method: 'POST' }),

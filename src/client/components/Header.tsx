@@ -4,7 +4,7 @@ import { UserMenu } from './UserMenu.js';
 import { api } from '../lib/api.js';
 import type { RemoteSyncState } from '../../types.js';
 
-type Tab = 'projects' | 'coverage' | 'unassigned' | 'search' | 'costs' | 'account';
+type Tab = 'projects' | 'coverage' | 'unassigned' | 'search' | 'costs' | 'activity' | 'account';
 
 interface HeaderProps {
   connected: boolean;
@@ -25,6 +25,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'coverage', label: 'Appareils' },
   { key: 'unassigned', label: 'Non affecté' },
   { key: 'costs', label: 'Coûts' },
+  { key: 'activity', label: 'Temps' },
 ];
 
 export function Header({ connected, scanning, onRescan, tab, onTabChange, unassignedCount, theme, onToggleTheme }: HeaderProps) {

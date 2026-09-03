@@ -204,6 +204,17 @@ CREATE TABLE IF NOT EXISTS users (
 );
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
+-- Per-person preferences. Deliberately not a column on the users table, and with no foreign key:
+-- the local instance runs without accounts and presents a synthetic user, so an UPDATE against
+-- users matched no row and the setting silently did nothing while reporting success.
+-- (No backticks in here: this whole schema is a JS template literal.)
+CREATE TABLE IF NOT EXISTS user_settings (
+  user_id TEXT NOT NULL,
+  key TEXT NOT NULL,
+  value TEXT,
+  PRIMARY KEY (user_id, key)
+);
+
 -- Active authenticated sessions, indexed by token_hash (SHA-256 over random raw token).
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
@@ -296,8 +307,6 @@ const EXPECTED_COLUMNS: Array<{ table: string; column: string; definition: strin
   { table: 'threads', column: 'source_file_path', definition: 'TEXT' },
   // Set once a human names the thread, so re-ingesting its session file cannot undo that.
   { table: 'threads', column: 'title_custom', definition: 'INTEGER NOT NULL DEFAULT 0' },
-  // Typing pace used to estimate composition time, per person. Nullable: unset means the default.
-  { table: 'users', column: 'keystrokes_per_minute', definition: 'INTEGER' },
   { table: 'messages', column: 'model', definition: 'TEXT' },
   { table: 'messages', column: 'usage', definition: 'TEXT' },
   { table: 'messages', column: 'estimated_tokens', definition: 'INTEGER' },
@@ -633,12 +642,26 @@ export class Db {
   /** Typing pace for one person, falling back to the deliberately low default. */
   getKeystrokesPerMinute(userId: string | undefined): number {
     if (!userId) return DEFAULT_KEYSTROKES_PER_MINUTE;
-    const row = this.raw.prepare('SELECT keystrokes_per_minute AS kpm FROM users WHERE id = ?').get(userId) as { kpm: number | null } | undefined;
-    return row?.kpm && row.kpm > 0 ? row.kpm : DEFAULT_KEYSTROKES_PER_MINUTE;
+    const row = this.raw
+      .prepare("SELECT value FROM user_settings WHERE user_id = ? AND key = 'keystrokes_per_minute'")
+      .get(userId) as { value: string | null } | undefined;
+    const parsed = row?.value ? Number(row.value) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_KEYSTROKES_PER_MINUTE;
   }
 
   setKeystrokesPerMinute(userId: string, value: number | null): void {
-    this.raw.prepare('UPDATE users SET keystrokes_per_minute = ? WHERE id = ?').run(value, userId);
+    if (value === null) {
+      this.raw.prepare("DELETE FROM user_settings WHERE user_id = ? AND key = 'keystrokes_per_minute'").run(userId);
+      return;
+    }
+    // Upsert, not update: the caller may be the local instance's synthetic user, who has no row
+    // in `users` at all.
+    this.raw
+      .prepare(
+        `INSERT INTO user_settings (user_id, key, value) VALUES (?, 'keystrokes_per_minute', ?)
+         ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value`,
+      )
+      .run(userId, String(value));
   }
 
   /**

@@ -145,3 +145,27 @@ describe('typing pace per person', () => {
     }
   });
 });
+
+describe('the typing pace actually takes effect on a local instance', () => {
+  it('is stored and applied for the synthetic user that has no row in users', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { Db } = await import('../src/core/db.js');
+
+    const dir = mkdtempSync(join(tmpdir(), 'sync-hub-localpace-'));
+    const db = new Db(join(dir, 'hub.sqlite'));
+    try {
+      // 'local-admin' is what the local instance presents when authentication is off. It exists
+      // nowhere in `users`, so an UPDATE there matched no row: the endpoint answered ok and the
+      // pace stayed at 40 for ever.
+      db.setKeystrokesPerMinute('local-admin', 120);
+      expect(db.getKeystrokesPerMinute('local-admin')).toBe(120);
+      db.setKeystrokesPerMinute('local-admin', null);
+      expect(db.getKeystrokesPerMinute('local-admin')).toBe(40);
+    } finally {
+      db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
