@@ -666,7 +666,26 @@ export function createApp(deps: AppDeps): FastifyInstance {
 
   // --- App Data Routes ---
 
-  app.get('/api/stats', async () => computeStats(deps));
+  /**
+   * Stats and costs are pure functions of the stored corpus, and both are expensive: measured on
+   * the deployed hub, 0.85s and 3.4-7.5s respectively, recomputed identically on every single
+   * page load. They change only when something is ingested, so they are memoised against the
+   * ingest counter — a new message invalidates them, nothing else needs to.
+   */
+  const memo = new Map<string, { version: number; value: unknown }>();
+  function memoised<T>(key: string, compute: () => T): T {
+    const version = db.ingestVersion();
+    const hit = memo.get(key);
+    if (hit && hit.version === version) return hit.value as T;
+    const value = compute();
+    // Bounded: without this, every distinct cost filter combination would be kept for the life of
+    // the process. Aggregates are big, and the useful ones are the few most recently asked for.
+    if (memo.size > 32) memo.clear();
+    memo.set(key, { version, value });
+    return value;
+  }
+
+  app.get('/api/stats', async () => memoised('stats', () => computeStats(deps)));
 
   /**
    * The set of project ids this request may see, or null when visibility does not apply.
@@ -748,14 +767,16 @@ export function createApp(deps: AppDeps): FastifyInstance {
       eurRate?: string;
     };
   }>('/api/costs', async (req) =>
-    computeCostSummary(db, {
-      projectId: req.query.projectId,
-      threadId: req.query.threadId,
-      engine: req.query.engine,
-      startDate: req.query.startDate,
-      endDate: req.query.endDate,
-      eurRate: req.query.eurRate ? parseFloat(req.query.eurRate) : undefined,
-    }),
+    memoised(`costs:${JSON.stringify(req.query)}`, () =>
+      computeCostSummary(db, {
+        projectId: req.query.projectId,
+        threadId: req.query.threadId,
+        engine: req.query.engine,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+        eurRate: req.query.eurRate ? parseFloat(req.query.eurRate) : undefined,
+      }),
+    ),
   );
 
   app.get<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {

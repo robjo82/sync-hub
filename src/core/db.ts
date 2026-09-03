@@ -516,6 +516,15 @@ export class Db {
     tx();
   }
 
+  /**
+   * A cheap stand-in for "has anything been ingested since?" — the private ingest counter only
+   * ever moves forward, so comparing it is enough to know a cached aggregate is still valid.
+   * Reading the in-memory counter costs nothing, unlike the aggregates it guards.
+   */
+  ingestVersion(): number {
+    return this.nextIngestSeq;
+  }
+
   close(): void {
     this.raw.close();
   }
