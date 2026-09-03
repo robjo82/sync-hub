@@ -1,6 +1,6 @@
 # Chantiers — demandés le 2026-09-03
 
-**Faits :** 1, 2, 3, 4, 5, 6, 7, 8, 12 · **Restant :** 9, 10, 11, 13, 14
+**Faits :** 1 à 14 (le 11 et le 14 attendent une action manuelle de Robin)
 
 ## Vérifications
 1. **Catégories de projet** — ne remontent pas du local vers le distant ? À vérifier.
@@ -57,3 +57,18 @@
 - **13. Durée de frappe et de réflexion** — chantier à part entière (modèle de données,
   agrégation, réglage du rythme de frappe sur le compte, restitution).
 - **14. Tutoriel Connaissances.**
+
+---
+
+## Clôture au 2026-09-03
+
+- **9** dérivation revue et mesurée (11/32 titres réellement corrigés), renommage manuel protégé
+  d'un réingestion par `title_custom`.
+- **10** menu unique `⋯` groupé, destructif isolé.
+- **11** code complet et testé ; **il reste à créer le client OAuth en console** (voir
+  `docs/CONNEXION-GOOGLE.md`) — `gcloud` ne sait pas le faire.
+- **13** calcul, agrégation, vue Temps et réglage du rythme. Ancré sur le temps écoulé :
+  13 198 h → 2 012 h.
+- **14** rubrique Connaissances rédigée (7 articles, 15 questions fréquentes, 6 captures) ;
+  **il reste à déposer la clé API Odoo** puis à lancer `APPLY=1 python3
+  docs/tuto-connaissances/publier.py`.
