@@ -7,16 +7,21 @@ s'arrête. Relancer avec APPLY=1 pour écrire.
     python3 docs/tuto-connaissances/publier.py          # simulation
     APPLY=1 python3 docs/tuto-connaissances/publier.py   # écriture
 
-La clé API est lue dans le trousseau (service « odoo-api-ekonum », compte « www.ekonum.fr »), ou
-dans la variable ODOO_KEY. Pour la déposer sans qu'elle passe par un historique de shell :
+La clé n'est jamais saisie, ni affichée, ni stockée ici : elle est injectée à l'exécution par le
+broker Ekonum, qui la lit dans Bitwarden et la pose dans l'environnement du processus.
 
-    security add-generic-password -a "www.ekonum.fr" -s "odoo-api-ekonum" -w
+    EKONUM_IDENTITY=claude ekonum-secret run \
+      --secret ODOO_KEY="Ekonum - API Odoo#Clé API" \
+      -- python3 docs/tuto-connaissances/publier.py
+
+C'est la règle qui prime : un agent utilise un secret sans jamais le voir. Une clé affichée une
+fois finit dans l'historique de conversation, que sync-hub archive verbatim puis réplique sur le
+hub — donc une clé affichée est une clé à changer.
 
 Idempotent : un article déjà présent sous le même titre est mis à jour, pas dupliqué.
 """
 import base64
 import os
-import subprocess
 import sys
 import urllib.request
 import json
@@ -32,19 +37,18 @@ APPLY = os.environ.get('APPLY') == '1'
 
 
 def api_key() -> str:
-    if os.environ.get('ODOO_KEY'):
-        return os.environ['ODOO_KEY']
-    try:
-        return subprocess.check_output(
-            ['security', 'find-generic-password', '-s', 'odoo-api-ekonum',
-             '-a', 'www.ekonum.fr', '-w'],
-            text=True,
-        ).strip()
-    except subprocess.CalledProcessError:
+    """La clé, telle que le broker l'a posée dans l'environnement. Aucun repli : un repli sur le
+    trousseau inviterait à y recopier la clé à la main, c'est-à-dire à la faire transiter par un
+    terminal et donc par l'historique."""
+    key = os.environ.get('ODOO_KEY')
+    if not key:
         sys.exit(
-            "Clé API Odoo introuvable.\n"
-            "  security add-generic-password -a \"www.ekonum.fr\" -s \"odoo-api-ekonum\" -w"
+            "ODOO_KEY absente. Lancer via le broker, qui injecte la clé sans l'afficher :\n"
+            "  EKONUM_IDENTITY=claude ekonum-secret run \\\n"
+            "    --secret ODOO_KEY=\"Ekonum - API Odoo#Clé API\" \\\n"
+            "    -- python3 docs/tuto-connaissances/publier.py"
         )
+    return key
 
 
 KEY = api_key()
@@ -104,13 +108,20 @@ def televerser_images(article: int) -> dict[str, str]:
             continue
         else:
             print(f'    téléversement {chemin.name} ({chemin.stat().st_size // 1024} ko)')
+            # `raw`, pas `datas` : sur Odoo SaaS 19.3, l'API JSON-2 rejette `datas`
+            # (« Invalid field 'datas' in 'ir.attachment' ») — et pire, un `create` qui le
+            # contient est accepté sans erreur mais l'ignore. On obtient des pièces jointes de
+            # 0 octet, dont /web/image sert un substitut de 6 078 octets en HTTP 200 : un
+            # tutoriel sans images qui n'a l'air cassé nulle part.
             new_id = call('ir.attachment', 'create', vals_list=[{
                 'name': chemin.name, 'res_model': 'knowledge.article', 'res_id': article,
                 'mimetype': 'image/png', 'public': True,
-                'datas': base64.b64encode(chemin.read_bytes()).decode(),
+                'raw': base64.b64encode(chemin.read_bytes()).decode(),
             }])[0]
             call('ir.attachment', 'generate_access_token', ids=[new_id])
-            att = call('ir.attachment', 'read', ids=[new_id], fields=['id', 'access_token'])[0]
+            att = call('ir.attachment', 'read', ids=[new_id], fields=['id', 'access_token', 'file_size'])[0]
+            if not att.get('file_size'):
+                sys.exit(f"    {chemin.name} : pièce jointe créée vide (file_size=0), arrêt.")
         urls[chemin.name] = f"{HOST}/web/image/{att['id']}?access_token={att['access_token']}"
     return urls
 
