@@ -286,6 +286,10 @@ export interface AuthStatus {
   authEnabled: boolean;
   setupRequired: boolean;
   user: User | null;
+  /** True only when the Google flow is fully configured, domain restriction included. */
+  googleAvailable?: boolean;
+  /** The domains allowed to sign in, so the login screen can say which. */
+  googleDomains?: string[];
 }
 
 export interface SharedThread {

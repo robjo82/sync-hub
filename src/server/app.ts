@@ -12,6 +12,14 @@ import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { WebSocket } from 'ws';
+import {
+  buildAuthorizeUrl,
+  createStateStore,
+  googleConfigFromEnv,
+  isAllowedIdentity,
+  parseIdToken,
+  type GoogleConfig,
+} from '../core/google-oauth.js';
 import type { Db } from '../core/db.js';
 import type { ProjectRegistry } from '../core/registry.js';
 import type { WatchHandle } from '../core/watch.js';
@@ -77,6 +85,8 @@ export interface AppDeps {
    * enrolling this machine — and to say plainly which of the two you are looking at.
    */
   localIngest?: boolean;
+  /** Injected by tests; production reads it from the environment. */
+  googleConfig?: GoogleConfig | null;
   corsOrigins?: string[];
   /** Remote hub URL this instance connects to for bidirectional sync. */
   remoteUrl?: string;
@@ -230,6 +240,8 @@ export function createApp(deps: AppDeps): FastifyInstance {
       path === '/api/auth/status' ||
       path === '/api/auth/setup' ||
       path === '/api/auth/login' ||
+      path === '/api/auth/google' ||
+      path === '/api/auth/google/callback' ||
       path.startsWith('/api/share/');
     // /api/sync/push and /api/sync/pull are deliberately NOT public: they used to bypass this hook
     // entirely and answer to a shared secret, which meant any holder of that secret could pull the
@@ -276,6 +288,10 @@ export function createApp(deps: AppDeps): FastifyInstance {
       authEnabled,
       setupRequired,
       user: req.user ?? null,
+      // The button only appears where the flow can actually work. `googleConfig` is declared
+      // further down; this closure runs per request, long after module setup.
+      googleAvailable: !!googleConfig,
+      googleDomains: googleConfig?.allowedDomains ?? [],
     };
   });
 
@@ -332,6 +348,93 @@ export function createApp(deps: AppDeps): FastifyInstance {
     });
 
     return { user, token: rawToken };
+  });
+
+  // --- Signing in with Google. Inert unless configured; see core/google-oauth.ts for why a
+  // missing domain list counts as "not configured" rather than "allow everyone".
+  const googleConfig = deps.googleConfig ?? googleConfigFromEnv();
+  const googleStates = createStateStore();
+
+  /** Issues the session cookie for a user who has just proved who they are. */
+  async function startSession(userId: string, req: any, reply: any): Promise<void> {
+    const rawToken = generateSessionToken();
+    db.createSession({
+      userId,
+      tokenHash: hashSessionToken(rawToken),
+      expiresAt: new Date(Date.now() + 30 * 86400 * 1000).toISOString(),
+      userAgent: req.headers['user-agent'],
+      ip: req.ip,
+    });
+    reply.setCookie('sync_hub_session', rawToken, {
+      path: '/',
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 30 * 86400,
+      secure: req.protocol === 'https',
+    });
+  }
+
+  app.get('/api/auth/google', async (_req, reply) => {
+    if (!googleConfig) return reply.code(404).send({ error: 'google_not_configured' });
+    const state = randomUUID();
+    googleStates.issue(state);
+    return reply.redirect(buildAuthorizeUrl(googleConfig, state));
+  });
+
+  app.get<{ Querystring: { code?: string; state?: string; error?: string } }>('/api/auth/google/callback', async (req, reply) => {
+    if (!googleConfig) return reply.code(404).send({ error: 'google_not_configured' });
+
+    // Failures send the browser back to the login page with a reason, rather than to a JSON blob:
+    // this endpoint is reached by a redirect, so whoever lands here is a person, not a script.
+    const fail = (reason: string) => reply.redirect(`/?auth_error=${encodeURIComponent(reason)}`);
+
+    if (req.query.error) return fail('Connexion Google refusée');
+    if (!req.query.code) return fail('Réponse Google incomplète');
+    if (!googleStates.consume(req.query.state)) return fail('Requête expirée ou rejouée, réessaie');
+
+    let identity;
+    try {
+      const res = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code: req.query.code,
+          client_id: googleConfig.clientId,
+          client_secret: googleConfig.clientSecret,
+          redirect_uri: googleConfig.redirectUri,
+          grant_type: 'authorization_code',
+        }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) return fail('Google a refusé l’échange du code');
+      const payload = (await res.json()) as { id_token?: string };
+      if (!payload.id_token) return fail('Google n’a pas renvoyé d’identité');
+      identity = parseIdToken(payload.id_token, googleConfig, new Date());
+    } catch (err) {
+      app.log.warn({ err }, 'google oauth: échange du code impossible');
+      return fail('Google injoignable');
+    }
+
+    if (!isAllowedIdentity(identity, googleConfig)) {
+      return fail(`Compte hors des domaines autorisés (${googleConfig.allowedDomains.join(', ')})`);
+    }
+
+    // Known address: sign in. Unknown but on an allowed domain: create a member. The domain check
+    // above is what makes that safe, and it is why an absent domain list disables the whole flow.
+    const existing = db.getUserByEmail(identity.email);
+    const user = existing
+      ? { id: existing.id }
+      : db.createUser({
+        email: identity.email,
+        displayName: identity.displayName,
+        // No password is issued: this account signs in through Google, and a placeholder hash
+        // matches nothing that verifyPassword can produce.
+        passwordHash: `google-oauth:${randomUUID()}`,
+        role: db.countUsers() === 0 ? 'admin' : 'member',
+      });
+
+    await startSession(user.id, req, reply);
+    return reply.redirect('/');
   });
 
   app.post<{ Body: { email?: string; password?: string } }>('/api/auth/login', async (req, reply) => {
