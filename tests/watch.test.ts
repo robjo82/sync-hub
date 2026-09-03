@@ -62,11 +62,13 @@ describe('startWatching — live tail across both engines', () => {
     // watched and then discarded inside ingest; now they are refused before that, which is where
     // most of the watcher's work went.
     const events: { filePath: string }[] = [];
+    // Polling here on purpose: `ignored` is applied by chokidar whichever backend is in use, so
+    // the filter is testable on the deterministic one. Forcing fsevents would only reintroduce
+    // the flakiness that made tests poll in the first place.
     const handle = startWatching(db, registry, {
       onIngest: (e) => events.push(e),
       claudeCodeRoot: claudeRoot,
       codexRoots: [codexRoot],
-      usePolling: false,
     });
     await handle.ready();
 
