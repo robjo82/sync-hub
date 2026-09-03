@@ -20,6 +20,12 @@ interface WatchOptions {
   claudeCodeRoot?: string;
   codexRoots?: string[];
   antigravityRoots?: string[];
+  /**
+   * Force the polling backend. Defaults to polling under vitest (deterministic, and fsevents
+   * proved flaky under concurrent workers) and to native fsevents everywhere else, where polling
+   * costs ~300× more CPU for the same result.
+   */
+  usePolling?: boolean;
 }
 
 /**
@@ -79,16 +85,26 @@ function startEngineWatch(
     if (inserted > 0) opts.onIngest?.({ engine, filePath, inserted });
   };
 
-  // chokidar v4 dropped glob support — watch the root directories directly (recursive by
-  // default) and filter to .jsonl inside `ingest` instead of relying on a glob pattern.
-  // usePolling avoids the native fsevents backend, which proved unreliable under concurrent
-  // test-worker load (events never firing within any timeout) — polling is deterministic and,
-  // for a handful of locally-watched files, cheap enough to always prefer.
+  // chokidar v4 dropped glob support — watch the root directories directly (recursive by default)
+  // and reject anything that is not a transcript here, in `ignored`, rather than only inside
+  // `ingest`. Same outcome, vastly less work: on this machine the roots hold 4 062 files of which
+  // 588 are .jsonl, the rest being Antigravity's per-session steps, scratch and uploads. Watching
+  // them only to discard them later cost 85% of the watcher's work.
+  //
+  // Polling is kept for tests, where the native fsevents backend proved unreliable under
+  // concurrent worker load (events never firing within any timeout), and it is deterministic.
+  // In production it is not "cheap enough" as this once assumed: measured on the real roots,
+  // polling every 300ms burns 30.7% of a core continuously, against 0.1% for fsevents — some
+  // 17 000 stat() calls a second, forever, on an idle machine.
+  const usePolling = opts.usePolling ?? !!process.env.VITEST;
   const watcher = chokidar.watch(roots, {
     ignoreInitial: true,
-    usePolling: true,
-    interval: 300,
-    awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
+    // stats is undefined until chokidar has stat'd the entry; never ignore then, or the entry is
+    // dropped before it can be identified. Directories must stay watched to be descended into.
+    ignored: (path, stats) => !!stats?.isFile() && !path.endsWith('.jsonl'),
+    ...(usePolling
+      ? { usePolling: true, interval: 300, awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 } }
+      : { usePolling: false, awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 } }),
   });
   watcher.on('add', ingest).on('change', ingest);
   if (process.env.SYNC_HUB_WATCH_DEBUG) {

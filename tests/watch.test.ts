@@ -53,6 +53,35 @@ describe('startWatching — live tail across both engines', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  // The native fsevents backend that production uses cannot be covered here: under vitest it
+  // simply does not deliver events (tried, and it times out — which is exactly why the watcher
+  // forces polling for tests). It was instead verified out of band against the real production
+  // config: creating a .jsonl, appending to it, and confirming a sibling .png raised nothing.
+  it('never wakes for a file that is not a transcript', async () => {
+    // Antigravity's brain/ holds ~3 700 non-transcript files against 459 real ones. They were
+    // watched and then discarded inside ingest; now they are refused before that, which is where
+    // most of the watcher's work went.
+    const events: { filePath: string }[] = [];
+    const handle = startWatching(db, registry, {
+      onIngest: (e) => events.push(e),
+      claudeCodeRoot: claudeRoot,
+      codexRoots: [codexRoot],
+      usePolling: false,
+    });
+    await handle.ready();
+
+    const dirPath = join(claudeRoot, '-Users-robin-Projets-demo');
+    writeFileSync(join(dirPath, 'scratch.png'), 'pas un transcript');
+    writeFileSync(join(dirPath, 'notes.md'), '# rien à ingérer');
+    // A real transcript alongside them still lands, so this proves the filter is selective and
+    // not simply broken.
+    writeFileSync(join(dirPath, 'mixed.jsonl'), line('user', 'Moi si', 'm1', '2026-01-01T00:00:00Z') + '\n');
+
+    await waitFor(() => db.getMessagesForThread('mixed').length === 1);
+    expect(events.every((e) => e.filePath.endsWith('.jsonl'))).toBe(true);
+    await handle.close();
+  }, 20000);
+
   it('ingests a newly-added Claude Code session file, then appended lines, without duplicating', async () => {
     const events: { engine: string; inserted: number }[] = [];
     const handle = startWatching(db, registry, {
