@@ -4,6 +4,8 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { encode } from 'gpt-tokenizer';
 import { modelForEra, providerForThread } from './era-models.js';
+import { DEFAULT_KEYSTROKES_PER_MINUTE, durationsForMessage, typedCharacters } from './activity.js';
+import type { ActivityScope, ActivitySummary } from './activity.js';
 import { scanText, maskSecret } from './secret-scan.js';
 import type { AccountSyncOverview, ApiToken, Artifact, CreateSharedThreadInput, DeviceSession, EngineStats, EngineType, IngestEventStatus, IngestLogEntry, McpCallLogEntry, Memory, Message, Project, ProjectAliases, PullBatch, RemoteSyncState, SecretScanResult, Session, SharedThread, SyncOverview, Thread, TokenUsage, UpdateSharedThreadInput, User, UserRole, UserWithPasswordHash } from '../types.js';
 
@@ -294,6 +296,8 @@ const EXPECTED_COLUMNS: Array<{ table: string; column: string; definition: strin
   { table: 'threads', column: 'source_file_path', definition: 'TEXT' },
   // Set once a human names the thread, so re-ingesting its session file cannot undo that.
   { table: 'threads', column: 'title_custom', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  // Typing pace used to estimate composition time, per person. Nullable: unset means the default.
+  { table: 'users', column: 'keystrokes_per_minute', definition: 'INTEGER' },
   { table: 'messages', column: 'model', definition: 'TEXT' },
   { table: 'messages', column: 'usage', definition: 'TEXT' },
   { table: 'messages', column: 'estimated_tokens', definition: 'INTEGER' },
@@ -516,6 +520,125 @@ export class Db {
       }
     });
     tx();
+  }
+
+  /**
+   * Time spent, by day and by hour, over whatever slice is asked for.
+   *
+   * Walks messages in thread order so each one knows the gap since its predecessor — that gap is
+   * what caps the typing estimate and what *is* the thinking measurement (see core/activity.ts).
+   * The walk has to be ordered by thread, which is why this is not a plain GROUP BY.
+   */
+  getActivitySummary(scope: ActivityScope = {}): ActivitySummary {
+    const clauses: string[] = ["m.role IN ('user','assistant')"];
+    const params: unknown[] = [];
+    if (scope.threadId) {
+      clauses.push('m.thread_id = ?');
+      params.push(scope.threadId);
+    }
+    if (scope.projectId) {
+      clauses.push('m.project_id = ?');
+      params.push(scope.projectId);
+    }
+    if (scope.category) {
+      clauses.push('p.category = ?');
+      params.push(scope.category);
+    }
+    if (scope.startDate) {
+      clauses.push('m.timestamp >= ?');
+      params.push(scope.startDate.includes('T') ? scope.startDate : `${scope.startDate}T00:00:00.000Z`);
+    }
+    if (scope.endDate) {
+      clauses.push('m.timestamp <= ?');
+      params.push(scope.endDate.includes('T') ? scope.endDate : `${scope.endDate}T23:59:59.999Z`);
+    }
+
+    const rows = this.raw
+      .prepare(
+        `SELECT m.thread_id, m.project_id, m.role, m.content, m.timestamp
+         FROM messages m
+         LEFT JOIN projects p ON p.id = m.project_id
+         WHERE ${clauses.join(' AND ')}
+         ORDER BY m.thread_id, m.sequence ASC`,
+      )
+      .all(...params) as Array<{ thread_id: string; project_id: string; role: string; content: string | null; timestamp: string }>;
+
+    const rate = scope.keystrokesPerMinute ?? DEFAULT_KEYSTROKES_PER_MINUTE;
+    const byDate = new Map<string, { typingMs: number; thinkingMs: number; messages: number }>();
+    const byHour = new Array(24).fill(0).map(() => ({ typingMs: 0, thinkingMs: 0, messages: 0 }));
+    const byProject = new Map<string, { typingMs: number; thinkingMs: number; messages: number }>();
+
+    let totalTyping = 0;
+    let totalThinking = 0;
+    let cappedMessages = 0;
+    let lastThread = '';
+    let lastStamp = Number.NaN;
+
+    for (const row of rows) {
+      const stamp = Date.parse(row.timestamp);
+      const sameThread = row.thread_id === lastThread;
+      const gapMs = sameThread && Number.isFinite(stamp) && Number.isFinite(lastStamp) ? Math.max(0, stamp - lastStamp) : null;
+
+      const d = durationsForMessage({ role: row.role, content: row.content ?? '', timestamp: row.timestamp, gapMs }, rate);
+      if (row.role === 'user') {
+        const uncapped = (typedCharacters(row.content ?? '') / rate) * 60_000;
+        if (uncapped > d.typingMs + 1) cappedMessages++;
+      }
+
+      totalTyping += d.typingMs;
+      totalThinking += d.thinkingMs;
+
+      const day = row.timestamp.slice(0, 10);
+      const dayBucket = byDate.get(day) ?? { typingMs: 0, thinkingMs: 0, messages: 0 };
+      dayBucket.typingMs += d.typingMs;
+      dayBucket.thinkingMs += d.thinkingMs;
+      dayBucket.messages += 1;
+      byDate.set(day, dayBucket);
+
+      const hour = Number(row.timestamp.slice(11, 13));
+      if (hour >= 0 && hour < 24) {
+        byHour[hour].typingMs += d.typingMs;
+        byHour[hour].thinkingMs += d.thinkingMs;
+        byHour[hour].messages += 1;
+      }
+
+      const projectBucket = byProject.get(row.project_id) ?? { typingMs: 0, thinkingMs: 0, messages: 0 };
+      projectBucket.typingMs += d.typingMs;
+      projectBucket.thinkingMs += d.thinkingMs;
+      projectBucket.messages += 1;
+      byProject.set(row.project_id, projectBucket);
+
+      lastThread = row.thread_id;
+      lastStamp = stamp;
+    }
+
+    const projectNames = new Map(this.getProjects().map((p) => [p.id, p.name] as const));
+
+    return {
+      totalTypingMs: totalTyping,
+      totalThinkingMs: totalThinking,
+      messageCount: rows.length,
+      cappedMessageCount: cappedMessages,
+      keystrokesPerMinute: rate,
+      byDate: [...byDate.entries()]
+        .map(([date, v]) => ({ date, ...v }))
+        .sort((a, b) => a.date.localeCompare(b.date)),
+      byHour: byHour.map((v, hour) => ({ hour, ...v })),
+      byProject: [...byProject.entries()]
+        .map(([projectId, v]) => ({ projectId, name: projectNames.get(projectId) ?? projectId, ...v }))
+        .sort((a, b) => b.typingMs + b.thinkingMs - (a.typingMs + a.thinkingMs)),
+    };
+  }
+
+  /** Typing pace for one person, falling back to the deliberately low default. */
+  getKeystrokesPerMinute(userId: string | undefined): number {
+    if (!userId) return DEFAULT_KEYSTROKES_PER_MINUTE;
+    const row = this.raw.prepare('SELECT keystrokes_per_minute AS kpm FROM users WHERE id = ?').get(userId) as { kpm: number | null } | undefined;
+    return row?.kpm && row.kpm > 0 ? row.kpm : DEFAULT_KEYSTROKES_PER_MINUTE;
+  }
+
+  setKeystrokesPerMinute(userId: string, value: number | null): void {
+    this.raw.prepare('UPDATE users SET keystrokes_per_minute = ? WHERE id = ?').run(value, userId);
   }
 
   /**

@@ -694,6 +694,41 @@ export function createApp(deps: AppDeps): FastifyInstance {
   app.get('/api/stats', async () => memoised('stats', () => computeStats(deps)));
 
   /**
+   * Time spent, for billing. Estimated typing plus measured thinking, over any slice.
+   *
+   * Memoised like the other aggregates: it walks every message in thread order, which is not
+   * something to redo on each keystroke of a date picker.
+   */
+  app.get<{
+    Querystring: { projectId?: string; threadId?: string; category?: string; startDate?: string; endDate?: string };
+  }>('/api/activity', async (req) => {
+    const rate = db.getKeystrokesPerMinute(req.user?.id);
+    return memoised(`activity:${rate}:${JSON.stringify(req.query)}`, () =>
+      db.getActivitySummary({
+        projectId: req.query.projectId,
+        threadId: req.query.threadId,
+        category: req.query.category,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+        keystrokesPerMinute: rate,
+      }),
+    );
+  });
+
+  /** The typing pace the estimate is based on — deliberately the user's to set, and to lower. */
+  app.put<{ Body: { keystrokesPerMinute?: number | null } }>('/api/account/typing-pace', async (req, reply) => {
+    if (!req.user) return reply.code(401).send({ error: 'unauthenticated' });
+    const value = req.body?.keystrokesPerMinute;
+    if (value !== null && (typeof value !== 'number' || !Number.isFinite(value) || value < 5 || value > 600)) {
+      return reply.code(400).send({ error: 'invalid_pace', message: 'Rythme attendu entre 5 et 600 frappes/minute, ou null pour la valeur par défaut' });
+    }
+    db.setKeystrokesPerMinute(req.user.id, value ?? null);
+    // The stored figures depend on it, so anything cached against the old pace is now wrong.
+    memo.clear();
+    return { ok: true, keystrokesPerMinute: db.getKeystrokesPerMinute(req.user.id) };
+  });
+
+  /**
    * The set of project ids this request may see, or null when visibility does not apply.
    *
    * null is the local single-user case: the dashboard runs with no accounts, the hook hands every
