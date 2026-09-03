@@ -14,6 +14,9 @@ export type SelectedItem = { kind: 'thread'; id: string } | { kind: 'memory'; it
 
 interface ProjectTreeProps {
   projects: Project[];
+  /** False while the first fetch is still in flight, so an empty list can be told apart from a
+   *  list that has not arrived. Showing "Aucun projet." during loading reads as "you have none". */
+  loaded?: boolean;
   selected: SelectedItem;
   onSelect: (item: SelectedItem) => void;
   refreshToken: number;
@@ -44,7 +47,7 @@ function IconButton({ title, onClick, className, children }: { title: string; on
         e.stopPropagation();
         onClick();
       }}
-      className={`ml-1 hidden shrink-0 items-center rounded p-1 text-muted-foreground group-hover:flex ${className}`}
+      className={`ml-2 hidden shrink-0 items-center rounded-xl p-2 text-muted-foreground group-hover:flex ${className}`}
     >
       {children}
     </button>
@@ -52,14 +55,14 @@ function IconButton({ title, onClick, className, children }: { title: string; on
 }
 
 const panelInputClass =
-  'w-0 min-w-0 flex-1 rounded border border-border bg-card px-1.5 py-1 text-xs text-foreground placeholder:text-muted-foreground';
-const panelConfirmClass = 'shrink-0 rounded p-1 text-accent hover:bg-accent-muted disabled:opacity-40';
-const panelCancelClass = 'shrink-0 rounded p-1 text-muted-foreground hover:bg-muted';
+  'w-0 min-w-0 flex-1 rounded-xl border border-border bg-card px-2 py-2 text-sm text-foreground placeholder:text-muted-foreground';
+const panelConfirmClass = 'shrink-0 rounded-xl p-2 text-accent hover:bg-accent-muted disabled:opacity-40';
+const panelCancelClass = 'shrink-0 rounded-xl p-2 text-muted-foreground hover:bg-muted';
 
 function RenamePanel({ project, onConfirm, onCancel }: { project: Project; onConfirm: (name: string) => void; onCancel: () => void }) {
   const [name, setName] = useState(project.name);
   return (
-    <div className="mb-1 ml-5 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+    <div className="mb-2 ml-6 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
       <input
         autoFocus
         value={name}
@@ -93,8 +96,8 @@ function CategoryPanel({
 }) {
   const [value, setValue] = useState(project.category ?? '');
   return (
-    <div className="mb-1 ml-5 space-y-1" onClick={(e) => e.stopPropagation()}>
-      <div className="flex items-center gap-1">
+    <div className="mb-2 ml-6 space-y-2" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center gap-2">
         <input
           autoFocus
           value={value}
@@ -113,12 +116,12 @@ function CategoryPanel({
           <X size={14} />
         </button>
       </div>
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-wrap gap-2">
         {categories.map((c) => (
           <button
             key={c.name}
             onClick={() => setValue(c.name)}
-            className={`rounded-full border px-2 py-0.5 text-[11px] ${
+            className={`rounded-full border px-2 py-2 text-sm ${
               value === c.name ? 'border-accent bg-accent-muted text-accent-muted-foreground' : 'border-border text-muted-foreground hover:bg-muted'
             }`}
           >
@@ -126,7 +129,7 @@ function CategoryPanel({
           </button>
         ))}
         {project.category && (
-          <button onClick={() => onConfirm(null)} className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted">
+          <button onClick={() => onConfirm(null)} className="rounded-full border border-border px-2 py-2 text-sm text-muted-foreground hover:bg-muted">
             retirer
           </button>
         )}
@@ -153,16 +156,16 @@ function CategoryManagerPanel({ categories, onChanged, onClose }: { categories: 
   };
 
   return (
-    <div className="space-y-1 border-b border-border bg-card p-2" onClick={(e) => e.stopPropagation()}>
-      <div className="mb-1 flex items-center justify-between">
-        <span className="text-xs font-medium text-foreground">Catégories</span>
-        <button onClick={onClose} className="rounded p-0.5 text-muted-foreground hover:bg-muted">
+    <div className="space-y-2 border-b border-border bg-card p-2" onClick={(e) => e.stopPropagation()}>
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-sm font-medium text-foreground">Catégories</span>
+        <button onClick={onClose} className="rounded-xl p-2 text-muted-foreground hover:bg-muted">
           <X size={14} />
         </button>
       </div>
-      {categories.length === 0 && <p className="px-1 text-xs text-muted-foreground">Aucune catégorie pour le moment.</p>}
+      {categories.length === 0 && <p className="px-2 text-sm text-muted-foreground">Aucune catégorie pour le moment.</p>}
       {categories.map((c) => (
-        <div key={c.name} className="flex items-center gap-1 rounded px-1 py-0.5">
+        <div key={c.name} className="flex items-center gap-2 rounded-xl px-2 py-2">
           {renaming === c.name ? (
             <>
               <input
@@ -205,7 +208,7 @@ function CategoryManagerPanel({ categories, onChanged, onClose }: { categories: 
             </>
           ) : confirmingDelete === c.name ? (
             <>
-              <span className="flex-1 truncate text-xs text-muted-foreground">
+              <span className="flex-1 truncate text-sm text-muted-foreground">
                 Supprimer « {c.name} » ? {c.projectCount > 0 && `${c.projectCount} projet${c.projectCount === 1 ? '' : 's'} repasseront sans catégorie.`}
               </span>
               <button
@@ -214,7 +217,7 @@ function CategoryManagerPanel({ categories, onChanged, onClose }: { categories: 
                   setConfirmingDelete(null);
                   onChanged();
                 }}
-                className="shrink-0 rounded p-1 text-destructive hover:bg-destructive-muted"
+                className="shrink-0 rounded-xl p-2 text-destructive hover:bg-destructive-muted"
               >
                 <Check size={14} />
               </button>
@@ -224,8 +227,8 @@ function CategoryManagerPanel({ categories, onChanged, onClose }: { categories: 
             </>
           ) : (
             <>
-              <span className="flex-1 truncate text-xs text-foreground">{c.name}</span>
-              <span className="shrink-0 text-[11px] text-muted-foreground">{c.projectCount}</span>
+              <span className="flex-1 truncate text-sm text-foreground">{c.name}</span>
+              <span className="shrink-0 text-sm text-muted-foreground">{c.projectCount}</span>
               <button
                 title="Renommer"
                 onClick={() => {
@@ -233,14 +236,14 @@ function CategoryManagerPanel({ categories, onChanged, onClose }: { categories: 
                   setRenameValue(c.name);
                   setError(null);
                 }}
-                className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="shrink-0 rounded-xl p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
               >
                 <Pencil size={12} />
               </button>
               <button
                 title="Supprimer"
                 onClick={() => setConfirmingDelete(c.name)}
-                className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive-muted hover:text-destructive"
+                className="shrink-0 rounded-xl p-2 text-muted-foreground hover:bg-destructive-muted hover:text-destructive"
               >
                 <Trash2 size={12} />
               </button>
@@ -248,8 +251,8 @@ function CategoryManagerPanel({ categories, onChanged, onClose }: { categories: 
           )}
         </div>
       ))}
-      {error && <p className="px-1 text-[11px] text-destructive">{error}</p>}
-      <div className="mt-1 flex items-center gap-1">
+      {error && <p className="px-2 text-sm text-destructive">{error}</p>}
+      <div className="mt-2 flex items-center gap-2">
         <input
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
@@ -267,9 +270,9 @@ function CategoryManagerPanel({ categories, onChanged, onClose }: { categories: 
 
 function ArchivePanel({ title, onConfirm, onCancel }: { title: string; onConfirm: () => void; onCancel: () => void }) {
   return (
-    <div className="mb-1 ml-5 flex items-center gap-2 text-xs text-muted-foreground" onClick={(e) => e.stopPropagation()}>
+    <div className="mb-2 ml-6 flex items-center gap-2 text-sm text-muted-foreground" onClick={(e) => e.stopPropagation()}>
       <span className="flex-1 truncate">Archiver « {title} » ? Le fichier source est déplacé, jamais supprimé.</span>
-      <button title="Confirmer" onClick={onConfirm} className="shrink-0 rounded p-1 text-warning hover:bg-warning-muted">
+      <button title="Confirmer" onClick={onConfirm} className="shrink-0 rounded-xl p-2 text-warning hover:bg-warning-muted">
         <Check size={14} />
       </button>
       <button title="Annuler" onClick={onCancel} className={panelCancelClass}>
@@ -302,8 +305,8 @@ function MergeProjectPanel({
   const target = otherProjects.find((p) => p.id === targetId);
 
   return (
-    <div className="mb-1 ml-5 space-y-1" onClick={(e) => e.stopPropagation()}>
-      <div className="flex items-center gap-1">
+    <div className="mb-2 ml-6 space-y-2" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center gap-2">
         <select autoFocus value={targetId} onChange={(e) => setTargetId(e.target.value)} className={panelInputClass}>
           <option value="">Fusionner dans…</option>
           {otherProjects
@@ -322,7 +325,7 @@ function MergeProjectPanel({
         </button>
       </div>
       {target && (
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Fils, mémoires et artefacts déplacés vers « {target.name} », qui conserve son nom. « {project.name} » disparaît de la liste. Aucun
           fichier réel touché.
         </p>
@@ -337,12 +340,12 @@ function DeletePanel({ project, onConfirm, onCancel }: { project: Project; onCon
   const matches = typed === project.name;
 
   return (
-    <div className="mb-1 ml-5 space-y-1" onClick={(e) => e.stopPropagation()}>
-      <p className="text-[11px] text-muted-foreground">
+    <div className="mb-2 ml-6 space-y-2" onClick={(e) => e.stopPropagation()}>
+      <p className="text-sm text-muted-foreground">
         Déplace le dossier réel ({project.canonicalPath || 'aucun'}) vers la Corbeille macOS — récupérable tant qu'elle n'est pas vidée. Tape le
         nom du projet pour confirmer :
       </p>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-2">
         <input
           autoFocus
           value={typed}
@@ -363,7 +366,7 @@ function DeletePanel({ project, onConfirm, onCancel }: { project: Project; onCon
           title="Confirmer la suppression"
           onClick={() => (matches ? onConfirm() : setMismatch(true))}
           disabled={!typed}
-          className="shrink-0 rounded p-1 text-destructive hover:bg-destructive-muted disabled:opacity-40"
+          className="shrink-0 rounded-xl p-2 text-destructive hover:bg-destructive-muted disabled:opacity-40"
         >
           <Check size={14} />
         </button>
@@ -371,7 +374,7 @@ function DeletePanel({ project, onConfirm, onCancel }: { project: Project; onCon
           <X size={14} />
         </button>
       </div>
-      {mismatch && <p className="text-[11px] text-destructive">Nom incorrect — rien n'a été supprimé.</p>}
+      {mismatch && <p className="text-sm text-destructive">Nom incorrect — rien n'a été supprimé.</p>}
     </div>
   );
 }
@@ -404,30 +407,30 @@ function ShareProjectPanel({ project, onClose }: { project: Project; onClose: ()
   };
 
   return (
-    <div className="mb-1 ml-5 rounded-lg border border-border bg-card p-2 shadow-sm" onClick={(e) => e.stopPropagation()}>
-      <div className="mb-1.5 flex items-center justify-between">
-        <span className="text-[11px] font-medium text-muted-foreground">Partager « {project.name} »</span>
+    <div className="mb-2 ml-6 rounded-xl border border-border bg-card p-2 shadow-sm" onClick={(e) => e.stopPropagation()}>
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-sm font-medium text-muted-foreground">Partager « {project.name} »</span>
         <button title="Fermer" onClick={onClose} className={panelCancelClass}>
           <X size={14} />
         </button>
       </div>
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-2">
         <input
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && add()}
           placeholder="email du collègue"
-          className="flex-1 rounded border border-border bg-card px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground"
+          className="flex-1 rounded-xl border border-border bg-card px-2 py-2 text-sm text-foreground placeholder:text-muted-foreground"
         />
-        <button onClick={add} disabled={busy || !email.trim()} className="rounded bg-accent-muted px-2 py-1 text-xs text-accent-foreground disabled:opacity-40">
+        <button onClick={add} disabled={busy || !email.trim()} className="rounded-xl bg-accent-muted px-2 py-2 text-sm text-accent-foreground disabled:opacity-40">
           Partager
         </button>
       </div>
-      {error && <p className="mt-1 text-[11px] text-destructive">{error}</p>}
+      {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
       {shares.length > 0 && (
-        <ul className="mt-1.5 space-y-1">
+        <ul className="mt-2 space-y-2">
           {shares.map((sh) => (
-            <li key={sh.userId} className="flex items-center justify-between text-[11px] text-foreground">
+            <li key={sh.userId} className="flex items-center justify-between text-sm text-foreground">
               <span className="truncate">
                 {sh.displayName} <span className="text-muted-foreground">({sh.email})</span>
               </span>
@@ -445,7 +448,7 @@ function ShareProjectPanel({ project, onClose }: { project: Project; onClose: ()
         </ul>
       )}
       {shares.length === 0 && !error && (
-        <p className="mt-1 text-[11px] text-muted-foreground">Personne d'autre n'y a accès pour l'instant.</p>
+        <p className="mt-2 text-sm text-muted-foreground">Personne d'autre n'y a accès pour l'instant.</p>
       )}
     </div>
   );
@@ -453,13 +456,13 @@ function ShareProjectPanel({ project, onClose }: { project: Project; onClose: ()
 
 function ExportProjectPanel({ project, onClose }: { project: Project; onClose: () => void }) {
   return (
-    <div className="mb-1 ml-5 flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-card p-1.5 shadow-sm" onClick={(e) => e.stopPropagation()}>
-      <span className="text-[11px] font-medium text-muted-foreground">Exporter « {project.name} » :</span>
+    <div className="mb-2 ml-6 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-2 shadow-sm" onClick={(e) => e.stopPropagation()}>
+      <span className="text-sm font-medium text-muted-foreground">Exporter « {project.name} » :</span>
       <a
         href={`/api/projects/${project.id}/export?format=markdown`}
         download
         onClick={onClose}
-        className="flex items-center gap-1 rounded bg-accent-muted px-2 py-0.5 text-xs text-accent-foreground hover:bg-accent hover:text-white transition-colors"
+        className="flex items-center gap-2 rounded-xl bg-accent-muted px-2 py-2 text-sm text-accent-foreground hover:bg-accent hover:text-white transition-colors"
       >
         <Download size={12} />
         <span>Markdown (.md)</span>
@@ -468,7 +471,7 @@ function ExportProjectPanel({ project, onClose }: { project: Project; onClose: (
         href={`/api/projects/${project.id}/export?format=json`}
         download
         onClick={onClose}
-        className="flex items-center gap-1 rounded bg-muted px-2 py-0.5 text-xs text-foreground hover:bg-accent-muted hover:text-accent transition-colors"
+        className="flex items-center gap-2 rounded-xl bg-muted px-2 py-2 text-sm text-foreground hover:bg-accent-muted hover:text-accent transition-colors"
       >
         <Download size={12} />
         <span>JSON (.json)</span>
@@ -486,11 +489,11 @@ function ThreadArchiveButton({ title, onConfirm }: { title: string; onConfirm: (
   const [confirming, setConfirming] = useState(false);
   if (confirming) {
     return (
-      <span className="ml-1 flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()} title={`Archiver « ${title} » ?`}>
-        <button onClick={onConfirm} className="rounded p-1 text-warning hover:bg-warning-muted">
+      <span className="ml-2 flex shrink-0 items-center gap-2" onClick={(e) => e.stopPropagation()} title={`Archiver « ${title} » ?`}>
+        <button onClick={onConfirm} className="rounded-xl p-2 text-warning hover:bg-warning-muted">
           <Check size={13} />
         </button>
-        <button onClick={() => setConfirming(false)} className="rounded p-1 text-muted-foreground hover:bg-muted">
+        <button onClick={() => setConfirming(false)} className="rounded-xl p-2 text-muted-foreground hover:bg-muted">
           <X size={13} />
         </button>
       </span>
@@ -513,7 +516,7 @@ function RowDeleteButton({ project, onConfirm }: { project: Project; onConfirm: 
 
   if (confirming) {
     return (
-      <span className="flex shrink-0 items-center gap-0.5" title={`Tape « ${project.name} » pour confirmer la suppression`}>
+      <span className="flex shrink-0 items-center gap-2" title={`Tape « ${project.name} » pour confirmer la suppression`}>
         <input
           autoFocus
           value={typed}
@@ -523,9 +526,9 @@ function RowDeleteButton({ project, onConfirm }: { project: Project; onConfirm: 
             if (e.key === 'Enter' && matches) onConfirm();
             else if (e.key === 'Escape') setConfirming(false);
           }}
-          className="w-20 rounded border border-border bg-card px-1.5 py-1 text-xs text-foreground"
+          className="w-20 rounded-xl border border-border bg-card px-2 py-2 text-sm text-foreground"
         />
-        <button onClick={onConfirm} disabled={!matches} className="rounded p-1 text-destructive hover:bg-destructive-muted disabled:opacity-40">
+        <button onClick={onConfirm} disabled={!matches} className="rounded-xl p-2 text-destructive hover:bg-destructive-muted disabled:opacity-40">
           <Check size={13} />
         </button>
         <button
@@ -533,7 +536,7 @@ function RowDeleteButton({ project, onConfirm }: { project: Project; onConfirm: 
             setConfirming(false);
             setTyped('');
           }}
-          className="rounded p-1 text-muted-foreground hover:bg-muted"
+          className="rounded-xl p-2 text-muted-foreground hover:bg-muted"
         >
           <X size={13} />
         </button>
@@ -544,7 +547,7 @@ function RowDeleteButton({ project, onConfirm }: { project: Project; onConfirm: 
     <button
       title="Supprimer le projet (déplace le dossier vers la Corbeille)"
       onClick={() => setConfirming(true)}
-      className="rounded p-1 text-muted-foreground hover:bg-destructive-muted hover:text-destructive"
+      className="rounded-xl p-2 text-muted-foreground hover:bg-destructive-muted hover:text-destructive"
     >
       <Trash2 size={13} />
     </button>
@@ -604,13 +607,13 @@ function ProjectNode({
 
   return (
     <div ref={rootRef}>
-      <div className={`group flex items-center rounded-md hover:bg-muted ${isFocusTarget ? 'bg-accent-muted' : ''}`}>
+      <div className={`group flex items-center rounded-xl hover:bg-muted ${isFocusTarget ? 'bg-accent-muted' : ''}`}>
         {draggable && (
-          <span title="Glisser pour réorganiser" className="hidden shrink-0 cursor-grab px-1 text-muted-foreground group-hover:block">
+          <span title="Glisser pour réorganiser" className="hidden shrink-0 cursor-grab px-2 text-muted-foreground group-hover:block">
             <GripVertical size={14} />
           </span>
         )}
-        <button onClick={() => setExpanded((e) => !e)} className="flex flex-1 items-center gap-1.5 overflow-hidden px-2 py-1.5 text-left text-sm text-foreground">
+        <button onClick={() => setExpanded((e) => !e)} className="flex flex-1 items-center gap-2 overflow-hidden px-2 py-2 text-left text-sm text-foreground">
           <span className="text-muted-foreground">{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
           <span className="truncate">{project.name}</span>
         </button>
@@ -705,9 +708,9 @@ function ProjectNode({
         />
       )}
       {expanded && children && (
-        <div className="ml-5 border-l border-border pl-2">
+        <div className="ml-6 border-l border-border pl-2">
           {children.threads.length === 0 && children.memories.length === 0 && children.artifacts.length === 0 && (
-            <p className="px-2 py-1 text-xs text-muted-foreground">Rien pour l'instant.</p>
+            <p className="px-2 py-2 text-sm text-muted-foreground">Rien pour l'instant.</p>
           )}
           {children.threads.map((t) => (
             <div
@@ -716,11 +719,11 @@ function ProjectNode({
                 if (el) threadRefs.current.set(t.id, el);
                 else threadRefs.current.delete(t.id);
               }}
-              className="group flex items-center rounded-md"
+              className="group flex items-center rounded-xl"
             >
               <button
                 onClick={() => onSelect({ kind: 'thread', id: t.id })}
-                className={`flex flex-1 items-center gap-1.5 truncate rounded-md px-2 py-1 text-left text-xs ${
+                className={`flex flex-1 items-center gap-2 truncate rounded-xl px-2 py-2 text-left text-sm ${
                   selected?.kind === 'thread' && selected.id === t.id ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'
                 }`}
               >
@@ -742,7 +745,7 @@ function ProjectNode({
             <button
               key={m.id}
               onClick={() => onSelect({ kind: 'memory', item: m })}
-              className="flex w-full items-center gap-1.5 truncate rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted"
+              className="flex w-full items-center gap-2 truncate rounded-xl px-2 py-2 text-left text-sm text-muted-foreground hover:bg-muted"
             >
               <StickyNote size={12} className="shrink-0" />
               <span className="truncate">{m.filePath.split('/').pop()}</span>
@@ -752,7 +755,7 @@ function ProjectNode({
             <button
               key={a.id}
               onClick={() => onSelect({ kind: 'artifact', item: a })}
-              className="flex w-full items-center gap-1.5 truncate rounded-md px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted"
+              className="flex w-full items-center gap-2 truncate rounded-xl px-2 py-2 text-left text-sm text-muted-foreground hover:bg-muted"
             >
               <FileText size={12} className="shrink-0" />
               <span className="truncate">{a.title}</span>
@@ -854,7 +857,7 @@ function ProjectRow({
   );
 }
 
-export function ProjectTree({ projects, selected, onSelect, refreshToken, onChanged, focusThreadId, onFocusHandled }: ProjectTreeProps) {
+export function ProjectTree({ projects, loaded = true, selected, onSelect, refreshToken, onChanged, focusThreadId, onFocusHandled }: ProjectTreeProps) {
   const [query, setQuery] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [archived, setArchived] = useState<Project[]>([]);
@@ -952,17 +955,17 @@ export function ProjectTree({ projects, selected, onSelect, refreshToken, onChan
 
   return (
     <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-muted/40">
-      <div className="flex items-center gap-1 p-2">
+      <div className="flex items-center gap-2 p-2">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filtrer les projets…"
-          className="w-0 min-w-0 flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground"
+          className="w-0 min-w-0 flex-1 rounded-xl border border-border bg-card px-2 py-2 text-sm text-foreground placeholder:text-muted-foreground"
         />
         <button
           title="Gérer les catégories"
           onClick={() => setShowCategoryManager((v) => !v)}
-          className={`shrink-0 rounded-md border p-1.5 ${showCategoryManager ? 'border-accent bg-accent-muted text-accent' : 'border-border text-muted-foreground hover:bg-muted'}`}
+          className={`shrink-0 rounded-xl border p-2 ${showCategoryManager ? 'border-accent bg-accent-muted text-accent' : 'border-border text-muted-foreground hover:bg-muted'}`}
         >
           <Settings size={15} />
         </button>
@@ -977,13 +980,13 @@ export function ProjectTree({ projects, selected, onSelect, refreshToken, onChan
           onClose={() => setShowCategoryManager(false)}
         />
       )}
-      <div className="flex-1 overflow-y-auto px-1 pb-2">
+      <div className="flex-1 overflow-y-auto px-2 pb-2">
         {groups.map((group) => {
           const isSingleGroup = groups.length === 1 && group.key === '__uncategorized__';
           const collapsed = collapsedGroups.has(group.key);
           const groupCategory = group.key === '__uncategorized__' ? null : group.key;
           return (
-            <div key={group.key} className="mb-1">
+            <div key={group.key} className="mb-2">
               {!isSingleGroup && (
                 <button
                   onClick={() => toggleGroup(group.key)}
@@ -999,7 +1002,7 @@ export function ProjectTree({ projects, selected, onSelect, refreshToken, onChan
                     setDraggedId(null);
                     setDragOverGroup(null);
                   }}
-                  className={`flex w-full items-center gap-1 rounded px-2 py-1 text-left text-[11px] font-medium tracking-wide text-muted-foreground uppercase ${
+                  className={`flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-sm font-medium tracking-wide text-muted-foreground uppercase ${
                     dragOverGroup === group.key ? 'bg-accent-muted text-accent' : ''
                   }`}
                 >
@@ -1048,26 +1051,37 @@ export function ProjectTree({ projects, selected, onSelect, refreshToken, onChan
             </div>
           );
         })}
-        {filtered.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">Aucun projet.</p>}
+        {filtered.length === 0 &&
+          (loaded ? (
+            <p className="px-4 py-2 text-sm text-muted-foreground">Aucun projet.</p>
+          ) : (
+            // Placeholders shaped like the rows that are coming, so the panel keeps its size and
+            // the eye has somewhere to rest instead of a blank column.
+            <div className="flex flex-col gap-2 px-4 py-2" aria-hidden>
+              {[72, 56, 64, 48, 68, 52].map((w, i) => (
+                <div key={i} className="h-4 animate-pulse rounded-xl bg-muted" style={{ width: `${w}%` }} />
+              ))}
+            </div>
+          ))}
       </div>
       <div className="border-t border-border p-2">
-        <label className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+        <label className="flex items-center gap-2 px-2 text-sm text-muted-foreground">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
           Projets archivés
         </label>
         {showArchived && (
-          <div className="mt-1 space-y-0.5">
-            {archived.length === 0 && <p className="px-2 py-1 text-xs text-muted-foreground">Aucun.</p>}
+          <div className="mt-2 space-y-2">
+            {archived.length === 0 && <p className="px-2 py-2 text-sm text-muted-foreground">Aucun.</p>}
             {archived.map((p) => (
-              <div key={p.id} className="group flex items-center justify-between px-2 py-1 text-xs text-muted-foreground">
+              <div key={p.id} className="group flex items-center justify-between px-2 py-2 text-sm text-muted-foreground">
                 <span className="truncate">{p.name}</span>
-                <div className="flex shrink-0 items-center gap-1">
+                <div className="flex shrink-0 items-center gap-2">
                   <button
                     onClick={async () => {
                       await api.unarchiveProject(p.id);
                       onChanged();
                     }}
-                    className="rounded px-1.5 py-0.5 text-success hover:bg-success-muted"
+                    className="rounded-xl px-2 py-2 text-success hover:bg-success-muted"
                   >
                     Restaurer
                   </button>

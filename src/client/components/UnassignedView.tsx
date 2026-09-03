@@ -22,18 +22,18 @@ function ThreadRow({ thread, projects, onAssigned }: { thread: Thread; projects:
 
   return (
     <tr className="border-t border-border">
-      <td className="px-3 py-2 text-foreground">{thread.title}</td>
-      <td className="px-3 py-2 text-muted-foreground">{ENGINE_LABEL[thread.originEngine] ?? thread.originEngine}</td>
-      <td className="max-w-xs truncate px-3 py-2 font-mono text-xs text-muted-foreground/70" title={thread.sourceRef}>
+      <td className="px-4 py-2 text-foreground">{thread.title}</td>
+      <td className="px-4 py-2 text-muted-foreground">{ENGINE_LABEL[thread.originEngine] ?? thread.originEngine}</td>
+      <td className="max-w-xs truncate px-4 py-2 font-mono text-sm text-muted-foreground/70" title={thread.sourceRef}>
         {thread.sourceRef ?? '—'}
       </td>
-      <td className="px-3 py-2 text-muted-foreground">{thread.messageCount}</td>
-      <td className="px-3 py-2">
+      <td className="px-4 py-2 text-muted-foreground">{thread.messageCount}</td>
+      <td className="px-4 py-2">
         <div className="flex items-center gap-2">
           <select
             value={target}
             onChange={(e) => setTarget(e.target.value)}
-            className="rounded border border-border bg-card px-2 py-1 text-xs text-foreground"
+            className="rounded-xl border border-border bg-card px-2 py-2 text-sm text-foreground"
           >
             <option value="">Assigner à…</option>
             {projects.map((p) => (
@@ -45,7 +45,7 @@ function ThreadRow({ thread, projects, onAssigned }: { thread: Thread; projects:
           <button
             onClick={assign}
             disabled={!target || busy}
-            className="rounded border border-accent/30 bg-accent-muted px-2 py-1 text-xs text-accent disabled:opacity-40"
+            className="rounded-xl border border-accent/30 bg-accent-muted px-2 py-2 text-sm text-accent disabled:opacity-40"
           >
             {busy ? '…' : 'OK'}
           </button>
@@ -87,8 +87,8 @@ export function UnassignedView({ projects }: { projects: Project[] }) {
 
   return (
     <div className="mx-auto max-w-4xl overflow-y-auto p-6">
-      <h2 className="mb-1 text-sm font-semibold text-foreground">Non affecté</h2>
-      <p className="mb-4 text-xs text-muted-foreground">
+      <h2 className="mb-2 text-sm font-semibold text-foreground">Non affecté</h2>
+      <p className="mb-4 text-sm text-muted-foreground">
         Sessions dont le dossier de travail ne correspond à aucun projet connu (dossiers fantômes générés par les outils, sessions
         lancées à la racine du home…). Assigne-les manuellement — sync-hub retiendra la correspondance pour la prochaine fois.
       </p>
@@ -99,26 +99,26 @@ export function UnassignedView({ projects }: { projects: Project[] }) {
         <p className="text-sm text-muted-foreground">Rien à trier pour l'instant.</p>
       ) : (
         <>
-          <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="mb-4 flex items-center justify-between gap-4">
             <input
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Filtrer par titre ou source…"
-              className="w-72 rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground"
+              className="w-72 rounded-xl border border-border bg-card px-2 py-2 text-sm text-foreground placeholder:text-muted-foreground"
             />
-            <span className="shrink-0 text-xs text-muted-foreground">
+            <span className="shrink-0 text-sm text-muted-foreground">
               {filtered.length === threads.length ? `${threads.length} fils` : `${filtered.length} / ${threads.length} fils`}
             </span>
           </div>
 
-          <table className="w-full border-collapse overflow-hidden rounded-lg border border-border text-sm">
+          <table className="w-full border-collapse overflow-hidden rounded-xl border border-border text-sm">
             <thead>
-              <tr className="bg-muted text-left text-xs text-muted-foreground">
-                <th className="px-3 py-2 font-medium">Fil</th>
-                <th className="px-3 py-2 font-medium">Outil</th>
-                <th className="px-3 py-2 font-medium">Source (cwd / slug)</th>
-                <th className="px-3 py-2 font-medium">Messages</th>
-                <th className="px-3 py-2 font-medium">Action</th>
+              <tr className="bg-muted text-left text-sm text-muted-foreground">
+                <th className="px-4 py-2 font-medium">Fil</th>
+                <th className="px-4 py-2 font-medium">Outil</th>
+                <th className="px-4 py-2 font-medium">Source (cwd / slug)</th>
+                <th className="px-4 py-2 font-medium">Messages</th>
+                <th className="px-4 py-2 font-medium">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -131,7 +131,7 @@ export function UnassignedView({ projects }: { projects: Project[] }) {
           {visibleCount < filtered.length && (
             <button
               onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
-              className="mt-3 w-full rounded-md border border-border py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="mt-4 w-full rounded-xl border border-border py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               Afficher {Math.min(PAGE_SIZE, filtered.length - visibleCount)} de plus ({filtered.length - visibleCount} restants)
             </button>

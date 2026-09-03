@@ -260,21 +260,21 @@ export function CostsView({ projects }: { projects: Project[] }) {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold tracking-tight text-foreground">Tableau de Bord des Coûts & Tokens</h1>
-            <span className="inline-flex items-center gap-1 rounded-full bg-accent-muted px-2.5 py-0.5 text-xs font-medium text-accent-muted-foreground">
+            <span className="inline-flex items-center gap-2 rounded-full bg-accent-muted px-4 py-2 text-sm font-medium text-accent-muted-foreground">
               <Sparkles className="h-3 w-3" /> Multi-supports
             </span>
           </div>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <p className="text-sm text-muted-foreground mt-2">
             Analyse détaillée de votre consommation de tokens et des coûts équivalents par modèle, par projet et par date (Anthropic, OpenAI, Google).
           </p>
         </div>
 
         {/* Currency & Export controls */}
         <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-lg border border-border bg-card p-0.5 text-xs">
+          <div className="inline-flex rounded-xl border border-border bg-card p-2 text-sm">
             <button
               onClick={() => setCurrency('EUR')}
-              className={`flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition-colors ${
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 font-medium transition-colors ${
                 currency === 'EUR' ? 'bg-accent text-accent-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -282,7 +282,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
             </button>
             <button
               onClick={() => setCurrency('USD')}
-              className={`flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition-colors ${
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 font-medium transition-colors ${
                 currency === 'USD' ? 'bg-accent text-accent-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -290,7 +290,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
             </button>
             <button
               onClick={() => setCurrency('TOKENS')}
-              className={`flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition-colors ${
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 font-medium transition-colors ${
                 currency === 'TOKENS' ? 'bg-accent text-accent-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -301,7 +301,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
           <button
             onClick={handleExportJson}
             title="Exporter les données en JSON"
-            className="flex items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
             <Download className="h-3.5 w-3.5" /> Exporter
           </button>
@@ -309,11 +309,11 @@ export function CostsView({ projects }: { projects: Project[] }) {
       </div>
 
       {/* Filters Bar */}
-      <div className="rounded-xl border border-border bg-card p-4 shadow-xs space-y-3">
-        <div className="flex flex-wrap items-center gap-3">
+      <div className="rounded-xl border border-border bg-card p-4 shadow-xs space-y-4">
+        <div className="flex flex-wrap items-center gap-4">
           {/* Quick Period selector */}
-          <div className="flex items-center gap-1 text-xs">
-            <span className="font-medium text-muted-foreground mr-1">Période :</span>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="font-medium text-muted-foreground mr-2">Période :</span>
             {(
               [
                 { key: '7d', label: '7 jours' },
@@ -327,7 +327,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
               <button
                 key={p.key}
                 onClick={() => setPeriod(p.key)}
-                className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
+                className={`rounded-xl px-4 py-2 font-medium transition-colors ${
                   period === p.key
                     ? 'bg-foreground text-background'
                     : 'bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80'
@@ -340,25 +340,25 @@ export function CostsView({ projects }: { projects: Project[] }) {
 
           {/* Custom Date Inputs if custom period */}
           {period === 'custom' && (
-            <div className="flex items-center gap-2 text-xs">
+            <div className="flex items-center gap-2 text-sm">
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="rounded-md border border-border bg-background px-2 py-1 text-foreground"
+                className="rounded-xl border border-border bg-background px-2 py-2 text-foreground"
               />
               <span className="text-muted-foreground">à</span>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="rounded-md border border-border bg-background px-2 py-1 text-foreground"
+                className="rounded-xl border border-border bg-background px-2 py-2 text-foreground"
               />
             </div>
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-4 pt-1 border-t border-border/50 text-xs">
+        <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-border/50 text-sm">
           {/* Engine filter */}
           <div className="flex items-center gap-2">
             <label htmlFor="costs-engine-filter" className="font-medium text-muted-foreground">
@@ -368,7 +368,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
               id="costs-engine-filter"
               value={engine}
               onChange={(e) => setEngine(e.target.value)}
-              className="rounded-md border border-border bg-background px-2.5 py-1 text-foreground font-medium"
+              className="rounded-xl border border-border bg-background px-4 py-2 text-foreground font-medium"
             >
               <option value="">Tous les supports (Anthropic, OpenAI, Google)</option>
               <option value="claude-code">Anthropic (Claude Code)</option>
@@ -386,7 +386,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
               id="costs-project-filter"
               value={projectId}
               onChange={(e) => setProjectId(e.target.value)}
-              className="rounded-md border border-border bg-background px-2.5 py-1 text-foreground max-w-xs truncate"
+              className="rounded-xl border border-border bg-background px-4 py-2 text-foreground max-w-xs truncate"
             >
               <option value="">Tous les projets ({visibleProjects.length})</option>
               {visibleProjects.map((p) => (
@@ -400,7 +400,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
           {/* Granularity */}
           <div className="flex items-center gap-2 ml-auto">
             <label className="font-medium text-muted-foreground">Échelle :</label>
-            <div className="inline-flex rounded-md border border-border bg-muted p-0.5">
+            <div className="inline-flex rounded-xl border border-border bg-muted p-2">
               {(
                 [
                   { key: 'day', label: 'Jour' },
@@ -411,7 +411,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
                 <button
                   key={g.key}
                   onClick={() => setGranularity(g.key)}
-                  className={`rounded-sm px-2 py-0.5 text-xs font-medium transition-colors ${
+                  className={`rounded-xl px-2 py-2 text-sm font-medium transition-colors ${
                     granularity === g.key ? 'bg-card text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
@@ -437,31 +437,31 @@ export function CostsView({ projects }: { projects: Project[] }) {
             {/* Total Cost Card */}
             <div className="rounded-xl border border-border bg-card p-4 shadow-xs">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">Coût Total Estimé</span>
-                <div className="rounded-lg bg-accent-muted p-1.5 text-accent-muted-foreground">
+                <span className="text-sm font-medium text-muted-foreground">Coût Total Estimé</span>
+                <div className="rounded-xl bg-accent-muted p-2 text-accent-muted-foreground">
                   <Coins className="h-4 w-4" />
                 </div>
               </div>
-              <div className="mt-2 text-2xl font-bold text-foreground">
+              <div className="mt-2 text-3xl font-bold text-foreground">
                 {currency === 'USD' ? formatCurrency(summary.totalCostUsd, 'USD') : formatCurrency(summary.totalCostEur, 'EUR')}
               </div>
-              <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+              <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
                 <span>≈ {currency === 'USD' ? formatCurrency(summary.totalCostEur, 'EUR') : formatCurrency(summary.totalCostUsd, 'USD')}</span>
                 <span className="text-border">|</span>
-                <span className="text-[10px] text-muted-foreground/80">Taux: 1$ = {summary.eurRate}€</span>
+                <span className="text-sm text-muted-foreground/80">Taux: 1$ = {summary.eurRate}€</span>
               </div>
             </div>
 
             {/* Total Tokens Card */}
             <div className="rounded-xl border border-border bg-card p-4 shadow-xs">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">Tokens Consommés</span>
-                <div className="rounded-lg bg-emerald-500/15 p-1.5 text-emerald-600 dark:text-emerald-400">
+                <span className="text-sm font-medium text-muted-foreground">Tokens Consommés</span>
+                <div className="rounded-xl bg-emerald-500/15 p-2 text-emerald-600 dark:text-emerald-400">
                   <Cpu className="h-4 w-4" />
                 </div>
               </div>
-              <div className="mt-2 text-2xl font-bold text-foreground">{formatTokensCompact(summary.totalTokens)}</div>
-              <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+              <div className="mt-2 text-3xl font-bold text-foreground">{formatTokensCompact(summary.totalTokens)}</div>
+              <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
                 <span>In: {formatTokensCompact(summary.totalInputTokens)}</span>
                 <span>•</span>
                 <span>Out: {formatTokensCompact(summary.totalOutputTokens)}</span>
@@ -473,13 +473,13 @@ export function CostsView({ projects }: { projects: Project[] }) {
             {/* Messages Card */}
             <div className="rounded-xl border border-border bg-card p-4 shadow-xs">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">Messages & Tours</span>
-                <div className="rounded-lg bg-blue-500/15 p-1.5 text-blue-600 dark:text-blue-400">
+                <span className="text-sm font-medium text-muted-foreground">Messages & Tours</span>
+                <div className="rounded-xl bg-blue-500/15 p-2 text-blue-600 dark:text-blue-400">
                   <Layers className="h-4 w-4" />
                 </div>
               </div>
-              <div className="mt-2 text-2xl font-bold text-foreground">{formatTokensFull(summary.totalMessages)}</div>
-              <div className="mt-1 text-xs text-muted-foreground">
+              <div className="mt-2 text-3xl font-bold text-foreground">{formatTokensFull(summary.totalMessages)}</div>
+              <div className="mt-2 text-sm text-muted-foreground">
                 {summary.byModel.length} modèle(s) • {summary.byProject.length} projet(s)
               </div>
             </div>
@@ -487,15 +487,15 @@ export function CostsView({ projects }: { projects: Project[] }) {
             {/* Top Engine / Top Model */}
             <div className="rounded-xl border border-border bg-card p-4 shadow-xs">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">Outil Dominant</span>
-                <div className="rounded-lg bg-amber-500/15 p-1.5 text-amber-600 dark:text-amber-400">
+                <span className="text-sm font-medium text-muted-foreground">Outil Dominant</span>
+                <div className="rounded-xl bg-amber-500/15 p-2 text-amber-600 dark:text-amber-400">
                   <TrendingUp className="h-4 w-4" />
                 </div>
               </div>
               <div className="mt-2 text-base font-bold text-foreground truncate">
                 {summary.byEngine[0]?.label ?? 'N/A'}
               </div>
-              <div className="mt-1 text-xs text-muted-foreground truncate">
+              <div className="mt-2 text-sm text-muted-foreground truncate">
                 Top modèle : <span className="font-mono text-foreground">{summary.byModel[0]?.model ?? 'N/A'}</span>
               </div>
             </div>
@@ -504,42 +504,42 @@ export function CostsView({ projects }: { projects: Project[] }) {
           {/* Where each figure comes from. Without this the headline read as one measured number
               while quietly ignoring unpriced models and 62k archived messages — the angle blind
               spot that made costs look like they began in May. */}
-          <div className="rounded-xl border border-border bg-card px-5 py-4 shadow-xs">
-            <div className="flex items-center gap-2 mb-3">
+          <div className="rounded-xl border border-border bg-card px-6 py-4 shadow-xs">
+            <div className="flex items-center gap-2 mb-4">
               <Info className="h-4 w-4 text-accent" />
               <h3 className="text-sm font-semibold text-foreground">Provenance des chiffres</h3>
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="rounded-lg border border-border/60 bg-background/50 p-3">
-                <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="rounded-xl border border-border/60 bg-background/50 p-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
                   Mesuré
                 </div>
-                <div className="mt-1 text-lg font-bold text-foreground">{formatInCurrency(summary.measuredCostUsd, currency, summary.eurRate)}</div>
-                <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                <div className="mt-2 text-xl font-bold text-foreground">{formatInCurrency(summary.measuredCostUsd, currency, summary.eurRate)}</div>
+                <p className="mt-2 text-sm leading-snug text-muted-foreground">
                   Consommation rapportée par l'outil, tarif publié par l'éditeur.
                 </p>
               </div>
 
-              <div className="rounded-lg border border-border/60 bg-background/50 p-3">
-                <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+              <div className="rounded-xl border border-border/60 bg-background/50 p-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                   <span className="h-2 w-2 rounded-full bg-amber-500" />
                   Interpolé
                 </div>
-                <div className="mt-1 text-lg font-bold text-foreground">{formatInCurrency(summary.interpolatedCostUsd, currency, summary.eurRate)}</div>
-                <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                <div className="mt-2 text-xl font-bold text-foreground">{formatInCurrency(summary.interpolatedCostUsd, currency, summary.eurRate)}</div>
+                <p className="mt-2 text-sm leading-snug text-muted-foreground">
                   {summary.interpolatedMessageCount.toLocaleString('fr-FR')} message(s) sur un modèle sans tarif publié —
                   taux déduit de ses deux voisins immédiats. Compris dans le total.
                 </p>
               </div>
 
-              <div className="rounded-lg border border-dashed border-border bg-background/50 p-3">
-                <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+              <div className="rounded-xl border border-dashed border-border bg-background/50 p-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                   <span className="h-2 w-2 rounded-full bg-muted-foreground/50" />
                   Archives — borne haute
                 </div>
-                <div className="mt-1 text-lg font-bold text-muted-foreground">≤ {formatInCurrency(summary.upperBoundCostUsd, currency, summary.eurRate)}</div>
-                <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                <div className="mt-2 text-xl font-bold text-muted-foreground">≤ {formatInCurrency(summary.upperBoundCostUsd, currency, summary.eurRate)}</div>
+                <p className="mt-2 text-sm leading-snug text-muted-foreground">
                   {summary.upperBoundMessageCount.toLocaleString('fr-FR')} message(s) importés de Claude.ai / ChatGPT
                   ({formatTokensCompact(summary.upperBoundTokens)} tokens). Un export ne dit pas quel modèle a répondu :
                   le modèle phare de l'époque est supposé, donc le tarif le plus cher.{' '}
@@ -548,7 +548,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
               </div>
             </div>
             {summary.unpricedMessageCount > 0 && (
-              <p className="mt-3 text-[11px] text-muted-foreground">
+              <p className="mt-4 text-sm text-muted-foreground">
                 {summary.unpricedMessageCount.toLocaleString('fr-FR')} message(s) restent non chiffrés : ni modèle connu,
                 ni tarif déductible. Ils comptent dans les tokens, pas dans le coût.
               </p>
@@ -556,7 +556,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
           </div>
 
           {/* Interactive Time-Series Chart */}
-          <div className="rounded-xl border border-border bg-card p-5 shadow-xs relative">
+          <div className="rounded-xl border border-border bg-card p-6 shadow-xs relative">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <BarChart3 className="h-4 w-4 text-accent" />
@@ -564,9 +564,9 @@ export function CostsView({ projects }: { projects: Project[] }) {
                   Évolution Chronologique ({currency === 'EUR' ? 'Coût en €' : currency === 'USD' ? 'Coût en $' : 'Volume de Tokens'})
                 </h3>
               </div>
-              <div className="flex items-center gap-3 text-xs">
+              <div className="flex items-center gap-4 text-sm">
                 {Object.entries(ENGINE_COLORS).map(([engKey, meta]) => (
-                  <div key={engKey} className="flex items-center gap-1.5">
+                  <div key={engKey} className="flex items-center gap-2">
                     <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: meta.fill }} />
                     <span className="text-muted-foreground">{meta.label.split(' ')[0]}</span>
                   </div>
@@ -575,7 +575,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
             </div>
 
             {chartData.length === 0 ? (
-              <div className="py-12 text-center text-xs text-muted-foreground">Aucune donnée disponible pour cette plage de dates.</div>
+              <div className="py-16 text-center text-sm text-muted-foreground">Aucune donnée disponible pour cette plage de dates.</div>
             ) : (
               <div className="relative">
                 {/* SVG Stacked Bar Chart */}
@@ -695,7 +695,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
                 </div>
 
                 {/* X-axis date labels */}
-                <div className="mt-2 flex justify-between text-[11px] text-muted-foreground font-mono px-2">
+                <div className="mt-2 flex justify-between text-sm text-muted-foreground font-mono px-2">
                   <span>{formatDateShort(chartData[0]?.date ?? '')}</span>
                   {chartData.length > 2 && (
                     <span>{formatDateShort(chartData[Math.floor(chartData.length / 2)]?.date ?? '')}</span>
@@ -706,7 +706,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
                 {/* Floating Tooltip */}
                 {hoveredPoint && (
                   <div
-                    className="absolute z-20 pointer-events-none rounded-lg border border-border bg-card p-3 shadow-lg text-xs space-y-1.5 w-60"
+                    className="absolute z-20 pointer-events-none rounded-xl border border-border bg-card p-4 shadow-lg text-sm space-y-2 w-60"
                     style={{
                       left: `${Math.min(
                         Math.max(10, (chartData.indexOf(hoveredPoint) / chartData.length) * 100 - 15),
@@ -715,7 +715,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
                       top: '10px',
                     }}
                   >
-                    <div className="font-semibold text-foreground flex items-center justify-between border-b border-border/60 pb-1">
+                    <div className="font-semibold text-foreground flex items-center justify-between border-b border-border/60 pb-2">
                       <span>{hoveredPoint.date}</span>
                       <span className="font-mono text-accent">
                         {currency === 'EUR'
@@ -726,12 +726,12 @@ export function CostsView({ projects }: { projects: Project[] }) {
                       </span>
                     </div>
 
-                    <div className="space-y-1 pt-0.5 text-[11px]">
+                    <div className="space-y-2 pt-2 text-sm">
                       {Object.entries(hoveredPoint.byEngine).map(([eng, rec]) => {
                         const meta = ENGINE_COLORS[eng] ?? { label: eng, fill: '#94a3b8' };
                         return (
                           <div key={eng} className="flex items-center justify-between">
-                            <span className="flex items-center gap-1.5 text-muted-foreground">
+                            <span className="flex items-center gap-2 text-muted-foreground">
                               <span className="h-2 w-2 rounded-full" style={{ backgroundColor: meta.fill }} />
                               {meta.label.split(' ')[0]} :
                             </span>
@@ -747,7 +747,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
                       })}
                     </div>
 
-                    <div className="border-t border-border/60 pt-1 text-[10px] text-muted-foreground flex justify-between">
+                    <div className="border-t border-border/60 pt-2 text-sm text-muted-foreground flex justify-between">
                       <span>Tokens In/Out:</span>
                       <span className="font-mono">
                         {formatTokensCompact(hoveredPoint.inputTokens)} / {formatTokensCompact(hoveredPoint.outputTokens)}
@@ -762,24 +762,24 @@ export function CostsView({ projects }: { projects: Project[] }) {
           {/* Breakdown Distributions Row */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             {/* By Support / Engine */}
-            <div className="rounded-xl border border-border bg-card p-4 shadow-xs space-y-3">
+            <div className="rounded-xl border border-border bg-card p-4 shadow-xs space-y-4">
               <div className="flex items-center gap-2">
                 <Cpu className="h-4 w-4 text-accent" />
-                <h4 className="text-xs font-semibold text-foreground">Répartition par Support</h4>
+                <h4 className="text-sm font-semibold text-foreground">Répartition par Support</h4>
               </div>
-              <div className="space-y-2.5">
+              <div className="space-y-4">
                 {summary.byEngine.map((e) => {
                   const meta = ENGINE_COLORS[e.engine] ?? { label: e.engine, fill: '#94a3b8' };
                   return (
-                    <div key={e.engine} className="space-y-1">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="flex items-center gap-1.5 font-medium text-foreground">
+                    <div key={e.engine} className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="flex items-center gap-2 font-medium text-foreground">
                           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: meta.fill }} />
                           {e.label}
                         </span>
                         <span className="font-mono font-semibold text-foreground">
                           {currency === 'USD' ? formatCurrency(e.costUsd, 'USD') : formatCurrency(e.costEur, 'EUR')}
-                          <span className="ml-1 text-[10px] font-normal text-muted-foreground">({e.percentage.toFixed(1)}%)</span>
+                          <span className="ml-2 text-sm font-normal text-muted-foreground">({e.percentage.toFixed(1)}%)</span>
                         </span>
                       </div>
                       <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
@@ -788,7 +788,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
                           style={{ width: `${Math.max(e.percentage, 2)}%`, backgroundColor: meta.fill }}
                         />
                       </div>
-                      <div className="flex justify-between text-[10px] text-muted-foreground">
+                      <div className="flex justify-between text-sm text-muted-foreground">
                         <span>{formatTokensFull(e.messageCount)} msgs</span>
                         <span>{formatTokensCompact(e.totalTokens)} tokens</span>
                       </div>
@@ -799,21 +799,21 @@ export function CostsView({ projects }: { projects: Project[] }) {
             </div>
 
             {/* Top 5 Projects */}
-            <div className="rounded-xl border border-border bg-card p-4 shadow-xs space-y-3">
+            <div className="rounded-xl border border-border bg-card p-4 shadow-xs space-y-4">
               <div className="flex items-center gap-2">
                 <FolderKanban className="h-4 w-4 text-accent" />
-                <h4 className="text-xs font-semibold text-foreground">Top Projets les Plus Consommateurs</h4>
+                <h4 className="text-sm font-semibold text-foreground">Top Projets les Plus Consommateurs</h4>
               </div>
               <div className="space-y-2">
                 {summary.byProject.slice(0, 5).map((p) => (
-                  <div key={p.projectId} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
+                  <div key={p.projectId} className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
                       <span className="font-medium text-foreground truncate max-w-[150px]" title={p.projectName}>
                         {p.projectName}
                       </span>
                       <span className="font-mono font-semibold text-foreground">
                         {currency === 'USD' ? formatCurrency(p.costUsd, 'USD') : formatCurrency(p.costEur, 'EUR')}
-                        <span className="ml-1 text-[10px] font-normal text-muted-foreground">({p.percentage.toFixed(1)}%)</span>
+                        <span className="ml-2 text-sm font-normal text-muted-foreground">({p.percentage.toFixed(1)}%)</span>
                       </span>
                     </div>
                     <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
@@ -828,21 +828,21 @@ export function CostsView({ projects }: { projects: Project[] }) {
             </div>
 
             {/* Top 5 Models */}
-            <div className="rounded-xl border border-border bg-card p-4 shadow-xs space-y-3">
+            <div className="rounded-xl border border-border bg-card p-4 shadow-xs space-y-4">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-accent" />
-                <h4 className="text-xs font-semibold text-foreground">Top Modèles</h4>
+                <h4 className="text-sm font-semibold text-foreground">Top Modèles</h4>
               </div>
               <div className="space-y-2">
                 {summary.byModel.slice(0, 5).map((m) => (
-                  <div key={m.model} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-mono text-xs text-foreground truncate max-w-[160px]" title={m.model}>
+                  <div key={m.model} className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-mono text-sm text-foreground truncate max-w-[160px]" title={m.model}>
                         {m.model}
                       </span>
                       <span className="font-mono font-semibold text-foreground">
                         {currency === 'USD' ? formatCurrency(m.costUsd, 'USD') : formatCurrency(m.costEur, 'EUR')}
-                        <span className="ml-1 text-[10px] font-normal text-muted-foreground">({m.percentage.toFixed(1)}%)</span>
+                        <span className="ml-2 text-sm font-normal text-muted-foreground">({m.percentage.toFixed(1)}%)</span>
                       </span>
                     </div>
                     <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
@@ -860,10 +860,10 @@ export function CostsView({ projects }: { projects: Project[] }) {
           {/* Detailed Data Tables with Tabs */}
           <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
             {/* Table Tabs */}
-            <div className="flex items-center border-b border-border bg-muted/40 px-4 pt-2 gap-2 text-xs">
+            <div className="flex items-center border-b border-border bg-muted/40 px-4 pt-2 gap-2 text-sm">
               <button
                 onClick={() => setActiveTab('models')}
-                className={`flex items-center gap-1.5 border-b-2 px-3 py-2 font-medium transition-colors ${
+                className={`flex items-center gap-2 border-b-2 px-4 py-2 font-medium transition-colors ${
                   activeTab === 'models'
                     ? 'border-accent text-accent font-semibold'
                     : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -873,7 +873,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
               </button>
               <button
                 onClick={() => setActiveTab('projects')}
-                className={`flex items-center gap-1.5 border-b-2 px-3 py-2 font-medium transition-colors ${
+                className={`flex items-center gap-2 border-b-2 px-4 py-2 font-medium transition-colors ${
                   activeTab === 'projects'
                     ? 'border-accent text-accent font-semibold'
                     : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -883,7 +883,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
               </button>
               <button
                 onClick={() => setActiveTab('dates')}
-                className={`flex items-center gap-1.5 border-b-2 px-3 py-2 font-medium transition-colors ${
+                className={`flex items-center gap-2 border-b-2 px-4 py-2 font-medium transition-colors ${
                   activeTab === 'dates'
                     ? 'border-accent text-accent font-semibold'
                     : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -896,57 +896,57 @@ export function CostsView({ projects }: { projects: Project[] }) {
             {/* Tab 1: Models Table */}
             {activeTab === 'models' && (
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-left text-xs">
+                <table className="w-full border-collapse text-left text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted/20 text-muted-foreground">
                       <th
-                        className="cursor-pointer px-4 py-2.5 font-medium hover:text-foreground"
+                        className="cursor-pointer px-4 py-4 font-medium hover:text-foreground"
                         onClick={() => setModelSort({ key: 'model', asc: modelSort.key === 'model' ? !modelSort.asc : false })}
                       >
-                        <div className="flex items-center gap-1">Modèle <ArrowUpDown className="h-3 w-3" /></div>
+                        <div className="flex items-center gap-2">Modèle <ArrowUpDown className="h-3 w-3" /></div>
                       </th>
-                      <th className="px-4 py-2.5 font-medium">Fournisseur</th>
+                      <th className="px-4 py-4 font-medium">Fournisseur</th>
                       <th
-                        className="cursor-pointer px-4 py-2.5 font-medium hover:text-foreground"
+                        className="cursor-pointer px-4 py-4 font-medium hover:text-foreground"
                         onClick={() => setModelSort({ key: 'messageCount', asc: modelSort.key === 'messageCount' ? !modelSort.asc : false })}
                       >
-                        <div className="flex items-center gap-1">Messages <ArrowUpDown className="h-3 w-3" /></div>
+                        <div className="flex items-center gap-2">Messages <ArrowUpDown className="h-3 w-3" /></div>
                       </th>
                       <th
-                        className="cursor-pointer px-4 py-2.5 font-medium hover:text-foreground"
+                        className="cursor-pointer px-4 py-4 font-medium hover:text-foreground"
                         onClick={() => setModelSort({ key: 'inputTokens', asc: modelSort.key === 'inputTokens' ? !modelSort.asc : false })}
                       >
-                        <div className="flex items-center gap-1">Tokens Entrée <ArrowUpDown className="h-3 w-3" /></div>
+                        <div className="flex items-center gap-2">Tokens Entrée <ArrowUpDown className="h-3 w-3" /></div>
                       </th>
                       <th
-                        className="cursor-pointer px-4 py-2.5 font-medium hover:text-foreground"
+                        className="cursor-pointer px-4 py-4 font-medium hover:text-foreground"
                         onClick={() => setModelSort({ key: 'outputTokens', asc: modelSort.key === 'outputTokens' ? !modelSort.asc : false })}
                       >
-                        <div className="flex items-center gap-1">Tokens Sortie <ArrowUpDown className="h-3 w-3" /></div>
+                        <div className="flex items-center gap-2">Tokens Sortie <ArrowUpDown className="h-3 w-3" /></div>
                       </th>
-                      <th className="px-4 py-2.5 font-medium">Cache (Read/Write)</th>
+                      <th className="px-4 py-4 font-medium">Cache (Read/Write)</th>
                       <th
-                        className="cursor-pointer px-4 py-2.5 font-medium hover:text-foreground"
+                        className="cursor-pointer px-4 py-4 font-medium hover:text-foreground"
                         onClick={() => setModelSort({ key: 'costEur', asc: modelSort.key === 'costEur' ? !modelSort.asc : false })}
                       >
-                        <div className="flex items-center gap-1">Coût Estimé (€) <ArrowUpDown className="h-3 w-3" /></div>
+                        <div className="flex items-center gap-2">Coût Estimé (€) <ArrowUpDown className="h-3 w-3" /></div>
                       </th>
                       <th
-                        className="cursor-pointer px-4 py-2.5 font-medium hover:text-foreground"
+                        className="cursor-pointer px-4 py-4 font-medium hover:text-foreground"
                         onClick={() => setModelSort({ key: 'costUsd', asc: modelSort.key === 'costUsd' ? !modelSort.asc : false })}
                       >
-                        <div className="flex items-center gap-1">Coût ($) <ArrowUpDown className="h-3 w-3" /></div>
+                        <div className="flex items-center gap-2">Coût ($) <ArrowUpDown className="h-3 w-3" /></div>
                       </th>
-                      <th className="px-4 py-2.5 font-medium text-right">% Total</th>
+                      <th className="px-4 py-4 font-medium text-right">% Total</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {sortedModels.map((row) => (
                       <tr key={row.model} className="hover:bg-muted/30 transition-colors">
-                        <td className="px-4 py-2.5 font-mono text-foreground font-semibold">{row.model}</td>
-                        <td className="px-4 py-2.5">
+                        <td className="px-4 py-4 font-mono text-foreground font-semibold">{row.model}</td>
+                        <td className="px-4 py-4">
                           <span
-                            className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-medium ${
+                            className={`inline-flex rounded-xl px-2 py-2 text-sm font-medium ${
                               row.provider === 'Anthropic'
                                 ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
                                 : row.provider === 'OpenAI'
@@ -957,15 +957,15 @@ export function CostsView({ projects }: { projects: Project[] }) {
                             {row.provider}
                           </span>
                         </td>
-                        <td className="px-4 py-2.5 text-foreground">{formatTokensFull(row.messageCount)}</td>
-                        <td className="px-4 py-2.5 font-mono text-muted-foreground">{formatTokensFull(row.inputTokens)}</td>
-                        <td className="px-4 py-2.5 font-mono text-muted-foreground">{formatTokensFull(row.outputTokens)}</td>
-                        <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">
+                        <td className="px-4 py-4 text-foreground">{formatTokensFull(row.messageCount)}</td>
+                        <td className="px-4 py-4 font-mono text-muted-foreground">{formatTokensFull(row.inputTokens)}</td>
+                        <td className="px-4 py-4 font-mono text-muted-foreground">{formatTokensFull(row.outputTokens)}</td>
+                        <td className="px-4 py-4 font-mono text-sm text-muted-foreground">
                           {formatTokensCompact(row.cacheReadTokens + row.cachedTokens)} r / {formatTokensCompact(row.cacheWriteTokens)} w
                         </td>
-                        <td className="px-4 py-2.5 font-mono font-semibold text-foreground">{formatCurrency(row.costEur, 'EUR')}</td>
-                        <td className="px-4 py-2.5 font-mono text-muted-foreground">{formatCurrency(row.costUsd, 'USD')}</td>
-                        <td className="px-4 py-2.5 font-mono text-right font-medium text-foreground">{row.percentage.toFixed(1)}%</td>
+                        <td className="px-4 py-4 font-mono font-semibold text-foreground">{formatCurrency(row.costEur, 'EUR')}</td>
+                        <td className="px-4 py-4 font-mono text-muted-foreground">{formatCurrency(row.costUsd, 'USD')}</td>
+                        <td className="px-4 py-4 font-mono text-right font-medium text-foreground">{row.percentage.toFixed(1)}%</td>
                       </tr>
                     ))}
                   </tbody>
@@ -976,63 +976,63 @@ export function CostsView({ projects }: { projects: Project[] }) {
             {/* Tab 2: Projects Table */}
             {activeTab === 'projects' && (
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-left text-xs">
+                <table className="w-full border-collapse text-left text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted/20 text-muted-foreground">
                       <th
-                        className="cursor-pointer px-4 py-2.5 font-medium hover:text-foreground"
+                        className="cursor-pointer px-4 py-4 font-medium hover:text-foreground"
                         onClick={() => setProjectSort({ key: 'projectName', asc: projectSort.key === 'projectName' ? !projectSort.asc : false })}
                       >
-                        <div className="flex items-center gap-1">Projet <ArrowUpDown className="h-3 w-3" /></div>
+                        <div className="flex items-center gap-2">Projet <ArrowUpDown className="h-3 w-3" /></div>
                       </th>
-                      <th className="px-4 py-2.5 font-medium">Catégorie</th>
-                      <th className="px-4 py-2.5 font-medium">Supports Utilisés</th>
+                      <th className="px-4 py-4 font-medium">Catégorie</th>
+                      <th className="px-4 py-4 font-medium">Supports Utilisés</th>
                       <th
-                        className="cursor-pointer px-4 py-2.5 font-medium hover:text-foreground"
+                        className="cursor-pointer px-4 py-4 font-medium hover:text-foreground"
                         onClick={() => setProjectSort({ key: 'messageCount', asc: projectSort.key === 'messageCount' ? !projectSort.asc : false })}
                       >
-                        <div className="flex items-center gap-1">Messages <ArrowUpDown className="h-3 w-3" /></div>
+                        <div className="flex items-center gap-2">Messages <ArrowUpDown className="h-3 w-3" /></div>
                       </th>
                       <th
-                        className="cursor-pointer px-4 py-2.5 font-medium hover:text-foreground"
+                        className="cursor-pointer px-4 py-4 font-medium hover:text-foreground"
                         onClick={() => setProjectSort({ key: 'totalTokens', asc: projectSort.key === 'totalTokens' ? !projectSort.asc : false })}
                       >
-                        <div className="flex items-center gap-1">Tokens Totaux <ArrowUpDown className="h-3 w-3" /></div>
+                        <div className="flex items-center gap-2">Tokens Totaux <ArrowUpDown className="h-3 w-3" /></div>
                       </th>
                       <th
-                        className="cursor-pointer px-4 py-2.5 font-medium hover:text-foreground"
+                        className="cursor-pointer px-4 py-4 font-medium hover:text-foreground"
                         onClick={() => setProjectSort({ key: 'costEur', asc: projectSort.key === 'costEur' ? !projectSort.asc : false })}
                       >
-                        <div className="flex items-center gap-1">Coût Estimé (€) <ArrowUpDown className="h-3 w-3" /></div>
+                        <div className="flex items-center gap-2">Coût Estimé (€) <ArrowUpDown className="h-3 w-3" /></div>
                       </th>
                       <th
-                        className="cursor-pointer px-4 py-2.5 font-medium hover:text-foreground"
+                        className="cursor-pointer px-4 py-4 font-medium hover:text-foreground"
                         onClick={() => setProjectSort({ key: 'costUsd', asc: projectSort.key === 'costUsd' ? !projectSort.asc : false })}
                       >
-                        <div className="flex items-center gap-1">Coût ($) <ArrowUpDown className="h-3 w-3" /></div>
+                        <div className="flex items-center gap-2">Coût ($) <ArrowUpDown className="h-3 w-3" /></div>
                       </th>
-                      <th className="px-4 py-2.5 font-medium text-right">% Total</th>
+                      <th className="px-4 py-4 font-medium text-right">% Total</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {sortedProjects.map((row) => (
                       <tr key={row.projectId} className="hover:bg-muted/30 transition-colors">
-                        <td className="px-4 py-2.5 font-medium text-foreground">{row.projectName}</td>
-                        <td className="px-4 py-2.5">
+                        <td className="px-4 py-4 font-medium text-foreground">{row.projectName}</td>
+                        <td className="px-4 py-4">
                           {row.category ? (
-                            <span className="inline-flex rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                            <span className="inline-flex rounded-xl bg-muted px-2 py-2 text-sm font-medium text-muted-foreground">
                               {row.category}
                             </span>
                           ) : (
                             <span className="text-muted-foreground/40">—</span>
                           )}
                         </td>
-                        <td className="px-4 py-2.5">
-                          <div className="flex items-center gap-1">
+                        <td className="px-4 py-4">
+                          <div className="flex items-center gap-2">
                             {row.engines.map((eng) => (
                               <span
                                 key={eng}
-                                className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                                className={`rounded-xl px-2 py-2 text-sm font-medium ${
                                   ENGINE_COLORS[eng]?.bg ?? 'bg-muted'
                                 } ${ENGINE_COLORS[eng]?.text ?? 'text-foreground'}`}
                               >
@@ -1041,11 +1041,11 @@ export function CostsView({ projects }: { projects: Project[] }) {
                             ))}
                           </div>
                         </td>
-                        <td className="px-4 py-2.5 text-foreground">{formatTokensFull(row.messageCount)}</td>
-                        <td className="px-4 py-2.5 font-mono text-muted-foreground">{formatTokensCompact(row.totalTokens)}</td>
-                        <td className="px-4 py-2.5 font-mono font-semibold text-foreground">{formatCurrency(row.costEur, 'EUR')}</td>
-                        <td className="px-4 py-2.5 font-mono text-muted-foreground">{formatCurrency(row.costUsd, 'USD')}</td>
-                        <td className="px-4 py-2.5 font-mono text-right font-medium text-foreground">{row.percentage.toFixed(1)}%</td>
+                        <td className="px-4 py-4 text-foreground">{formatTokensFull(row.messageCount)}</td>
+                        <td className="px-4 py-4 font-mono text-muted-foreground">{formatTokensCompact(row.totalTokens)}</td>
+                        <td className="px-4 py-4 font-mono font-semibold text-foreground">{formatCurrency(row.costEur, 'EUR')}</td>
+                        <td className="px-4 py-4 font-mono text-muted-foreground">{formatCurrency(row.costUsd, 'USD')}</td>
+                        <td className="px-4 py-4 font-mono text-right font-medium text-foreground">{row.percentage.toFixed(1)}%</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1056,58 +1056,58 @@ export function CostsView({ projects }: { projects: Project[] }) {
             {/* Tab 3: Daily Timeline Table */}
             {activeTab === 'dates' && (
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-left text-xs">
+                <table className="w-full border-collapse text-left text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted/20 text-muted-foreground">
                       <th
-                        className="cursor-pointer px-4 py-2.5 font-medium hover:text-foreground"
+                        className="cursor-pointer px-4 py-4 font-medium hover:text-foreground"
                         onClick={() => setDateSort({ key: 'date', asc: dateSort.key === 'date' ? !dateSort.asc : false })}
                       >
-                        <div className="flex items-center gap-1">Date <ArrowUpDown className="h-3 w-3" /></div>
+                        <div className="flex items-center gap-2">Date <ArrowUpDown className="h-3 w-3" /></div>
                       </th>
                       <th
-                        className="cursor-pointer px-4 py-2.5 font-medium hover:text-foreground"
+                        className="cursor-pointer px-4 py-4 font-medium hover:text-foreground"
                         onClick={() => setDateSort({ key: 'messageCount', asc: dateSort.key === 'messageCount' ? !dateSort.asc : false })}
                       >
-                        <div className="flex items-center gap-1">Messages <ArrowUpDown className="h-3 w-3" /></div>
+                        <div className="flex items-center gap-2">Messages <ArrowUpDown className="h-3 w-3" /></div>
                       </th>
-                      <th className="px-4 py-2.5 font-medium">Tokens Entrée</th>
-                      <th className="px-4 py-2.5 font-medium">Tokens Sortie</th>
+                      <th className="px-4 py-4 font-medium">Tokens Entrée</th>
+                      <th className="px-4 py-4 font-medium">Tokens Sortie</th>
                       <th
-                        className="cursor-pointer px-4 py-2.5 font-medium hover:text-foreground"
+                        className="cursor-pointer px-4 py-4 font-medium hover:text-foreground"
                         onClick={() => setDateSort({ key: 'totalTokens', asc: dateSort.key === 'totalTokens' ? !dateSort.asc : false })}
                       >
-                        <div className="flex items-center gap-1">Tokens Totaux <ArrowUpDown className="h-3 w-3" /></div>
+                        <div className="flex items-center gap-2">Tokens Totaux <ArrowUpDown className="h-3 w-3" /></div>
                       </th>
-                      <th className="px-4 py-2.5 font-medium">Claude Code (€)</th>
-                      <th className="px-4 py-2.5 font-medium">Codex / ChatGPT (€)</th>
-                      <th className="px-4 py-2.5 font-medium">Antigravity (€)</th>
+                      <th className="px-4 py-4 font-medium">Claude Code (€)</th>
+                      <th className="px-4 py-4 font-medium">Codex / ChatGPT (€)</th>
+                      <th className="px-4 py-4 font-medium">Antigravity (€)</th>
                       <th
-                        className="cursor-pointer px-4 py-2.5 font-medium hover:text-foreground text-right"
+                        className="cursor-pointer px-4 py-4 font-medium hover:text-foreground text-right"
                         onClick={() => setDateSort({ key: 'costEur', asc: dateSort.key === 'costEur' ? !dateSort.asc : false })}
                       >
-                        <div className="flex items-center justify-end gap-1">Total (€) <ArrowUpDown className="h-3 w-3" /></div>
+                        <div className="flex items-center justify-end gap-2">Total (€) <ArrowUpDown className="h-3 w-3" /></div>
                       </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {sortedDates.map((row) => (
                       <tr key={row.date} className="hover:bg-muted/30 transition-colors">
-                        <td className="px-4 py-2.5 font-medium text-foreground">{row.date}</td>
-                        <td className="px-4 py-2.5 text-foreground">{formatTokensFull(row.messageCount)}</td>
-                        <td className="px-4 py-2.5 font-mono text-muted-foreground">{formatTokensCompact(row.inputTokens)}</td>
-                        <td className="px-4 py-2.5 font-mono text-muted-foreground">{formatTokensCompact(row.outputTokens)}</td>
-                        <td className="px-4 py-2.5 font-mono text-muted-foreground">{formatTokensCompact(row.totalTokens)}</td>
-                        <td className="px-4 py-2.5 font-mono text-amber-600 dark:text-amber-400">
+                        <td className="px-4 py-4 font-medium text-foreground">{row.date}</td>
+                        <td className="px-4 py-4 text-foreground">{formatTokensFull(row.messageCount)}</td>
+                        <td className="px-4 py-4 font-mono text-muted-foreground">{formatTokensCompact(row.inputTokens)}</td>
+                        <td className="px-4 py-4 font-mono text-muted-foreground">{formatTokensCompact(row.outputTokens)}</td>
+                        <td className="px-4 py-4 font-mono text-muted-foreground">{formatTokensCompact(row.totalTokens)}</td>
+                        <td className="px-4 py-4 font-mono text-amber-600 dark:text-amber-400">
                           {formatCurrency(row.byEngine['claude-code']?.costEur || 0, 'EUR')}
                         </td>
-                        <td className="px-4 py-2.5 font-mono text-emerald-600 dark:text-emerald-400">
+                        <td className="px-4 py-4 font-mono text-emerald-600 dark:text-emerald-400">
                           {formatCurrency(row.byEngine['codex']?.costEur || 0, 'EUR')}
                         </td>
-                        <td className="px-4 py-2.5 font-mono text-blue-600 dark:text-blue-400">
+                        <td className="px-4 py-4 font-mono text-blue-600 dark:text-blue-400">
                           {formatCurrency(row.byEngine['antigravity']?.costEur || 0, 'EUR')}
                         </td>
-                        <td className="px-4 py-2.5 font-mono font-bold text-foreground text-right">
+                        <td className="px-4 py-4 font-mono font-bold text-foreground text-right">
                           {formatCurrency(row.costEur, 'EUR')}
                         </td>
                       </tr>

@@ -118,18 +118,18 @@ export function ShareModal({ thread, onClose }: ShareModalProps) {
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-card">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-muted text-accent-muted-foreground">
+          <div className="flex items-center gap-4">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-accent-muted text-accent-muted-foreground">
               <Globe size={16} className="text-accent" />
             </div>
             <div>
               <h2 className="text-sm font-semibold text-foreground">Partager cette conversation</h2>
-              <p className="text-xs text-muted-foreground truncate max-w-sm">{thread.title}</p>
+              <p className="text-sm text-muted-foreground truncate max-w-sm">{thread.title}</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+            className="rounded-xl p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
           >
             <X size={16} />
           </button>
@@ -137,7 +137,7 @@ export function ShareModal({ thread, onClose }: ShareModalProps) {
 
         <div className="p-6 overflow-y-auto space-y-6">
           {error && (
-            <div className="flex items-center gap-2 rounded-lg bg-destructive-muted border border-destructive/20 p-3 text-xs text-destructive">
+            <div className="flex items-center gap-2 rounded-xl bg-destructive-muted border border-destructive/20 p-4 text-sm text-destructive">
               <AlertCircle size={14} className="shrink-0" />
               <span>{error}</span>
             </div>
@@ -145,28 +145,28 @@ export function ShareModal({ thread, onClose }: ShareModalProps) {
 
           {/* Form to create new share */}
           <form onSubmit={handleCreate} className="space-y-4 rounded-xl border border-border bg-muted/40 p-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <Plus size={14} className="text-accent" /> Créer un nouveau lien public
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Titre personnalisé (optionnel)</label>
+                <label className="block text-sm font-medium text-muted-foreground mb-2">Titre personnalisé (optionnel)</label>
                 <input
                   type="text"
                   placeholder={thread.title}
                   value={customTitle}
                   onChange={(e) => setCustomTitle(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                  className="w-full rounded-xl border border-border bg-background px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Durée de validité</label>
+                <label className="block text-sm font-medium text-muted-foreground mb-2">Durée de validité</label>
                 <select
                   value={expiryOption}
                   onChange={(e) => setExpiryOption(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                  className="w-full rounded-xl border border-border bg-background px-4 py-2 text-sm text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                 >
                   {EXPIRY_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -177,11 +177,11 @@ export function ShareModal({ thread, onClose }: ShareModalProps) {
               </div>
             </div>
 
-            <div className="flex justify-end pt-1">
+            <div className="flex justify-end pt-2">
               <button
                 type="submit"
                 disabled={creating}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-1.5 text-xs font-medium text-accent-foreground hover:opacity-90 disabled:opacity-50 transition-opacity shadow-sm cursor-pointer"
+                className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:opacity-90 disabled:opacity-50 transition-opacity shadow-sm cursor-pointer"
               >
                 <Link2 size={13} />
                 {creating ? 'Génération…' : 'Générer le lien public'}
@@ -190,19 +190,19 @@ export function ShareModal({ thread, onClose }: ShareModalProps) {
           </form>
 
           {/* List of existing shares */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
               Liens existants ({shares.length})
             </h3>
 
             {loading ? (
-              <div className="py-6 text-center text-xs text-muted-foreground">Chargement des liens…</div>
+              <div className="py-6 text-center text-sm text-muted-foreground">Chargement des liens…</div>
             ) : shares.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+              <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
                 Aucun lien de partage créé pour cette conversation.
               </div>
             ) : (
-              <div className="space-y-2.5">
+              <div className="space-y-4">
                 {shares.map((s) => {
                   const isExpired = s.expiresAt && new Date(s.expiresAt) <= new Date();
                   const shareUrl = `${window.location.origin}/shared/${s.shareToken}`;
@@ -211,7 +211,7 @@ export function ShareModal({ thread, onClose }: ShareModalProps) {
                   return (
                     <div
                       key={s.id}
-                      className={`rounded-xl border p-3.5 transition-colors ${
+                      className={`rounded-xl border p-4 transition-colors ${
                         !s.isActive || isExpired
                           ? 'border-border/60 bg-muted/20 opacity-75'
                           : 'border-border bg-card'
@@ -220,30 +220,30 @@ export function ShareModal({ thread, onClose }: ShareModalProps) {
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-xs text-foreground truncate">
+                            <span className="font-medium text-sm text-foreground truncate">
                               {s.title || thread.title}
                             </span>
                             {!s.isActive ? (
-                              <span className="inline-flex items-center rounded-full bg-destructive-muted px-2 py-0.5 text-[10px] font-medium text-destructive">
+                              <span className="inline-flex items-center rounded-full bg-destructive-muted px-2 py-2 text-sm font-medium text-destructive">
                                 Désactivé
                               </span>
                             ) : isExpired ? (
-                              <span className="inline-flex items-center rounded-full bg-warning-muted px-2 py-0.5 text-[10px] font-medium text-warning-foreground">
+                              <span className="inline-flex items-center rounded-full bg-warning-muted px-2 py-2 text-sm font-medium text-warning-foreground">
                                 Expiré
                               </span>
                             ) : (
-                              <span className="inline-flex items-center rounded-full bg-success-muted px-2 py-0.5 text-[10px] font-medium text-success">
+                              <span className="inline-flex items-center rounded-full bg-success-muted px-2 py-2 text-sm font-medium text-success">
                                 Actif
                               </span>
                             )}
                           </div>
 
-                          <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-1 flex-wrap">
-                            <span className="flex items-center gap-1 font-medium text-foreground">
+                          <div className="flex items-center gap-4 text-sm text-muted-foreground mt-2 flex-wrap">
+                            <span className="flex items-center gap-2 font-medium text-foreground">
                               <Eye size={11} /> {s.viewCount} {s.viewCount > 1 ? 'vues' : 'vue'}
                             </span>
                             {s.expiresAt ? (
-                              <span className="flex items-center gap-1">
+                              <span className="flex items-center gap-2">
                                 <Clock size={11} /> Expire le {new Date(s.expiresAt).toLocaleDateString('fr-FR')}
                               </span>
                             ) : (
@@ -253,11 +253,11 @@ export function ShareModal({ thread, onClose }: ShareModalProps) {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-2">
                           <button
                             type="button"
                             onClick={() => handleToggleActive(s)}
-                            className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+                            className="rounded-xl px-2 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
                             title={s.isActive ? 'Désactiver le lien' : 'Réactiver le lien'}
                           >
                             {s.isActive ? 'Désactiver' : 'Activer'}
@@ -265,7 +265,7 @@ export function ShareModal({ thread, onClose }: ShareModalProps) {
                           <button
                             type="button"
                             onClick={() => handleDelete(s.id)}
-                            className="rounded-md p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive-muted transition-colors cursor-pointer"
+                            className="rounded-xl p-2 text-muted-foreground hover:text-destructive hover:bg-destructive-muted transition-colors cursor-pointer"
                             title="Supprimer définitivement"
                           >
                             <Trash2 size={13} />
@@ -274,17 +274,17 @@ export function ShareModal({ thread, onClose }: ShareModalProps) {
                       </div>
 
                       {/* URL bar with copy & open */}
-                      <div className="flex items-center gap-1.5 rounded-lg bg-muted/50 border border-border px-2.5 py-1.5">
+                      <div className="flex items-center gap-2 rounded-xl bg-muted/50 border border-border px-4 py-2">
                         <input
                           type="text"
                           readOnly
                           value={shareUrl}
-                          className="w-full bg-transparent text-xs text-muted-foreground focus:outline-none font-mono select-all truncate"
+                          className="w-full bg-transparent text-sm text-muted-foreground focus:outline-none font-mono select-all truncate"
                         />
                         <button
                           type="button"
                           onClick={() => handleCopy(s.shareToken)}
-                          className="shrink-0 flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-foreground hover:bg-card transition-colors cursor-pointer"
+                          className="shrink-0 flex items-center gap-2 rounded-xl px-2 py-2 text-sm font-medium text-foreground hover:bg-card transition-colors cursor-pointer"
                           title="Copier l'URL"
                         >
                           {isCopied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
@@ -296,7 +296,7 @@ export function ShareModal({ thread, onClose }: ShareModalProps) {
                           href={`/shared/${s.shareToken}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                          className="shrink-0 p-2 text-muted-foreground hover:text-foreground transition-colors"
                           title="Ouvrir dans un nouvel onglet"
                         >
                           <ExternalLink size={13} />
@@ -311,11 +311,11 @@ export function ShareModal({ thread, onClose }: ShareModalProps) {
         </div>
 
         {/* Footer */}
-        <div className="border-t border-border px-6 py-3 bg-card flex justify-end">
+        <div className="border-t border-border px-6 py-4 bg-card flex justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-border bg-muted px-4 py-1.5 text-xs font-medium text-foreground hover:bg-muted/80 transition-colors cursor-pointer"
+            className="rounded-xl border border-border bg-muted px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/80 transition-colors cursor-pointer"
           >
             Fermer
           </button>

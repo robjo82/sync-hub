@@ -193,6 +193,7 @@ const appDeps: Parameters<typeof createApp>[0] = {
     void syncNow();
   },
   clientDistDir: CLIENT_DIST,
+  localIngest: !DISABLE_LOCAL_INGEST,
   archiveRoots: { syncHubArchiveRoot: join(DATA_DIR, 'archived-sessions') },
   importsDir: IMPORTS_DIR,
   remoteUrl: REMOTE_URL,

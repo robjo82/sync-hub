@@ -36,7 +36,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
       nodes.push(<strong key={key}>{token.slice(2, -2)}</strong>);
     } else if (token.startsWith('`')) {
       nodes.push(
-        <code key={key} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]">
+        <code key={key} className="rounded-xl bg-muted px-2 py-2 font-mono text-[0.85em]">
           {token.slice(1, -1)}
         </code>,
       );
@@ -116,16 +116,16 @@ export function MarkdownRenderer({ text }: { text: string }) {
       blocks.push(
         <details
           key={key++}
-          className={`my-2 rounded-lg border px-2.5 py-1.5 text-xs ${hasError ? 'border-destructive/30 bg-destructive-muted/60' : 'border-border bg-muted/60'}`}
+          className={`my-2 rounded-xl border px-4 py-2 text-sm ${hasError ? 'border-destructive/30 bg-destructive-muted/60' : 'border-border bg-muted/60'}`}
         >
-          <summary className={`flex cursor-pointer select-none items-center gap-1.5 ${hasError ? 'text-destructive' : 'text-muted-foreground'}`}>
+          <summary className={`flex cursor-pointer select-none items-center gap-2 ${hasError ? 'text-destructive' : 'text-muted-foreground'}`}>
             {commandCount > 1 ? <Settings2 size={13} className="shrink-0" /> : <Wrench size={13} className="shrink-0" />}
             {commandCount > 1 ? `Exécuté ${commandCount} commandes` : (items[0]?.label ?? 'Commande')}
           </summary>
-          <div className="mt-1.5 space-y-2">
+          <div className="mt-2 space-y-2">
             {items.map((it, idx) => (
               <div key={idx}>
-                <div className={`mb-0.5 font-medium ${it.isError ? 'text-destructive' : 'text-muted-foreground'}`}>{it.label}</div>
+                <div className={`mb-2 font-medium ${it.isError ? 'text-destructive' : 'text-muted-foreground'}`}>{it.label}</div>
                 <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-muted-foreground/90">{it.body}</pre>
               </div>
             ))}
@@ -160,13 +160,13 @@ export function MarkdownRenderer({ text }: { text: string }) {
       const VARIANT_ICON: Record<string, typeof Mail> = { email: Mail, chat_message: MessageSquare, social_post: Share2, document: FileText };
       const Icon = VARIANT_ICON[variant] ?? FileText;
       blocks.push(
-        <div key={key++} className="my-2 overflow-hidden rounded-lg border border-border">
-          <div className="flex items-center gap-1.5 border-b border-border bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground">
+        <div key={key++} className="my-2 overflow-hidden rounded-xl border border-border">
+          <div className="flex items-center gap-2 border-b border-border bg-muted px-4 py-2 text-sm font-medium text-muted-foreground">
             <Icon size={13} />
             {VARIANT_LABEL[variant] ?? 'Document'}
             {attrs.subject && <span className="font-normal text-muted-foreground/80">· {attrs.subject}</span>}
           </div>
-          <div className="px-3 py-2">
+          <div className="px-4 py-2">
             <MarkdownRenderer text={innerLines.join('\n')} />
           </div>
         </div>,
@@ -185,8 +185,8 @@ export function MarkdownRenderer({ text }: { text: string }) {
       }
       i++; // skip closing fence
       blocks.push(
-        <pre key={key++} className="my-2 overflow-x-auto rounded-lg bg-muted p-3 text-xs">
-          {lang && <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">{lang}</div>}
+        <pre key={key++} className="my-2 overflow-x-auto rounded-xl bg-muted p-4 text-sm">
+          {lang && <div className="mb-2 text-sm uppercase tracking-wide text-muted-foreground">{lang}</div>}
           <code className="font-mono whitespace-pre">{codeLines.join('\n')}</code>
         </pre>,
       );
@@ -197,9 +197,9 @@ export function MarkdownRenderer({ text }: { text: string }) {
     const headerMatch = line.match(/^(#{1,6})\s+(.*)$/);
     if (headerMatch) {
       const level = headerMatch[1].length;
-      const sizeClass = level === 1 ? 'text-lg font-semibold' : level === 2 ? 'text-base font-semibold' : 'text-sm font-semibold';
+      const sizeClass = level === 1 ? 'text-xl font-semibold' : level === 2 ? 'text-base font-semibold' : 'text-sm font-semibold';
       blocks.push(
-        <div key={key++} className={`mt-3 mb-1 ${sizeClass}`}>
+        <div key={key++} className={`mt-4 mb-2 ${sizeClass}`}>
           {renderInline(headerMatch[2], `h${key}`)}
         </div>,
       );
@@ -210,7 +210,7 @@ export function MarkdownRenderer({ text }: { text: string }) {
     // Horizontal rule (verified: a very common section divider in real ChatGPT/Codex output —
     // 3900+ occurrences in a 15-shard sample of the real export)
     if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
-      blocks.push(<hr key={key++} className="my-3 border-border" />);
+      blocks.push(<hr key={key++} className="my-4 border-border" />);
       i++;
       continue;
     }
@@ -243,11 +243,11 @@ export function MarkdownRenderer({ text }: { text: string }) {
       }
       blocks.push(
         <div key={key++} className="my-2 overflow-x-auto">
-          <table className="w-full border-collapse text-xs">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
                 {headerCells.map((c, ci) => (
-                  <th key={ci} style={{ textAlign: align[ci] }} className="border border-border bg-muted px-2 py-1 text-left font-medium">
+                  <th key={ci} style={{ textAlign: align[ci] }} className="border border-border bg-muted px-2 py-2 text-left font-medium">
                     {renderInline(c, `th${key}-${ci}`)}
                   </th>
                 ))}
@@ -257,7 +257,7 @@ export function MarkdownRenderer({ text }: { text: string }) {
               {bodyRows.map((row, ri) => (
                 <tr key={ri}>
                   {row.map((c, ci) => (
-                    <td key={ci} style={{ textAlign: align[ci] }} className="border border-border px-2 py-1 align-top">
+                    <td key={ci} style={{ textAlign: align[ci] }} className="border border-border px-2 py-2 align-top">
                       {renderInline(c, `td${key}-${ri}-${ci}`)}
                     </td>
                   ))}
@@ -278,7 +278,7 @@ export function MarkdownRenderer({ text }: { text: string }) {
         i++;
       }
       blocks.push(
-        <blockquote key={key++} className="my-2 border-l-2 border-border pl-3 text-muted-foreground italic">
+        <blockquote key={key++} className="my-2 border-l-2 border-border pl-4 text-muted-foreground italic">
           {quoteLines.join(' ')}
         </blockquote>,
       );
@@ -296,7 +296,7 @@ export function MarkdownRenderer({ text }: { text: string }) {
       }
       const ListTag = ordered ? 'ol' : 'ul';
       blocks.push(
-        <ListTag key={key++} className={`my-1 ml-5 space-y-0.5 ${ordered ? 'list-decimal' : 'list-disc'}`}>
+        <ListTag key={key++} className={`my-2 ml-6 space-y-2 ${ordered ? 'list-decimal' : 'list-disc'}`}>
           {items}
         </ListTag>,
       );
@@ -325,7 +325,7 @@ export function MarkdownRenderer({ text }: { text: string }) {
       i++;
     }
     blocks.push(
-      <p key={key++} className="my-1">
+      <p key={key++} className="my-2">
         {paraLines.map((l, idx) => (
           <Fragment key={idx}>
             {idx > 0 && <br />}

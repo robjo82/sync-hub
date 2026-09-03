@@ -30,7 +30,7 @@ function highlight(text: string, words: string[]): ReactNode {
   const lowerWords = new Set(words);
   return parts.map((part, i) =>
     lowerWords.has(part.toLowerCase()) ? (
-      <mark key={i} className="rounded bg-accent/30 text-inherit">
+      <mark key={i} className="rounded-xl bg-accent/30 text-inherit">
         {part}
       </mark>
     ) : (
@@ -146,8 +146,8 @@ export function SearchView({ onOpenThread }: { onOpenThread: (threadId: string) 
 
   return (
     <div className="mx-auto max-w-3xl overflow-y-auto p-6">
-      <h2 className="mb-1 text-sm font-semibold text-foreground">Recherche</h2>
-      <p className="mb-4 text-xs text-muted-foreground">Recherche verbatim (sous-chaîne) dans tous les messages, tous projets et outils confondus.</p>
+      <h2 className="mb-2 text-sm font-semibold text-foreground">Recherche</h2>
+      <p className="mb-4 text-sm text-muted-foreground">Recherche verbatim (sous-chaîne) dans tous les messages, tous projets et outils confondus.</p>
 
       <div className="relative">
         <Search size={15} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground" />
@@ -156,7 +156,7 @@ export function SearchView({ onOpenThread }: { onOpenThread: (threadId: string) 
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Rechercher…"
-          className="w-full rounded-md border border-border bg-card py-2 pr-3 pl-9 text-sm text-foreground placeholder:text-muted-foreground"
+          className="w-full rounded-xl border border-border bg-card py-2 pr-4 pl-10 text-sm text-foreground placeholder:text-muted-foreground"
         />
       </div>
 
@@ -165,13 +165,13 @@ export function SearchView({ onOpenThread }: { onOpenThread: (threadId: string) 
         {!loading && idMatch && (
           <button
             onClick={() => onOpenThread(idMatch.id)}
-            className="flex w-full items-center gap-2 rounded-lg border border-accent/40 bg-accent-muted p-3 text-left hover:border-accent"
+            className="flex w-full items-center gap-2 rounded-xl border border-accent/40 bg-accent-muted p-4 text-left hover:border-accent"
           >
             <Hash size={14} className="shrink-0 text-accent" />
             <span className="flex-1 truncate text-sm text-accent-muted-foreground">
               <span className="font-medium">{highlight(idMatch.title, queryWords(query))}</span> — trouvé directement par id
             </span>
-            <span className="shrink-0 text-xs text-accent-muted-foreground/70">{ENGINE_LABEL[idMatch.originEngine] ?? idMatch.originEngine}</span>
+            <span className="shrink-0 text-sm text-accent-muted-foreground/70">{ENGINE_LABEL[idMatch.originEngine] ?? idMatch.originEngine}</span>
           </button>
         )}
         {!loading && results && results.length === 0 && !idMatch && <p className="text-sm text-muted-foreground">Aucun résultat.</p>}
@@ -183,9 +183,9 @@ export function SearchView({ onOpenThread }: { onOpenThread: (threadId: string) 
               <button
                 key={r.message.id}
                 onClick={() => onOpenThread(r.message.threadId)}
-                className="block w-full rounded-lg border border-border bg-card p-3 text-left hover:border-accent/40"
+                className="block w-full rounded-xl border border-border bg-card p-4 text-left hover:border-accent/40"
               >
-                <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
                   <span className="font-medium text-foreground">{r.projectName}</span>
                   <span>·</span>
                   <span className="truncate">{highlight(r.threadTitle, words)}</span>
@@ -194,7 +194,7 @@ export function SearchView({ onOpenThread }: { onOpenThread: (threadId: string) 
                   <span className="ml-auto shrink-0">{new Date(r.message.timestamp).toLocaleDateString('fr-FR')}</span>
                 </div>
                 {!matchedContent && (
-                  <p className="mb-1 text-xs text-muted-foreground/70 italic">trouvé via le titre du fil</p>
+                  <p className="mb-2 text-sm text-muted-foreground/70 italic">trouvé via le titre du fil</p>
                 )}
                 <p className="text-sm text-foreground">{highlight(text, words)}</p>
               </button>

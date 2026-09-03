@@ -64,18 +64,18 @@ export function WelcomeChecklist() {
 
   return (
     <div className="mx-auto max-w-3xl p-6">
-      <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+      <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
             <h2 className="text-sm font-semibold text-foreground">Bienvenue sur sync-hub</h2>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Trois choses à vérifier pour que tout ton historique IA remonte ici.
             </p>
           </div>
           <button
             onClick={dismiss}
             title="Ne plus afficher"
-            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="rounded-xl p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </button>
@@ -87,14 +87,14 @@ export function WelcomeChecklist() {
           icon={<HardDrive className="h-3.5 w-3.5" />}
         >
           {detected.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Aucun outil IA trouvé pour l'instant. sync-hub lit les fichiers que Claude Code, Codex
               et Antigravity écrivent déjà sur ce Mac — utilise l'un d'eux une fois, puis reviens.
             </p>
           ) : (
-            <ul className="space-y-1">
+            <ul className="space-y-2">
               {detected.map((e) => (
-                <li key={e.engine} className="flex items-center justify-between text-xs">
+                <li key={e.engine} className="flex items-center justify-between text-sm">
                   <span className="text-foreground">{ENGINE_LABEL[e.engine] ?? e.engine}</span>
                   <span className="text-muted-foreground">
                     {e.messageCount.toLocaleString('fr-FR')} messages
@@ -103,7 +103,7 @@ export function WelcomeChecklist() {
                 </li>
               ))}
               {missing.map((e) => (
-                <li key={e.engine} className="flex items-center justify-between text-xs opacity-60">
+                <li key={e.engine} className="flex items-center justify-between text-sm opacity-60">
                   <span className="text-muted-foreground">{ENGINE_LABEL[e.engine] ?? e.engine}</span>
                   <span className="text-muted-foreground">non installé</span>
                 </li>
@@ -114,7 +114,7 @@ export function WelcomeChecklist() {
 
         <Step done={enrolled} title="Appareil enrôlé auprès du hub" icon={<Cloud className="h-3.5 w-3.5" />}>
           {enrolled ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Connecté à <span className="text-foreground">{remote?.remoteUrl}</span>. Tes conversations y
               sont sauvegardées et te suivent d'un appareil à l'autre.
             </p>
@@ -129,7 +129,7 @@ export function WelcomeChecklist() {
           title="Conversations cloud (Claude.ai, ChatGPT)"
           icon={<Cloud className="h-3.5 w-3.5" />}
         >
-          <p className="mb-2 text-xs text-muted-foreground">
+          <p className="mb-2 text-sm text-muted-foreground">
             Ces outils ne stockent rien sur ton Mac : leur historique n'arrive que par un export. Demande
             ton archive dans leurs réglages, puis dépose le .zip ici.
           </p>
@@ -157,16 +157,16 @@ function Step({
   children: React.ReactNode;
 }) {
   return (
-    <div className="border-t border-border py-3 first:border-t-0 first:pt-0">
-      <div className="mb-1.5 flex items-center gap-2">
+    <div className="border-t border-border py-4 first:border-t-0 first:pt-0">
+      <div className="mb-2 flex items-center gap-2">
         <span className={done ? 'text-success' : 'text-muted-foreground'}>
           {done ? <Check className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
         </span>
-        <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+        <span className="flex items-center gap-2 text-sm font-medium text-foreground">
           {icon}
           {title}
         </span>
-        {optional && <span className="text-[11px] text-muted-foreground">— optionnel</span>}
+        {optional && <span className="text-sm text-muted-foreground">— optionnel</span>}
       </div>
       <div className="ml-6">{children}</div>
     </div>
@@ -175,7 +175,7 @@ function Step({
 
 export function WelcomeChecklistLoading() {
   return (
-    <div className="flex items-center gap-2 p-6 text-xs text-muted-foreground">
+    <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
       <Loader2 className="h-3.5 w-3.5 animate-spin" />
       Chargement…
     </div>
@@ -208,18 +208,18 @@ function EnrolForm({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <div className="text-xs text-muted-foreground">
+    <div className="text-sm text-muted-foreground">
       <p className="mb-2">
         Cet appareil travaille en local : rien n'est sauvegardé à distance, et tu ne verras pas ce qu'on
         partage avec toi. Crée un jeton depuis le hub (menu compte → « Jetons d'appareil »), puis colle-le
         ici.
       </p>
-      <div className="flex flex-col gap-1.5 sm:flex-row">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <input
           value={hubUrl}
           onChange={(e) => setHubUrl(e.target.value)}
           placeholder="URL du hub"
-          className="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-xs text-foreground"
+          className="flex-1 rounded-xl border border-border bg-card px-2 py-2 text-sm text-foreground"
         />
         <input
           type="password"
@@ -227,17 +227,17 @@ function EnrolForm({ onDone }: { onDone: () => void }) {
           onChange={(e) => setToken(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submit()}
           placeholder="jeton d'appareil"
-          className="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-xs text-foreground"
+          className="flex-1 rounded-xl border border-border bg-card px-2 py-2 text-sm text-foreground"
         />
         <button
           onClick={submit}
           disabled={busy || !token.trim()}
-          className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground disabled:opacity-40"
+          className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-foreground disabled:opacity-40"
         >
           {busy ? 'Vérification…' : 'Enrôler'}
         </button>
       </div>
-      {error && <p className="mt-1.5 text-destructive">{error}</p>}
+      {error && <p className="mt-2 text-destructive">{error}</p>}
     </div>
   );
 }

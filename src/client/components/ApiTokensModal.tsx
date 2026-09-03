@@ -79,20 +79,20 @@ export function ApiTokensModal({ isOpen, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl bg-card border border-border rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[85vh]">
+      <div className="w-full max-w-2xl bg-card border border-border rounded-xl shadow-xl overflow-hidden flex flex-col max-h-[85vh]">
         <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-accent-muted flex items-center justify-center">
+          <div className="flex items-center gap-4">
+            <div className="w-8 h-8 rounded-xl bg-accent-muted flex items-center justify-center">
               <KeyRound className="w-4 h-4 text-accent" />
             </div>
             <div>
               <h2 className="text-sm font-semibold text-foreground">Jetons d'appareil</h2>
-              <p className="text-xs text-muted-foreground">Ce que chaque machine présente pour synchroniser</p>
+              <p className="text-sm text-muted-foreground">Ce que chaque machine présente pour synchroniser</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+            className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -100,17 +100,17 @@ export function ApiTokensModal({ isOpen, onClose }: Props) {
 
         <div className="px-6 py-4 overflow-y-auto">
           {error && (
-            <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive-muted px-3 py-2 text-xs text-destructive">{error}</div>
+            <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive-muted px-4 py-2 text-sm text-destructive">{error}</div>
           )}
 
           {justCreated && (
-            <div className="mb-4 rounded-lg border border-accent/30 bg-accent-muted px-3 py-3">
-              <p className="text-xs font-medium text-accent-muted-foreground mb-1">Jeton pour « {justCreated.name} »</p>
-              <p className="text-[11px] text-muted-foreground mb-2">
+            <div className="mb-4 rounded-xl border border-accent/30 bg-accent-muted px-4 py-4">
+              <p className="text-sm font-medium text-accent-muted-foreground mb-2">Jeton pour « {justCreated.name} »</p>
+              <p className="text-sm text-muted-foreground mb-2">
                 Copie-le maintenant : il n'est plus affiché ensuite, et le serveur n'en garde que l'empreinte.
               </p>
               <div className="flex items-center gap-2">
-                <code className="flex-1 truncate rounded-md bg-card px-2 py-1.5 font-mono text-[11px] text-foreground">{justCreated.token}</code>
+                <code className="flex-1 truncate rounded-xl bg-card px-2 py-2 font-mono text-sm text-foreground">{justCreated.token}</code>
                 <button
                   onClick={async () => {
                     try {
@@ -121,7 +121,7 @@ export function ApiTokensModal({ isOpen, onClose }: Props) {
                       // claiming success without confirmation would be worse than saying nothing.
                     }
                   }}
-                  className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted cursor-pointer"
+                  className="flex shrink-0 items-center gap-2 rounded-xl border border-border px-2 py-2 text-sm text-muted-foreground hover:bg-muted cursor-pointer"
                 >
                   {copied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
                   {copied ? 'Copié' : 'Copier'}
@@ -135,12 +135,12 @@ export function ApiTokensModal({ isOpen, onClose }: Props) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Nom de la machine — ex. MacBook Robin"
-              className="flex-1 rounded-lg border border-border bg-card px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground"
+              className="flex-1 rounded-xl border border-border bg-card px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground"
             />
             <button
               type="submit"
               disabled={submitting || !name.trim()}
-              className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-foreground disabled:opacity-40 cursor-pointer"
+              className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-foreground disabled:opacity-40 cursor-pointer"
             >
               {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
               Créer
@@ -148,18 +148,18 @@ export function ApiTokensModal({ isOpen, onClose }: Props) {
           </form>
 
           {loading ? (
-            <p className="text-xs text-muted-foreground">Chargement…</p>
+            <p className="text-sm text-muted-foreground">Chargement…</p>
           ) : active.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Aucun jeton actif. Crée-en un par machine qui doit synchroniser avec ce hub.
             </p>
           ) : (
-            <ul className="divide-y divide-border rounded-lg border border-border">
+            <ul className="divide-y divide-border rounded-xl border border-border">
               {active.map((t) => (
-                <li key={t.id} className="flex items-center justify-between px-3 py-2.5">
+                <li key={t.id} className="flex items-center justify-between px-4 py-4">
                   <div className="min-w-0">
-                    <p className="truncate text-xs font-medium text-foreground">{t.name}</p>
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="truncate text-sm font-medium text-foreground">{t.name}</p>
+                    <p className="text-sm text-muted-foreground">
                       Créé le {new Date(t.createdAt).toLocaleDateString('fr-FR')}
                       {t.lastUsedAt
                         ? ` · dernier usage le ${new Date(t.lastUsedAt).toLocaleDateString('fr-FR')}`
@@ -168,7 +168,7 @@ export function ApiTokensModal({ isOpen, onClose }: Props) {
                   </div>
                   <button
                     onClick={() => revoke(t.id)}
-                    className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-destructive hover:bg-destructive-muted cursor-pointer"
+                    className="flex shrink-0 items-center gap-2 rounded-xl border border-border px-2 py-2 text-sm text-destructive hover:bg-destructive-muted cursor-pointer"
                   >
                     <Ban className="w-3.5 h-3.5" />
                     Révoquer
@@ -179,7 +179,7 @@ export function ApiTokensModal({ isOpen, onClose }: Props) {
           )}
 
           {revoked.length > 0 && (
-            <p className="mt-3 text-[11px] text-muted-foreground">
+            <p className="mt-4 text-sm text-muted-foreground">
               {revoked.length} jeton(s) révoqué(s), conservés pour rester identifiables s'ils réapparaissent dans un journal.
             </p>
           )}

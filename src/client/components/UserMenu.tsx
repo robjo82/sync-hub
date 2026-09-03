@@ -40,14 +40,14 @@ export function UserMenu() {
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setMenuOpen(!menuOpen)}
-        className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-card hover:bg-muted border border-border transition-all text-xs text-foreground cursor-pointer"
+        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-card hover:bg-muted border border-border transition-all text-sm text-foreground cursor-pointer"
       >
-        <div className="w-5 h-5 rounded-full bg-accent-muted text-accent-muted-foreground flex items-center justify-center font-semibold text-[10px]">
+        <div className="w-5 h-5 rounded-full bg-accent-muted text-accent-muted-foreground flex items-center justify-center font-semibold text-sm">
           {initials}
         </div>
         <span className="font-medium max-w-[120px] truncate">{user.displayName}</span>
         {user.role === 'admin' && (
-          <span className="text-[10px] px-1.5 py-0.2 rounded bg-accent-muted text-accent-muted-foreground font-medium">
+          <span className="text-sm px-2 py-2 rounded-xl bg-accent-muted text-accent-muted-foreground font-medium">
             Admin
           </span>
         )}
@@ -55,10 +55,10 @@ export function UserMenu() {
       </button>
 
       {menuOpen && (
-        <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-xl shadow-lg py-1.5 z-50">
-          <div className="px-3.5 py-2 border-b border-border mb-1">
-            <p className="text-xs font-medium text-foreground truncate">{user.displayName}</p>
-            <p className="text-[11px] text-muted-foreground truncate">{user.email}</p>
+        <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-xl shadow-lg py-2 z-50">
+          <div className="px-4 py-2 border-b border-border mb-2">
+            <p className="text-sm font-medium text-foreground truncate">{user.displayName}</p>
+            <p className="text-sm text-muted-foreground truncate">{user.email}</p>
           </div>
 
           <button
@@ -66,7 +66,7 @@ export function UserMenu() {
               setMenuOpen(false);
               setSharesModalOpen(true);
             }}
-            className="w-full px-3.5 py-2 text-left text-xs text-foreground hover:bg-muted flex items-center gap-2 transition-colors cursor-pointer"
+            className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2 transition-colors cursor-pointer"
           >
             <Globe className="w-3.5 h-3.5 text-muted-foreground" />
             Liens partagés
@@ -77,7 +77,7 @@ export function UserMenu() {
               setMenuOpen(false);
               setTokensModalOpen(true);
             }}
-            className="w-full px-3.5 py-2 text-left text-xs text-foreground hover:bg-muted flex items-center gap-2 transition-colors cursor-pointer"
+            className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2 transition-colors cursor-pointer"
           >
             <KeyRound className="w-3.5 h-3.5 text-muted-foreground" />
             Jetons d'appareil
@@ -89,7 +89,7 @@ export function UserMenu() {
                 setMenuOpen(false);
                 setSecretsModalOpen(true);
               }}
-              className="w-full px-3.5 py-2 text-left text-xs text-foreground hover:bg-muted flex items-center gap-2 transition-colors cursor-pointer"
+              className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2 transition-colors cursor-pointer"
             >
               <ShieldAlert className="w-3.5 h-3.5 text-muted-foreground" />
               Secrets dans l'historique
@@ -102,7 +102,7 @@ export function UserMenu() {
                 setMenuOpen(false);
                 setUsersModalOpen(true);
               }}
-              className="w-full px-3.5 py-2 text-left text-xs text-foreground hover:bg-muted flex items-center gap-2 transition-colors cursor-pointer"
+              className="w-full px-4 py-2 text-left text-sm text-foreground hover:bg-muted flex items-center gap-2 transition-colors cursor-pointer"
             >
               <Users className="w-3.5 h-3.5 text-muted-foreground" />
               Gérer les utilisateurs
@@ -115,7 +115,7 @@ export function UserMenu() {
                 setMenuOpen(false);
                 logout();
               }}
-              className="w-full px-3.5 py-2 text-left text-xs text-destructive hover:bg-destructive-muted flex items-center gap-2 transition-colors cursor-pointer border-t border-border mt-1"
+              className="w-full px-4 py-2 text-left text-sm text-destructive hover:bg-destructive-muted flex items-center gap-2 transition-colors cursor-pointer border-t border-border mt-2"
             >
               <LogOut className="w-3.5 h-3.5" />
               Déconnexion

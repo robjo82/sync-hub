@@ -71,6 +71,12 @@ export interface AppDeps {
   /** Where an uploaded Claude.ai/ChatGPT export .zip is extracted (into <importsDir>/claude or /chatgpt). */
   importsDir: string;
   clientDistDir?: string;
+  /**
+   * False on the deployed hub, which has no ~/.claude or ~/Projets inside its container. The
+   * interface uses it to stop offering things that cannot work there — rescanning local files,
+   * enrolling this machine — and to say plainly which of the two you are looking at.
+   */
+  localIngest?: boolean;
   corsOrigins?: string[];
   /** Remote hub URL this instance connects to for bidirectional sync. */
   remoteUrl?: string;
@@ -1203,6 +1209,8 @@ export function createApp(deps: AppDeps): FastifyInstance {
       configured,
       remoteUrl: deps.remoteUrl ?? null,
       syncState,
+      // Defaults to true: every caller that predates this flag is a local instance.
+      localIngest: deps.localIngest !== false,
     };
   });
 

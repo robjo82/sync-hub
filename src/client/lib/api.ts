@@ -187,7 +187,12 @@ export const api = {
     jsonFetch<{ message: Message; projectName: string; threadTitle: string }[]>(`/api/search?q=${encodeURIComponent(q)}`),
   rescan: () => jsonFetch<{ ok: true; stats: SyncStats }>('/api/sync/rescan', { method: 'POST' }),
   syncStatus: () =>
-    jsonFetch<{ configured: boolean; remoteUrl: string | null; syncState: RemoteSyncState | null }>('/api/sync/status'),
+    jsonFetch<{
+      configured: boolean;
+      remoteUrl: string | null;
+      syncState: RemoteSyncState | null;
+      localIngest: boolean;
+    }>('/api/sync/status'),
   syncOverview: () => jsonFetch<SyncOverview>('/api/sync/overview'),
   enrol: (hubUrl: string, token: string) =>
     jsonFetch<{ ok: true; hubUrl: string }>('/api/enrol', {

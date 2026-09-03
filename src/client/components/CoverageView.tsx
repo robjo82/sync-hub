@@ -69,7 +69,7 @@ export function ImportDropZone({ tool, label, onImported }: { tool: 'claude' | '
         if (file) upload(file);
       }}
       onClick={() => inputRef.current?.click()}
-      className={`flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed p-4 text-center text-xs transition-colors ${
+      className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-4 text-center text-sm transition-colors ${
         dragOver ? 'border-accent bg-accent-muted' : 'border-border bg-card hover:border-accent/40'
       }`}
     >
@@ -92,7 +92,7 @@ export function ImportDropZone({ tool, label, onImported }: { tool: 'claude' | '
       <span className="font-medium text-foreground">{label}</span>
       <span className="text-muted-foreground">Glisse l'export .zip ici, ou clique</span>
       {state.status === 'done' && (
-        <span className="flex items-center gap-1 text-success font-medium">
+        <span className="flex items-center gap-2 text-success font-medium">
           <Check size={12} /> {state.message}
         </span>
       )}
@@ -152,7 +152,7 @@ export function CoverageView() {
 
   if (!overview || !rows) {
     return (
-      <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">
+      <div className="flex h-full items-center justify-center p-10 text-sm text-muted-foreground">
         <Loader2 size={20} className="animate-spin mr-2" /> Chargement de l'état de synchronisation…
       </div>
     );
@@ -163,10 +163,10 @@ export function CoverageView() {
   return (
     <div className="mx-auto max-w-4xl overflow-y-auto p-6 space-y-6">
       {/* Title & subtitle */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-base font-semibold text-foreground">Synchronisation & Appareils</h1>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Visualisation des appareils connectés, des IA installées et de la couverture par projet.
           </p>
         </div>
@@ -174,7 +174,7 @@ export function CoverageView() {
           <button
             onClick={handleManualSync}
             disabled={syncing}
-            className="self-start sm:self-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-accent-foreground text-xs font-medium hover:opacity-90 disabled:opacity-50 transition-opacity cursor-pointer shadow-sm"
+            className="self-start sm:self-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-accent-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity cursor-pointer shadow-sm"
           >
             <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />
             {syncing ? 'Synchronisation…' : 'Synchroniser maintenant'}
@@ -183,33 +183,33 @@ export function CoverageView() {
       </div>
 
       {syncFeedback && (
-        <div className="p-3 rounded-xl bg-accent-muted text-accent-muted-foreground border border-accent/20 text-xs flex items-center gap-2">
+        <div className="p-4 rounded-xl bg-accent-muted text-accent-muted-foreground border border-accent/20 text-sm flex items-center gap-2">
           <Check size={14} className="text-accent shrink-0" />
           <span>{syncFeedback}</span>
         </div>
       )}
 
       {/* Top Stat Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Hub Distant Card */}
         <div className="rounded-xl border border-border bg-card p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
+          <div className="flex items-center justify-between text-sm text-muted-foreground mb-2">
             <span className="font-medium">Hub Distant</span>
             <Cloud size={16} className={overview.remoteConfigured ? 'text-success' : 'text-muted-foreground'} />
           </div>
           <div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
               <span className={`inline-block h-2 w-2 rounded-full ${overview.remoteConfigured ? 'bg-success' : 'bg-muted-foreground'}`} />
               <span className="text-sm font-semibold text-foreground">
                 {overview.remoteConfigured ? 'En ligne' : 'Autonome'}
               </span>
             </div>
-            <p className="text-[11px] text-muted-foreground mt-1 truncate">
+            <p className="text-sm text-muted-foreground mt-2 truncate">
               {overview.remoteUrl || 'Stockage local uniquement'}
             </p>
           </div>
           {overview.syncState && (
-            <div className="mt-3 pt-2 border-t border-border/60 text-[10px] text-muted-foreground flex justify-between">
+            <div className="mt-4 pt-2 border-t border-border/60 text-sm text-muted-foreground flex justify-between">
               <span>Seq Push : {overview.syncState.lastPushedSeq}</span>
               <span>Seq Pull : {overview.syncState.lastPulledSeq}</span>
             </div>
@@ -218,111 +218,111 @@ export function CoverageView() {
 
         {/* Devices Card */}
         <div className="rounded-xl border border-border bg-card p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
+          <div className="flex items-center justify-between text-sm text-muted-foreground mb-2">
             <span className="font-medium">Appareils & Sessions</span>
             <Laptop size={16} className="text-accent" />
           </div>
           <div>
-            <div className="text-2xl font-bold text-foreground">{totalDevices}</div>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
+            <div className="text-3xl font-bold text-foreground">{totalDevices}</div>
+            <p className="text-sm text-muted-foreground mt-2">
               {overview.accounts.length} {overview.accounts.length > 1 ? 'comptes actifs' : 'compte actif'}
             </p>
           </div>
-          <div className="mt-3 pt-2 border-t border-border/60 text-[10px] text-muted-foreground">
+          <div className="mt-4 pt-2 border-t border-border/60 text-sm text-muted-foreground">
             Multi-device & multi-session actif
           </div>
         </div>
 
         {/* AI Engines Card */}
         <div className="rounded-xl border border-border bg-card p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
+          <div className="flex items-center justify-between text-sm text-muted-foreground mb-2">
             <span className="font-medium">Moteurs IA</span>
             <Sparkles size={16} className="text-engine-claude" />
           </div>
           <div>
-            <div className="text-2xl font-bold text-foreground">{overview.engines.length}</div>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
+            <div className="text-3xl font-bold text-foreground">{overview.engines.length}</div>
+            <p className="text-sm text-muted-foreground mt-2">
               {overview.engines.map((e) => e.label.split(' ')[0]).join(', ')}
             </p>
           </div>
-          <div className="mt-3 pt-2 border-t border-border/60 text-[10px] text-muted-foreground">
+          <div className="mt-4 pt-2 border-t border-border/60 text-sm text-muted-foreground">
             Détection automatique multi-outils
           </div>
         </div>
 
         {/* History Volume Card */}
         <div className="rounded-xl border border-border bg-card p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
+          <div className="flex items-center justify-between text-sm text-muted-foreground mb-2">
             <span className="font-medium">Historique Centralisé</span>
             <HardDrive size={16} className="text-muted-foreground" />
           </div>
           <div>
-            <div className="text-2xl font-bold text-foreground">{overview.totalMessages.toLocaleString('fr-FR')}</div>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
+            <div className="text-3xl font-bold text-foreground">{overview.totalMessages.toLocaleString('fr-FR')}</div>
+            <p className="text-sm text-muted-foreground mt-2">
               messages dans {overview.totalThreads} conversations
             </p>
           </div>
-          <div className="mt-3 pt-2 border-t border-border/60 text-[10px] text-muted-foreground">
+          <div className="mt-4 pt-2 border-t border-border/60 text-sm text-muted-foreground">
             {overview.totalProjects} projets indexés en FTS5
           </div>
         </div>
       </div>
 
       {/* Section 1 : Comptes & Appareils Synchronisés */}
-      <div className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+      <div className="space-y-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
           <UserIcon size={14} className="text-accent" /> Comptes & Appareils Synchronisés
         </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {overview.accounts.map((acc) => (
-            <div key={acc.user.id} className="rounded-xl border border-border bg-card p-4 space-y-3">
+            <div key={acc.user.id} className="rounded-xl border border-border bg-card p-4 space-y-4">
               <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-full bg-accent-muted text-accent-muted-foreground flex items-center justify-center font-semibold text-xs">
+                <div className="flex items-center gap-4">
+                  <div className="w-8 h-8 rounded-full bg-accent-muted text-accent-muted-foreground flex items-center justify-center font-semibold text-sm">
                     {acc.user.displayName.slice(0, 2).toUpperCase()}
                   </div>
                   <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-xs text-foreground">{acc.user.displayName}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-sm text-foreground">{acc.user.displayName}</span>
                       {acc.user.role === 'admin' && (
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-accent-muted text-accent-muted-foreground font-medium">
+                        <span className="text-sm px-2 py-2 rounded-xl bg-accent-muted text-accent-muted-foreground font-medium">
                           Admin
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-muted-foreground">{acc.user.email}</p>
+                    <p className="text-sm text-muted-foreground">{acc.user.email}</p>
                   </div>
                 </div>
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-sm text-muted-foreground">
                   Créé le {new Date(acc.user.createdAt).toLocaleDateString('fr-FR')}
                 </span>
               </div>
 
               {/* Connected Devices List */}
-              <div className="space-y-1.5 pt-2 border-t border-border/60">
-                <div className="text-[10px] font-medium uppercase text-muted-foreground tracking-wider">
+              <div className="space-y-2 pt-2 border-t border-border/60">
+                <div className="text-sm font-medium uppercase text-muted-foreground tracking-wider">
                   Appareils & Sessions ({acc.devices.length})
                 </div>
 
                 {acc.devices.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic">Aucune session active enregistrée.</p>
+                  <p className="text-sm text-muted-foreground italic">Aucune session active enregistrée.</p>
                 ) : (
                   acc.devices.map((dev) => (
                     <div
                       key={dev.id}
-                      className="flex items-center justify-between rounded-lg bg-muted/40 px-2.5 py-1.5 text-xs text-foreground"
+                      className="flex items-center justify-between rounded-xl bg-muted/40 px-4 py-2 text-sm text-foreground"
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         {getDeviceIcon(dev.deviceLabel)}
                         <div className="min-w-0">
-                          <p className="font-medium text-xs truncate">{dev.deviceLabel}</p>
-                          <p className="text-[10px] text-muted-foreground truncate">
+                          <p className="font-medium text-sm truncate">{dev.deviceLabel}</p>
+                          <p className="text-sm text-muted-foreground truncate">
                             IP : {dev.ip || 'locale'} · Connecté {formatRelative(dev.createdAt)}
                           </p>
                         </div>
                       </div>
-                      <span className="inline-flex items-center gap-1 text-[10px] text-success font-medium shrink-0">
+                      <span className="inline-flex items-center gap-2 text-sm text-success font-medium shrink-0">
                         <span className="h-1.5 w-1.5 rounded-full bg-success" />
                         Actif
                       </span>
@@ -336,26 +336,26 @@ export function CoverageView() {
       </div>
 
       {/* Section 2 : Moteurs IA Détectés & Volume */}
-      <div className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+      <div className="space-y-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
           <Sparkles size={14} className="text-accent" /> Moteurs IA Détectés sur l'Instance
         </h2>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           {overview.engines.map((eng) => (
-            <div key={eng.engine} className="rounded-xl border border-border bg-card p-3.5 space-y-2">
+            <div key={eng.engine} className="rounded-xl border border-border bg-card p-4 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="font-semibold text-xs text-foreground">{eng.label}</span>
-                <span className="inline-flex items-center rounded-full bg-success-muted px-2 py-0.5 text-[10px] font-medium text-success">
+                <span className="font-semibold text-sm text-foreground">{eng.label}</span>
+                <span className="inline-flex items-center rounded-full bg-success-muted px-2 py-2 text-sm font-medium text-success">
                   Actif
                 </span>
               </div>
-              <div className="space-y-0.5">
-                <div className="text-lg font-bold text-foreground">{eng.messageCount.toLocaleString('fr-FR')}</div>
-                <p className="text-[11px] text-muted-foreground">{eng.threadCount} conversations</p>
+              <div className="space-y-2">
+                <div className="text-xl font-bold text-foreground">{eng.messageCount.toLocaleString('fr-FR')}</div>
+                <p className="text-sm text-muted-foreground">{eng.threadCount} conversations</p>
               </div>
               {eng.lastActiveAt && (
-                <p className="text-[10px] text-muted-foreground pt-1.5 border-t border-border/60">
+                <p className="text-sm text-muted-foreground pt-2 border-t border-border/60">
                   Dernière activité : {formatRelative(eng.lastActiveAt)}
                 </p>
               )}
@@ -365,18 +365,18 @@ export function CoverageView() {
       </div>
 
       {/* Section 3 : Couverture par Projet */}
-      <div className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+      <div className="space-y-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
           <FolderGit2 size={14} className="text-accent" /> Couverture Projet par Projet
         </h2>
 
         <div className="border border-border rounded-xl overflow-hidden bg-card">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-muted text-muted-foreground uppercase tracking-wider text-[10px]">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-muted text-muted-foreground uppercase tracking-wider text-sm">
               <tr>
-                <th className="px-4 py-2.5 font-medium">Projet</th>
+                <th className="px-4 py-4 font-medium">Projet</th>
                 {KNOWN_ENGINES.map((e) => (
-                  <th key={e.key} className="px-4 py-2.5 font-medium">
+                  <th key={e.key} className="px-4 py-4 font-medium">
                     {e.label}
                   </th>
                 ))}
@@ -385,17 +385,17 @@ export function CoverageView() {
             <tbody className="divide-y divide-border">
               {rows.map((row) => (
                 <tr key={row.projectId} className="hover:bg-muted/30 transition-colors">
-                  <td className="px-4 py-2.5 font-medium text-foreground">{row.projectName}</td>
+                  <td className="px-4 py-4 font-medium text-foreground">{row.projectName}</td>
                   {KNOWN_ENGINES.map((e) => {
                     const at = row.engines[e.key];
                     return (
-                      <td key={e.key} className="px-4 py-2.5">
+                      <td key={e.key} className="px-4 py-4">
                         {at ? (
-                          <span className="flex items-center gap-1 text-success font-medium text-[11px]">
+                          <span className="flex items-center gap-2 text-success font-medium text-sm">
                             <Check size={12} /> {formatRelative(at)}
                           </span>
                         ) : (
-                          <span className="text-muted-foreground/50 text-[11px]">—</span>
+                          <span className="text-muted-foreground/50 text-sm">—</span>
                         )}
                       </td>
                     );
@@ -415,14 +415,14 @@ export function CoverageView() {
       </div>
 
       {/* Section 4 : Import manuel d'archives */}
-      <div className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+      <div className="space-y-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
           <Upload size={14} className="text-accent" /> Importer un export externe
         </h2>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Importez directement vos archives .zip depuis Claude.ai ou ChatGPT pour intégrer votre historique web complet.
         </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <ImportDropZone tool="claude" label="Claude.ai" onImported={loadData} />
           <ImportDropZone tool="chatgpt" label="ChatGPT" onImported={loadData} />
         </div>

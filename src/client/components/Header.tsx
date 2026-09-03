@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Cloud, Moon, RefreshCw, Sun } from 'lucide-react';
+import { Cloud, Laptop, Moon, RefreshCw, Sun } from 'lucide-react';
 import { UserMenu } from './UserMenu.js';
 import { api } from '../lib/api.js';
 import type { RemoteSyncState } from '../../types.js';
@@ -17,43 +17,53 @@ interface HeaderProps {
   onToggleTheme: () => void;
 }
 
+// Short labels: at 14px the full wording wrapped onto two lines and broke the header's height.
+// The long form still titles the page itself, where there is room for it.
 const TABS: { key: Tab; label: string }[] = [
   { key: 'projects', label: 'Projets' },
   { key: 'search', label: 'Recherche' },
-  { key: 'coverage', label: 'Synchronisation & Appareils' },
+  { key: 'coverage', label: 'Appareils' },
   { key: 'unassigned', label: 'Non affecté' },
   { key: 'costs', label: 'Coûts' },
 ];
 
 export function Header({ connected, scanning, onRescan, tab, onTabChange, unassignedCount, theme, onToggleTheme }: HeaderProps) {
-  const [syncStatus, setSyncStatus] = useState<{ configured: boolean; remoteUrl: string | null; syncState: RemoteSyncState | null } | null>(null);
+  const [syncStatus, setSyncStatus] = useState<{
+    configured: boolean;
+    remoteUrl: string | null;
+    syncState: RemoteSyncState | null;
+    localIngest: boolean;
+  } | null>(null);
+  // Until the answer arrives, assume local: that is what every instance but the deployed hub is,
+  // and it avoids the controls flickering out and back in on load.
+  const isLocal = syncStatus?.localIngest !== false;
 
   useEffect(() => {
     api.syncStatus().then(setSyncStatus).catch(() => {});
   }, [scanning]);
 
   return (
-    <header className="flex items-center gap-4 border-b border-border bg-card px-4 py-2.5">
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold tracking-tight text-foreground">Sync Hub</span>
+    <header className="flex items-center gap-4 border-b border-border bg-card px-6 py-4">
+      <div className="flex shrink-0 items-center gap-2">
+        <span className="whitespace-nowrap text-base font-semibold tracking-tight text-foreground">Sync&nbsp;Hub</span>
         <span
           className={`inline-block h-2 w-2 rounded-full ${connected ? 'bg-success' : 'bg-warning'}`}
           title={connected ? 'Connecté (temps réel)' : 'Reconnexion…'}
         />
       </div>
 
-      <nav className="flex items-center gap-1">
+      <nav className="flex items-center gap-2">
         {TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => onTabChange(t.key)}
-            className={`rounded-md px-3 py-1.5 text-sm transition-colors cursor-pointer ${
+            className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm transition-colors cursor-pointer ${
               tab === t.key ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
             }`}
           >
             {t.label}
             {t.key === 'unassigned' && unassignedCount > 0 && (
-              <span className="ml-1.5 rounded-full bg-warning-muted px-1.5 text-xs text-warning-foreground">{unassignedCount}</span>
+              <span className="ml-2 rounded-full bg-warning-muted px-2 text-sm text-warning-foreground">{unassignedCount}</span>
             )}
           </button>
         ))}
@@ -61,33 +71,44 @@ export function Header({ connected, scanning, onRescan, tab, onTabChange, unassi
 
       <div className="flex-1" />
 
-      {syncStatus?.configured && (
-        <button
-          onClick={() => onTabChange('coverage')}
-          title={`Synchronisé avec ${syncStatus.remoteUrl} (Push: ${syncStatus.syncState?.lastPushedSeq ?? 0}, Pull: ${syncStatus.syncState?.lastPulledSeq ?? 0})`}
-          className="hidden md:flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
-        >
-          <Cloud size={13} className="text-success" />
-          <span className="truncate max-w-[140px]">Distant synchronisé</span>
-        </button>
-      )}
+      {/* Which of the two you are looking at, stated rather than implied by a small dot. The
+          local instance and the shared hub show the same screens, and mistaking one for the
+          other is how someone concludes their data is missing. */}
+      <div
+        title={
+          isLocal
+            ? syncStatus?.configured
+              ? `Cette machine, synchronisée avec ${syncStatus.remoteUrl}`
+              : 'Cette machine, sans hub configuré'
+            : 'Le hub partagé — les conversations de toute l’équipe'
+        }
+        className={`hidden shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2 text-sm md:flex ${
+          isLocal ? 'bg-muted text-muted-foreground' : 'bg-accent-muted text-accent-muted-foreground'
+        }`}
+      >
+        {isLocal ? <Laptop size={14} /> : <Cloud size={14} />}
+        <span>{isLocal ? 'Cet appareil' : 'Hub partagé'}</span>
+      </div>
 
       <button
         onClick={onToggleTheme}
         title={theme === 'light' ? 'Passer en thème sombre' : 'Passer en thème clair'}
-        className="rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
+        className="rounded-xl border border-border p-2 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
       >
         {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
       </button>
 
-      <button
-        onClick={onRescan}
-        disabled={scanning}
-        className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50 cursor-pointer"
-      >
-        <RefreshCw size={14} className={scanning ? 'animate-spin' : ''} />
-        {scanning ? 'Scan en cours…' : 'Rescanner'}
-      </button>
+      {/* Nothing to rescan on the hub: it has no ~/.claude and no ~/Projets in its container. */}
+      {isLocal && (
+        <button
+          onClick={onRescan}
+          disabled={scanning}
+          className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50 cursor-pointer"
+        >
+          <RefreshCw size={14} className={scanning ? 'animate-spin' : ''} />
+          {scanning ? 'Scan en cours…' : 'Rescanner'}
+        </button>
+      )}
 
       <UserMenu />
     </header>

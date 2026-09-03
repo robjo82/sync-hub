@@ -30,7 +30,7 @@ const ASSISTANT_COLLAPSE_LENGTH = 4000;
 const META_REPEAT_GAP_MS = 5 * 60 * 1000;
 const PAGE_SIZE = 100;
 
-function Meta({ sourceEngine, timestamp, className = 'mb-1' }: { sourceEngine: EngineType; timestamp: string; className?: string }) {
+function Meta({ sourceEngine, timestamp, className = 'mb-2' }: { sourceEngine: EngineType; timestamp: string; className?: string }) {
   const badgeColor =
     sourceEngine === 'claude-code'
       ? 'bg-engine-claude/10 text-engine-claude border-engine-claude/20'
@@ -39,8 +39,8 @@ function Meta({ sourceEngine, timestamp, className = 'mb-1' }: { sourceEngine: E
       : 'bg-engine-antigravity/10 text-engine-antigravity border-engine-antigravity/20';
 
   return (
-    <div className={`flex items-center gap-2 text-xs text-muted-foreground ${className}`}>
-      <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${badgeColor}`}>
+    <div className={`flex items-center gap-2 text-sm text-muted-foreground ${className}`}>
+      <span className={`inline-flex items-center rounded-xl border px-2 py-2 text-sm font-medium ${badgeColor}`}>
         {ENGINE_LABEL[sourceEngine] ?? sourceEngine}
       </span>
       <span>· {new Date(timestamp).toLocaleString('fr-FR')}</span>
@@ -146,13 +146,13 @@ function ReasoningBlock({
   const summary = excerpt ?? (durationLabel ? `Réflexion (${durationLabel})` : 'Réflexion');
 
   return (
-    <details className="mb-2 rounded-lg border border-accent/25 bg-accent-muted/60 px-2.5 py-1.5 text-xs text-accent-muted-foreground">
-      <summary className="flex cursor-pointer select-none items-center gap-1.5">
+    <details className="mb-2 rounded-xl border border-accent/25 bg-accent-muted/60 px-4 py-2 text-sm text-accent-muted-foreground">
+      <summary className="flex cursor-pointer select-none items-center gap-2">
         <Brain size={13} className="shrink-0" />
         {summary}
         {excerpt && durationLabel && <span className="text-accent-muted-foreground/70">· {durationLabel}</span>}
       </summary>
-      <div className="mt-1.5 space-y-2">
+      <div className="mt-2 space-y-2">
         {thought && <MarkdownRenderer text={thought} />}
         {(calls.length > 0 || (results?.length ?? 0) > 0) && <ToolCallsBlock calls={calls} results={results} />}
       </div>
@@ -172,24 +172,24 @@ function ToolCallsBlock({ calls, results }: { calls: ToolCall[]; results?: ToolR
     count > 1 ? `Exécuté ${count} commandes` : calls[0] ? calls[0].name : `Résultat${hasError ? ' (erreur)' : ''}`;
 
   return (
-    <details className={`mb-2 rounded-lg border px-2.5 py-1.5 text-xs ${hasError ? 'border-destructive/30 bg-destructive-muted/60' : 'border-border bg-muted/60'}`}>
-      <summary className={`flex cursor-pointer select-none items-center gap-1.5 ${hasError ? 'text-destructive' : 'text-muted-foreground'}`}>
+    <details className={`mb-2 rounded-xl border px-4 py-2 text-sm ${hasError ? 'border-destructive/30 bg-destructive-muted/60' : 'border-border bg-muted/60'}`}>
+      <summary className={`flex cursor-pointer select-none items-center gap-2 ${hasError ? 'text-destructive' : 'text-muted-foreground'}`}>
         {count > 1 ? <Settings2 size={13} className="shrink-0" /> : <Wrench size={13} className="shrink-0" />}
         {summary}
       </summary>
-      <div className="mt-1.5 space-y-2">
+      <div className="mt-2 space-y-2">
         {calls.map((call) => {
           const result = resultByCallId.get(call.id);
           return (
             <div key={call.id}>
-              <div className="mb-0.5 flex items-center gap-1.5 font-medium text-muted-foreground">
+              <div className="mb-2 flex items-center gap-2 font-medium text-muted-foreground">
                 <Wrench size={11} />
                 {call.name}
               </div>
               <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-muted-foreground/90">{JSON.stringify(call.arguments, null, 2)}</pre>
               {result && (
                 <>
-                  <div className={`mt-1 mb-0.5 font-medium ${result.status === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}>
+                  <div className={`mt-2 mb-2 font-medium ${result.status === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}>
                     Résultat{result.status === 'error' ? ' (erreur)' : ''}
                   </div>
                   <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-muted-foreground/90">{result.output}</pre>
@@ -200,7 +200,7 @@ function ToolCallsBlock({ calls, results }: { calls: ToolCall[]; results?: ToolR
         })}
         {orphanResults.map((result) => (
           <div key={result.toolCallId}>
-            <div className={`mb-0.5 font-medium ${result.status === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}>
+            <div className={`mb-2 font-medium ${result.status === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}>
               Résultat{result.status === 'error' ? ' (erreur)' : ''}
             </div>
             <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-muted-foreground/90">{result.output}</pre>
@@ -222,12 +222,12 @@ function UserCard({ message }: { message: Message }) {
     <div>
       <div
         onClick={collapsed ? () => setExpanded(true) : undefined}
-        className={`relative rounded-2xl bg-accent-muted px-4 py-3 text-accent-muted-foreground ${collapsed ? 'max-h-40 cursor-pointer overflow-hidden' : ''}`}
+        className={`relative rounded-xl bg-accent-muted px-4 py-4 text-accent-muted-foreground ${collapsed ? 'max-h-40 cursor-pointer overflow-hidden' : ''}`}
       >
         {message.content && <MarkdownRenderer text={message.content} />}
-        {collapsed && <div className="absolute inset-x-0 bottom-0 h-10 rounded-b-2xl bg-gradient-to-t from-accent-muted" />}
+        {collapsed && <div className="absolute inset-x-0 bottom-0 h-10 rounded-b-xl bg-gradient-to-t from-accent-muted" />}
       </div>
-      <Meta sourceEngine={message.sourceEngine} timestamp={message.timestamp} className="mt-1.5" />
+      <Meta sourceEngine={message.sourceEngine} timestamp={message.timestamp} className="mt-2" />
     </div>
   );
 }
@@ -239,12 +239,12 @@ function SystemNoticeBlock({ message, showMeta }: { message: Message; showMeta: 
   return (
     <div>
       {showMeta && <Meta sourceEngine={message.sourceEngine} timestamp={message.timestamp} />}
-      <details className="rounded-lg border border-border bg-muted/60 px-2.5 py-1.5 text-xs text-muted-foreground">
-        <summary className="flex cursor-pointer select-none items-center gap-1.5">
+      <details className="rounded-xl border border-border bg-muted/60 px-4 py-2 text-sm text-muted-foreground">
+        <summary className="flex cursor-pointer select-none items-center gap-2">
           <Info size={13} className="shrink-0" />
           Message système
         </summary>
-        <div className="mt-1.5">
+        <div className="mt-2">
           <MarkdownRenderer text={message.content} />
         </div>
       </details>
@@ -288,7 +288,7 @@ function CollapsibleContent({ text }: { text: string }) {
       </div>
       <button
         onClick={() => setExpanded((e) => !e)}
-        className="mt-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+        className="mt-2 text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground"
       >
         {expanded ? 'Replier ce message' : `Afficher la suite (${Math.round(text.length / 1000)} k caractères)`}
       </button>
@@ -346,18 +346,18 @@ function shouldShowMeta(item: RenderItem, previous: RenderItem | undefined): boo
   return !Number.isFinite(gap) || gap > META_REPEAT_GAP_MS;
 }
 
-const actionButtonClass = 'flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted';
+const actionButtonClass = 'flex shrink-0 items-center gap-2 rounded-xl border border-border px-2 py-2 text-sm text-muted-foreground hover:bg-muted';
 
 /** Assign-to-project control, only rendered when the thread has never been classified — the
  * dashboard's "Non affecté" triage action, available directly from the thread itself too. */
 function AssignControl({ allProjects, onAssign }: { allProjects: Project[]; onAssign: (projectId: string) => void }) {
   const [target, setTarget] = useState('');
   return (
-    <div className="flex shrink-0 items-center gap-1">
+    <div className="flex shrink-0 items-center gap-2">
       <select
         value={target}
         onChange={(e) => setTarget(e.target.value)}
-        className="rounded-md border border-border bg-card px-1.5 py-1 text-xs text-foreground"
+        className="rounded-xl border border-border bg-card px-2 py-2 text-sm text-foreground"
       >
         <option value="">Classer dans…</option>
         {allProjects
@@ -380,12 +380,12 @@ function ArchiveButton({ onConfirm }: { onConfirm: () => void }) {
   const [confirming, setConfirming] = useState(false);
   if (confirming) {
     return (
-      <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+      <span className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
         Archiver ce fil ?
-        <button onClick={onConfirm} className="rounded p-1 text-warning hover:bg-warning-muted">
+        <button onClick={onConfirm} className="rounded-xl p-2 text-warning hover:bg-warning-muted">
           <Check size={14} />
         </button>
-        <button onClick={() => setConfirming(false)} className="rounded p-1 text-muted-foreground hover:bg-muted">
+        <button onClick={() => setConfirming(false)} className="rounded-xl p-2 text-muted-foreground hover:bg-muted">
           <X size={14} />
         </button>
       </span>
@@ -403,12 +403,12 @@ function DeleteButton({ onConfirm }: { onConfirm: () => void }) {
   const [confirming, setConfirming] = useState(false);
   if (confirming) {
     return (
-      <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+      <span className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
         Supprimer ce fil de sync-hub ?
-        <button onClick={onConfirm} className="rounded p-1 text-destructive hover:bg-destructive-muted">
+        <button onClick={onConfirm} className="rounded-xl p-2 text-destructive hover:bg-destructive-muted">
           <Check size={14} />
         </button>
-        <button onClick={() => setConfirming(false)} className="rounded p-1 text-muted-foreground hover:bg-muted">
+        <button onClick={() => setConfirming(false)} className="rounded-xl p-2 text-muted-foreground hover:bg-muted">
           <X size={14} />
         </button>
       </span>
@@ -502,11 +502,11 @@ export function ChatView({
 
   return (
     <div className="mx-auto max-w-3xl overflow-y-auto p-6">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground" title={threadId}>
-          Pour reprendre ce fil ailleurs : demande à l'outil d'appeler <code className="rounded bg-muted px-1">get_thread</code> avec cet id.
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground" title={threadId}>
+          Pour reprendre ce fil ailleurs : demande à l'outil d'appeler <code className="rounded-xl bg-muted px-2">get_thread</code> avec cet id.
         </p>
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
           {thread?.projectId === UNASSIGNED_PROJECT_ID && (
             <AssignControl
               allProjects={allProjects}
@@ -550,23 +550,23 @@ export function ChatView({
               <ChevronDown size={10} />
             </button>
             {exportMenuOpen && (
-              <div className="absolute right-0 top-full mt-1 z-30 w-44 rounded-xl border border-border bg-card p-1 shadow-lg text-xs">
+              <div className="absolute right-0 top-full mt-2 z-30 w-44 rounded-xl border border-border bg-card p-2 shadow-lg text-sm">
                 <a
                   href={`/api/threads/${threadId}/export?format=markdown`}
                   download
                   onClick={() => setExportMenuOpen(false)}
-                  className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-foreground hover:bg-muted transition-colors cursor-pointer"
+                  className="flex items-center gap-2 rounded-xl px-4 py-2 text-foreground hover:bg-muted transition-colors cursor-pointer"
                 >
-                  <span className="font-semibold text-accent text-[11px]">MD</span>
+                  <span className="font-semibold text-accent text-sm">MD</span>
                   <span>Format Markdown</span>
                 </a>
                 <a
                   href={`/api/threads/${threadId}/export?format=json`}
                   download
                   onClick={() => setExportMenuOpen(false)}
-                  className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-foreground hover:bg-muted transition-colors cursor-pointer"
+                  className="flex items-center gap-2 rounded-xl px-4 py-2 text-foreground hover:bg-muted transition-colors cursor-pointer"
                 >
-                  <span className="font-semibold text-accent text-[11px]">JSON</span>
+                  <span className="font-semibold text-accent text-sm">JSON</span>
                   <span>Format JSON</span>
                 </a>
               </div>
@@ -591,19 +591,19 @@ export function ChatView({
         </div>
       </div>
       {outline.length > 1 && (
-        <div className="mb-3">
+        <div className="mb-4">
           <button
             onClick={() => setOutlineOpen((o) => !o)}
             className={`${actionButtonClass} w-full justify-between`}
           >
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-2">
               <List size={12} />
               Sommaire du fil — {outline.length} questions
             </span>
             <ChevronDown size={12} className={outlineOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
           </button>
           {outlineOpen && (
-            <ol className="mt-1.5 max-h-72 overflow-y-auto rounded-md border border-border">
+            <ol className="mt-2 max-h-72 overflow-y-auto rounded-xl border border-border">
               {outline.map((entry, i) => {
                 const loaded = entry.position >= windowStart && entry.position < loadedEnd;
                 return (
@@ -614,7 +614,7 @@ export function ChatView({
                           ? document.getElementById(`msg-${entry.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                           : jumpTo(entry.position)
                       }
-                      className="flex w-full items-baseline gap-2 border-b border-border/60 px-2.5 py-1.5 text-left text-xs last:border-b-0 hover:bg-muted"
+                      className="flex w-full items-baseline gap-2 border-b border-border/60 px-4 py-2 text-left text-sm last:border-b-0 hover:bg-muted"
                     >
                       <span className="shrink-0 tabular-nums text-muted-foreground">{i + 1}.</span>
                       <span className="truncate text-foreground">{entry.excerpt || '(message vide)'}</span>
@@ -628,7 +628,7 @@ export function ChatView({
       )}
 
       {windowStart > 0 && (
-        <p className="mb-3 text-center text-xs text-muted-foreground">
+        <p className="mb-4 text-center text-sm text-muted-foreground">
           Affichage à partir du message {windowStart + 1}.{' '}
           <button onClick={() => jumpTo(0)} className="underline underline-offset-2 hover:text-foreground">
             Revenir au début du fil
@@ -650,11 +650,11 @@ export function ChatView({
       </div>
 
       {loadedEnd < total && (
-        <div className="mt-4 flex flex-col items-center gap-1">
+        <div className="mt-4 flex flex-col items-center gap-2">
           <button onClick={loadMore} disabled={loadingMore} className={`${actionButtonClass} disabled:opacity-50`}>
             {loadingMore ? 'Chargement…' : `Charger la suite (${total - loadedEnd} messages restants)`}
           </button>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             {loadedEnd} / {total} affichés
           </span>
         </div>

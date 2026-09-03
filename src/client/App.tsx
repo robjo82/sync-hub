@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Project, SyncStats } from '../types.js';
 import { UNASSIGNED_PROJECT_ID } from '../types.js';
+import { readCache, writeCache } from './lib/cache.js';
 import { api, connectSocket } from './lib/api.js';
 import { Header } from './components/Header.js';
 import { ProjectTree, type SelectedItem } from './components/ProjectTree.js';
@@ -15,7 +16,6 @@ import { AuthProvider, useAuth } from './context/AuthContext.js';
 import { SetupView } from './components/SetupView.js';
 import { LoginView } from './components/LoginView.js';
 import { SharedThreadView } from './components/SharedThreadView.js';
-import { Loader2 } from 'lucide-react';
 
 type Tab = 'projects' | 'coverage' | 'unassigned' | 'search' | 'costs';
 
@@ -48,7 +48,9 @@ function useTheme(): ['light' | 'dark', () => void] {
 }
 
 function MainDashboard() {
-  const [projects, setProjects] = useState<Project[]>([]);
+  // Seeded from the last known list so the tree is on screen before the network answers.
+  const [projects, setProjects] = useState<Project[]>(() => readCache<Project[]>('projects') ?? []);
+  const [projectsLoaded, setProjectsLoaded] = useState(() => readCache<Project[]>('projects') !== null);
   const [stats, setStats] = useState<SyncStats | null>(null);
   const [connected, setConnected] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -59,13 +61,21 @@ function MainDashboard() {
   const [theme, toggleTheme] = useTheme();
 
   useEffect(() => {
-    Promise.all([api.projects(), api.stats()])
-      .then(([p, s]) => {
+    // Not Promise.all any more: stats is the slower of the two and the tree does not need it,
+    // so waiting for both delayed the only thing the user actually looks at first.
+    api
+      .projects()
+      .then((p) => {
         setProjects(p);
-        setStats(s);
+        setProjectsLoaded(true);
+        writeCache('projects', p);
       })
+      .catch((err) => console.error('Failed to load projects:', err));
+    api
+      .stats()
+      .then(setStats)
       .catch((err) => {
-        console.error('Failed to load initial projects/stats:', err);
+        console.error('Failed to load stats:', err);
       });
 
     const socket = connectSocket((event) => {
@@ -73,6 +83,8 @@ function MainDashboard() {
       switch (event.type) {
         case 'initial_state':
           setProjects(event.data.projects);
+          setProjectsLoaded(true);
+          writeCache('projects', event.data.projects);
           setStats(event.data.stats);
           break;
         case 'stats_updated':
@@ -142,6 +154,7 @@ function MainDashboard() {
           <>
             <ProjectTree
               projects={visibleProjects}
+              loaded={projectsLoaded}
               selected={selected}
               onSelect={setSelected}
               refreshToken={refreshToken}
@@ -193,11 +206,26 @@ function AppContent() {
   const { user, loading, authEnabled, setupRequired } = useAuth();
 
   if (loading) {
+    // The shell rather than a spinner: the header and the panel edges are known before any
+    // request answers, so drawing them immediately makes the wait feel like the page arriving
+    // instead of a blank screen. Palette colours, not the stray slate/indigo this used to carry.
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-slate-400">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
-          <span className="text-sm font-medium">Chargement de Sync Hub...</span>
+      <div className="flex h-screen w-screen flex-col bg-background">
+        <div className="flex items-center gap-4 border-b border-border bg-card px-6 py-4">
+          <span className="text-base font-semibold tracking-tight text-foreground">Sync&nbsp;Hub</span>
+          <div className="h-4 w-40 animate-pulse rounded-xl bg-muted" />
+          <div className="flex-1" />
+          <div className="h-4 w-24 animate-pulse rounded-xl bg-muted" />
+        </div>
+        <div className="flex flex-1">
+          <div className="flex w-72 flex-col gap-2 border-r border-border p-6" aria-hidden>
+            {[72, 56, 64, 48, 68, 52, 60].map((w, i) => (
+              <div key={i} className="h-4 animate-pulse rounded-xl bg-muted" style={{ width: `${w}%` }} />
+            ))}
+          </div>
+          <div className="flex flex-1 items-center justify-center">
+            <span className="text-sm text-muted-foreground">Chargement…</span>
+          </div>
         </div>
       </div>
     );
