@@ -58,7 +58,10 @@ export function Header({ connected, scanning, onRescan, tab, onTabChange, unassi
             key={t.key}
             onClick={() => onTabChange(t.key)}
             className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm transition-colors cursor-pointer ${
-              tab === t.key ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              // The active tab used to be bg-muted, a 4% tint that was genuinely hard to pick out.
+              tab === t.key
+                ? 'bg-accent-muted font-medium text-accent-muted-foreground'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
             }`}
           >
             {t.label}

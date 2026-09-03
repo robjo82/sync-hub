@@ -274,27 +274,27 @@ export function CostsView({ projects }: { projects: Project[] }) {
           <div className="inline-flex rounded-xl border border-border bg-card p-2 text-sm">
             <button
               onClick={() => setCurrency('EUR')}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 font-medium transition-colors ${
+              className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2 font-medium transition-colors ${
                 currency === 'EUR' ? 'bg-accent text-accent-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              <Euro className="h-3.5 w-3.5" /> EUR (€)
+              <Euro className="h-4 w-4" /> EUR
             </button>
             <button
               onClick={() => setCurrency('USD')}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 font-medium transition-colors ${
+              className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2 font-medium transition-colors ${
                 currency === 'USD' ? 'bg-accent text-accent-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              <DollarSign className="h-3.5 w-3.5" /> USD ($)
+              <DollarSign className="h-4 w-4" /> USD
             </button>
             <button
               onClick={() => setCurrency('TOKENS')}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2 font-medium transition-colors ${
+              className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2 font-medium transition-colors ${
                 currency === 'TOKENS' ? 'bg-accent text-accent-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              <Coins className="h-3.5 w-3.5" /> Tokens
+              <Coins className="h-4 w-4" /> Tokens
             </button>
           </div>
 

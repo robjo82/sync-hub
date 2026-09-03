@@ -23,6 +23,9 @@ const ENGINE_LABEL: Record<string, string> = {
 export function WelcomeChecklist() {
   const [stats, setStats] = useState<SyncStats | null>(null);
   const [remote, setRemote] = useState<{ remoteConfigured: boolean; remoteUrl?: string } | null>(null);
+  // The hub has no ~/.claude to detect tools in and never enrols itself, so every step here would
+  // sit permanently unticked on it — an onboarding checklist that can never be completed.
+  const [isLocal, setIsLocal] = useState(true);
   const [dismissed, setDismissed] = useState(() => {
     try {
       return localStorage.getItem(DISMISSED_KEY) === '1';
@@ -42,8 +45,14 @@ export function WelcomeChecklist() {
   };
 
   useEffect(load, []);
+  useEffect(() => {
+    api
+      .syncStatus()
+      .then((st) => setIsLocal(st.localIngest !== false))
+      .catch(() => {});
+  }, []);
 
-  if (dismissed || !stats) return null;
+  if (dismissed || !stats || !isLocal) return null;
 
   const detected = stats.engines.filter((e) => e.storageRootExists);
   const missing = stats.engines.filter((e) => !e.storageRootExists);
