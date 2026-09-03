@@ -18,6 +18,18 @@ import { SecretAuditModal } from './SecretAuditModal.js';
  * business, users and public links are the hub's. Showing all of it everywhere is what made the
  * two instances indistinguishable.
  */
+/** Up to two initials, matching the header avatar rather than a lone first letter. */
+function initialsOf(displayName?: string, email?: string): string {
+  const source = displayName?.trim() || email?.split('@')[0] || '?';
+  return source
+    .split(/[\s._-]+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+}
+
 export function AccountView({ onSelectThread }: { onSelectThread?: (threadId: string) => void }) {
   const { user } = useAuth();
   const [isLocal, setIsLocal] = useState(true);
@@ -45,8 +57,8 @@ export function AccountView({ onSelectThread }: { onSelectThread?: (threadId: st
       {/* Identity — small, but it is the thing the screen is named after, and it was nowhere. */}
       <section className="rounded-xl border border-border bg-card p-6">
         <div className="flex items-center gap-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-base font-semibold text-accent-foreground">
-            {(user?.displayName || user?.email || '?').charAt(0).toUpperCase()}
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-base font-semibold leading-none text-accent-foreground">
+            {initialsOf(user?.displayName, user?.email)}
           </div>
           <div className="min-w-0">
             <p className="truncate text-base font-medium text-foreground">{user?.displayName ?? 'Utilisateur local'}</p>

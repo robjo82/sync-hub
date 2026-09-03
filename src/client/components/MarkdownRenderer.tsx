@@ -21,6 +21,45 @@ function cleanChatGptAnnotations(text: string): string {
   });
 }
 
+/**
+ * Turns the escaping an exporter added back into the characters it stood for.
+ *
+ * Real transcripts arrive carrying `&#x20;`, `&amp;` and friends, plus markdown backslash escapes
+ * on characters that never needed them — `\<d.jauch\@acritec.fr>` for an address, a lone `\` where
+ * a line break was meant. Displayed literally, an ordinary forwarded email reads like it was
+ * mangled, which is exactly what it looked like.
+ *
+ * Applied to prose only, never inside code spans or fenced blocks: there a backslash is content,
+ * and "fixing" it would be a lie about what was written. The stored text is untouched either way.
+ */
+export function decodeTextEscapes(text: string): string {
+  if (!/[&\\]/.test(text)) return text;
+  return (
+    text
+      // Numeric entities, decimal and hex.
+      .replace(/&#(\d+);/g, (_m, d) => safeFromCodePoint(Number(d)))
+      .replace(/&#x([0-9a-fA-F]+);/g, (_m, h) => safeFromCodePoint(parseInt(h, 16)))
+      .replace(/&nbsp;/g, '\u00a0')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;|&apos;/g, "'")
+      // &amp; last, so "&amp;lt;" does not become "<".
+      .replace(/&amp;/g, '&')
+      // Markdown escapes: a backslash before punctuation stands for the punctuation itself.
+      .replace(/\\([\\`*_{}[\]()#+\-.!<>@~|])/g, '$1')
+  );
+}
+
+/** Guards against a malformed entity yielding an invalid code point and throwing mid-render. */
+function safeFromCodePoint(code: number): string {
+  try {
+    return String.fromCodePoint(code);
+  } catch {
+    return '';
+  }
+}
+
 /** Splits a line of text on **bold**, *italic*, `code` spans and [text](url) links, returning safe React nodes (no HTML injection). */
 function renderInline(text: string, keyPrefix: string): ReactNode[] {
   const nodes: ReactNode[] = [];
@@ -29,11 +68,11 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
   let match: RegExpExecArray | null;
   let i = 0;
   while ((match = pattern.exec(text))) {
-    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index));
+    if (match.index > lastIndex) nodes.push(decodeTextEscapes(text.slice(lastIndex, match.index)));
     const token = match[0];
     const key = `${keyPrefix}-${i++}`;
     if (token.startsWith('**')) {
-      nodes.push(<strong key={key}>{token.slice(2, -2)}</strong>);
+      nodes.push(<strong key={key}>{decodeTextEscapes(token.slice(2, -2))}</strong>);
     } else if (token.startsWith('`')) {
       nodes.push(
         <code key={key} className="rounded-xl bg-muted px-2 py-2 font-mono text-[0.85em]">
@@ -52,11 +91,11 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
         nodes.push(token);
       }
     } else {
-      nodes.push(<em key={key}>{token.slice(1, -1)}</em>);
+      nodes.push(<em key={key}>{decodeTextEscapes(token.slice(1, -1))}</em>);
     }
     lastIndex = pattern.lastIndex;
   }
-  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+  if (lastIndex < text.length) nodes.push(decodeTextEscapes(text.slice(lastIndex)));
   return nodes;
 }
 

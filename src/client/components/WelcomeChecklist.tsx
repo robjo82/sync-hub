@@ -52,7 +52,10 @@ export function WelcomeChecklist() {
       .catch(() => {});
   }, []);
 
-  if (dismissed || !stats || !isLocal) return null;
+  // `remote` null means "not answered yet", not "not enrolled". Rendering during that window
+  // announced that no device was connected — the first thing shown on opening the app, and
+  // wrong: it corrected itself a few seconds later once the projects loaded.
+  if (dismissed || !stats || !isLocal || remote === null) return null;
 
   const detected = stats.engines.filter((e) => e.storageRootExists);
   const missing = stats.engines.filter((e) => !e.storageRootExists);

@@ -452,16 +452,29 @@ export function createMcpServer(
         'fichier source réel (import en masse) est archivé côté enregistrements sync-hub uniquement\n' +
         '- delete: threadId — retire le fil de sync-hub (base et dashboard), réellement absent ensuite ; le fichier source ' +
         'réel n\'est jamais supprimé (même traitement que archive) ; pour un import en doublon ou un fil de test\n' +
+        '- rename: threadId + title — remplace le titre déduit du premier message, souvent mauvais quand le fil ' +
+        "s'ouvre sur du contenu technique\n" +
         '- unlink: threadId — retire le fil de son groupe de fils liés (voir link_threads) ; dissout le groupe entier si ' +
         "moins de deux fils restent ; sans effet si le fil n'était lié à rien",
       inputSchema: {
-        action: z.enum(['assign', 'archive', 'delete', 'unlink']).describe("L'action à effectuer"),
+        action: z.enum(['rename', 'assign', 'archive', 'delete', 'unlink']).describe("L'action à effectuer"),
         threadId: z.string().describe('Id du fil concerné'),
         project: z.string().optional().describe('Id ou nom du projet cible — action assign uniquement'),
+        title: z.string().optional().describe('Nouveau titre du fil — action rename uniquement'),
       },
     },
     logged(db, 'manage_thread', async (input: any) => {
       switch (input.action) {
+        case 'rename': {
+          // Thread titles are derived from the first message, which is a guess that goes badly
+          // when a thread opens on something technical. Renaming was possible for projects and
+          // categories but not for threads, so a bad title was permanent.
+          const thread = db.getThread(input.threadId);
+          if (!thread) return { content: [{ type: 'text', text: `Aucun fil avec l'id "${input.threadId}".` }], isError: true };
+          if (!input.title?.trim()) return { content: [{ type: 'text', text: 'action rename : `title` est requis.' }], isError: true };
+          db.renameThread(thread.id, input.title.trim());
+          return { content: [{ type: 'text', text: `Fil "${thread.title}" renommé en "${input.title.trim()}".` }] };
+        }
         case 'assign': {
           const thread = db.getThread(input.threadId);
           if (!thread) return { content: [{ type: 'text', text: `Aucun fil avec l'id "${input.threadId}".` }], isError: true };

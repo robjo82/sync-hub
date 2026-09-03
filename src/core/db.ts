@@ -535,13 +535,22 @@ export class Db {
   upsertProject(project: Project): void {
     this.raw
       .prepare(
-        `INSERT INTO projects (id, name, canonical_path, aliases, created_at, last_active_at, archived)
-         VALUES (@id, @name, @canonicalPath, @aliases, @createdAt, @lastActiveAt, @archived)
+        // category and sort_order are carried, and COALESCE'd rather than overwritten. They were
+        // absent entirely, so every project pushed to the hub arrived uncategorised — 44 projects
+        // there against 21 client / 14 ekonum / 3 perso here, all filed under nothing.
+        //
+        // COALESCE, because the same statement runs on every local rescan with a freshly
+        // discovered project that carries no category: assigning excluded.category flatly would
+        // erase, on each scan, the filing the user had just done by hand.
+        `INSERT INTO projects (id, name, canonical_path, aliases, created_at, last_active_at, archived, sort_order, category)
+         VALUES (@id, @name, @canonicalPath, @aliases, @createdAt, @lastActiveAt, @archived, @sortOrder, @category)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name,
            canonical_path = excluded.canonical_path,
            aliases = excluded.aliases,
-           last_active_at = excluded.last_active_at`,
+           last_active_at = excluded.last_active_at,
+           sort_order = COALESCE(excluded.sort_order, sort_order),
+           category = COALESCE(excluded.category, category)`,
       )
       .run({
         id: project.id,
@@ -551,6 +560,8 @@ export class Db {
         createdAt: project.createdAt,
         lastActiveAt: project.lastActiveAt,
         archived: project.archived ? 1 : 0,
+        sortOrder: project.sortOrder ?? null,
+        category: project.category ?? null,
       });
   }
 
@@ -561,6 +572,18 @@ export class Db {
   /** User-driven display name override — e.g. for a ChatGPT Project with no cached real name. */
   renameProject(id: string, name: string): void {
     this.raw.prepare('UPDATE projects SET name = ? WHERE id = ?').run(name, id);
+  }
+
+  /**
+   * User-chosen thread title, overriding the one derived from the first message.
+   *
+   * That derivation is only ever a guess, and a poor one when a thread opens on something
+   * technical — a pasted stack trace, a tool preamble — which then stands as the thread's name
+   * for good. This is the escape hatch, and it is explicit: nothing renames a thread on its own.
+   */
+  renameThread(id: string, title: string): void {
+    this.raw.prepare('UPDATE threads SET title = ? WHERE id = ?').run(title, id);
+    this.raw.prepare('UPDATE threads_fts SET title = ? WHERE thread_id = ?').run(title, id);
   }
 
   /** Free-form sidebar grouping (e.g. "ekonum", "perso", "client") — explicit only, never guessed. Pass null to ungroup. */

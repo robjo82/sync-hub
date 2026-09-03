@@ -34,7 +34,9 @@ export function UserMenu({ onOpenAccount }: { onOpenAccount?: () => void }) {
         onClick={() => setMenuOpen(!menuOpen)}
         className="flex items-center gap-2 px-4 py-2 rounded-xl bg-card hover:bg-muted border border-border transition-all text-sm text-foreground cursor-pointer"
       >
-        <div className="w-5 h-5 rounded-full bg-accent-muted text-accent-muted-foreground flex items-center justify-center font-semibold text-sm">
+        {/* 32px, not 20: two initials at 14px simply do not fit in a 20px circle, and "RJ" spilled
+            over its edges. leading-none stops the line box pushing them off-centre. */}
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-muted text-sm font-semibold leading-none text-accent-muted-foreground">
           {initials}
         </div>
         <span className="font-medium max-w-[120px] truncate">{user.displayName}</span>

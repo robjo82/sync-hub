@@ -14,6 +14,7 @@ import {
   Trash2,
   Wrench,
   X,
+  ChevronUp,
 } from 'lucide-react';
 import type { EngineType, Message, Project, Thread, ToolCall, ToolResult } from '../../types.js';
 import { UNASSIGNED_PROJECT_ID } from '../../types.js';
@@ -146,11 +147,14 @@ function ReasoningBlock({
   const summary = excerpt ?? (durationLabel ? `Réflexion (${durationLabel})` : 'Réflexion');
 
   return (
-    <details className="mb-2 rounded-xl border border-accent/25 bg-accent-muted/60 px-4 py-2 text-sm text-accent-muted-foreground">
-      <summary className="flex cursor-pointer select-none items-center gap-2">
-        <Brain size={13} className="shrink-0" />
-        {summary}
-        {excerpt && durationLabel && <span className="text-accent-muted-foreground/70">· {durationLabel}</span>}
+    // Reasoning is context, not the conversation. It used to carry the accent colour and a filled
+    // background, which made it louder than the exchange it was supporting; now it reads as a
+    // quiet aside — a rule down the side, muted text, no fill — and still opens on demand.
+    <details className="group mb-2 border-l-2 border-border pl-4 text-sm text-muted-foreground">
+      <summary className="flex cursor-pointer select-none items-center gap-2 py-2 hover:text-foreground">
+        <Brain size={14} className="shrink-0 opacity-60" />
+        <span className="italic">{summary}</span>
+        {excerpt && durationLabel && <span className="opacity-70">· {durationLabel}</span>}
       </summary>
       <div className="mt-2 space-y-2">
         {thought && <MarkdownRenderer text={thought} />}
@@ -220,9 +224,23 @@ function UserCard({ message }: { message: Message }) {
 
   return (
     <div>
+      {/* Once open there was no way back: expanding was one-way, so a long prompt stayed open for
+          the rest of the session. A strip at the top closes it again — a strip, and not the whole
+          card, because making the body clickable would break selecting text out of it. */}
+      {isLong && expanded && (
+        <button
+          onClick={() => setExpanded(false)}
+          className="flex w-full cursor-pointer items-center gap-2 rounded-t-xl bg-accent-muted px-4 pt-2 text-sm text-accent-muted-foreground/80 hover:text-accent-muted-foreground"
+        >
+          <ChevronUp size={14} />
+          Replier
+        </button>
+      )}
       <div
         onClick={collapsed ? () => setExpanded(true) : undefined}
-        className={`relative rounded-xl bg-accent-muted px-4 py-4 text-accent-muted-foreground ${collapsed ? 'max-h-40 cursor-pointer overflow-hidden' : ''}`}
+        className={`relative bg-accent-muted px-4 py-4 text-accent-muted-foreground ${
+          isLong && expanded ? 'rounded-b-xl' : 'rounded-xl'
+        } ${collapsed ? 'max-h-40 cursor-pointer overflow-hidden' : ''}`}
       >
         {message.content && <MarkdownRenderer text={message.content} />}
         {collapsed && <div className="absolute inset-x-0 bottom-0 h-10 rounded-b-xl bg-gradient-to-t from-accent-muted" />}
