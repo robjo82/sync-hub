@@ -24,6 +24,11 @@ services:
       # SYNC_HUB_GOOGLE_ALLOWED_DOMAINS en particulier — le flux reste désactivé, ce qui est
       # voulu : sans restriction de domaine, « se connecter avec Google » vaut pour tout compte
       # Google existant. Voir docs/CONNEXION-GOOGLE.md.
+      # Cloudflare Access - la voie recommandee : aucun secret ici, le tag AUD est public.
+      # Voir docs/CONNEXION-CLOUDFLARE-ACCESS.md.
+      SYNC_HUB_ACCESS_TEAM_DOMAIN: "robinjoseph.cloudflareaccess.com"
+      SYNC_HUB_ACCESS_AUD: ""
+      SYNC_HUB_ACCESS_ALLOWED_DOMAINS: "ekonum.fr"
       SYNC_HUB_GOOGLE_CLIENT_ID: ""
       SYNC_HUB_GOOGLE_CLIENT_SECRET: ""
       SYNC_HUB_GOOGLE_REDIRECT_URI: "https://sync-hub.robin-joseph.fr/api/auth/google/callback"
