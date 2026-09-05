@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { WebSocket } from 'ws';
+import { AccessKeyStore, accessConfigFromEnv, verifyAccessToken, type AccessConfig } from '../core/cloudflare-access.js';
 import {
   buildAuthorizeUrl,
   createStateStore,
@@ -64,7 +65,7 @@ declare module 'fastify' {
      * login, and a `user`-only check would let anyone push to, or pull the whole corpus from, a
      * hub whose admin has not been created yet.
      */
-    authVia?: 'session' | 'apiToken' | 'sharedToken' | 'authDisabled';
+    authVia?: 'session' | 'apiToken' | 'sharedToken' | 'authDisabled' | 'cloudflareAccess';
   }
 }
 
@@ -87,6 +88,8 @@ export interface AppDeps {
   localIngest?: boolean;
   /** Injected by tests; production reads it from the environment. */
   googleConfig?: GoogleConfig | null;
+  /** Cloudflare Access in front of the hub. Injected by tests; production reads the environment. */
+  accessConfig?: AccessConfig | null;
   corsOrigins?: string[];
   /** Remote hub URL this instance connects to for bidirectional sync. */
   remoteUrl?: string;
@@ -223,6 +226,33 @@ export function createApp(deps: AppDeps): FastifyInstance {
       req.authVia = 'sharedToken';
     }
 
+    // Cloudflare Access, when the hub sits behind it. The assertion is verified against Access's
+    // published keys — never the companion Cf-Access-Authenticated-User-Email header on its own,
+    // which is a plain header anyone reaching the origin could set.
+    const accessAssertion = req.headers['cf-access-jwt-assertion'];
+    if (!req.user && accessConfig && typeof accessAssertion === 'string' && accessAssertion) {
+      try {
+        const identity = await verifyAccessToken(accessAssertion, accessConfig, accessKeys);
+        // Known address signs in; unknown one on an allowed domain becomes a member. The domain
+        // was checked during verification, and Access's own policy is a second gate in front.
+        const existing = db.getUserByEmail(identity.email);
+        req.user = existing
+          ? { id: existing.id, email: existing.email, displayName: existing.displayName, role: existing.role, createdAt: existing.createdAt, updatedAt: existing.updatedAt }
+          : db.createUser({
+              email: identity.email,
+              displayName: identity.email.split('@')[0],
+              // Signs in through Access; no password is ever issued for this account.
+              passwordHash: `cloudflare-access:${randomUUID()}`,
+              role: db.countUsers() === 0 ? 'admin' : 'member',
+            });
+        req.authVia = 'cloudflareAccess';
+      } catch (err) {
+        // Refusals are worth seeing: a wrong AUD after a reconfiguration looks exactly like a
+        // silent lockout otherwise.
+        app.log.warn({ err: String(err) }, 'cloudflare access: assertion refusée');
+      }
+    }
+
     if (isAuthDisabled && !req.user) {
       req.user = DEFAULT_LOCAL_USER;
       req.authVia = 'authDisabled';
@@ -353,6 +383,8 @@ export function createApp(deps: AppDeps): FastifyInstance {
   // --- Signing in with Google. Inert unless configured; see core/google-oauth.ts for why a
   // missing domain list counts as "not configured" rather than "allow everyone".
   const googleConfig = deps.googleConfig ?? googleConfigFromEnv();
+  const accessConfig = deps.accessConfig ?? accessConfigFromEnv();
+  const accessKeys = new AccessKeyStore(accessConfig?.teamDomain ?? '');
   const googleStates = createStateStore();
 
   /** Issues the session cookie for a user who has just proved who they are. */
