@@ -707,6 +707,38 @@ export function createApp(deps: AppDeps): FastifyInstance {
     return { id: created.id, name: created.name, createdAt: created.createdAt, token: plaintext };
   });
 
+  /**
+   * Approves a device that minted its own token.
+   *
+   * The other endpoint has the hub generate the token, which then has to travel to the machine
+   * being enrolled — by chat, by mail, by whatever is at hand — and it is usable by anyone who
+   * sees it on the way. Here the machine mints its own and sends only the SHA-256 of it. A
+   * fingerprint is not a credential: it authorises nothing, and it can be pasted anywhere
+   * without care. The hub stores exactly what it already stored, since api_tokens only ever
+   * held the hash.
+   */
+  app.post<{ Body: { fingerprint?: string; name?: string } }>('/api/tokens/approve', async (req, reply) => {
+    if (!req.user) return reply.code(401).send({ error: 'unauthorized' });
+    const name = (req.body?.name ?? '').trim();
+    const fingerprint = (req.body?.fingerprint ?? '').trim().toLowerCase();
+
+    if (!name) return reply.code(400).send({ error: 'invalid_name', message: 'Un nom est requis pour identifier la machine' });
+    if (!/^[0-9a-f]{64}$/.test(fingerprint)) {
+      return reply.code(400).send({
+        error: 'invalid_fingerprint',
+        message: "Empreinte attendue : 64 caractères hexadécimaux, tels qu'affichés par ./scripts/enroll.sh",
+      });
+    }
+    // Approving the same fingerprint twice would leave two rows resolving to the same machine,
+    // so a second approval is refused rather than silently duplicated.
+    if (db.getUserByApiToken(fingerprint)) {
+      return reply.code(409).send({ error: 'already_approved', message: 'Cet appareil est déjà approuvé' });
+    }
+
+    const created = db.createApiToken({ userId: req.user.id, tokenHash: fingerprint, name });
+    return { id: created.id, name: created.name, createdAt: created.createdAt };
+  });
+
   app.post<{ Params: { id: string } }>('/api/tokens/:id/revoke', async (req, reply) => {
     if (!req.user) return reply.code(401).send({ error: 'unauthorized' });
     if (!db.revokeApiToken(req.params.id, req.user.id)) {

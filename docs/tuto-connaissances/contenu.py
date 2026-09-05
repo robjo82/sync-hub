@@ -119,13 +119,17 @@ def installation(img):
         '<p>Sans cette étape, tes conversations restent <b>uniquement en local</b> : elles ne sont pas '
         'sauvegardées et tu ne les retrouveras pas depuis un autre poste.</p>'
         '<ol>'
+        '<li>Sur ton poste : <code>./scripts/enroll.sh</code>. Il fabrique un jeton qui '
+        '<b>ne quitte jamais ta machine</b> et affiche son empreinte.</li>'
         '<li>Ouvre le hub : <code>https://sync-hub.robin-joseph.fr</code>, et connecte-toi.</li>'
         '<li>Menu de ton compte, en haut à droite → <b>Mon compte</b>.</li>'
-        '<li>Section <b>Jetons d\'appareil</b> → donne un nom à la machine (par exemple '
-        '« MacBook du bureau ») et crée le jeton.</li>'
-        '<li><b>Copie-le tout de suite</b> : il n\'est affiché qu\'une fois.</li>'
-        '<li>Sur ton poste : <code>./scripts/enroll.sh</code>, et colle le jeton quand il est demandé.</li>'
+        '<li>Section <b>Appareils</b> → <b>Approuver un appareil</b> : colle l\'empreinte et '
+        'nomme la machine.</li>'
         '</ol>'
+        + banner('info', '💡',
+                 "<p>L'empreinte <b>n'est pas un secret</b> : elle n'autorise rien et peut être "
+                 "collée dans un message sans précaution. C'est le jeton, resté sur ta machine, qui "
+                 "authentifie — et il n'a jamais eu à voyager.</p>")
         + banner('warning', '⚠️',
                  "<p>Un jeton par machine. C'est ce qui permet de révoquer un portable perdu sans couper "
                  "tout le monde.</p>")
@@ -141,8 +145,9 @@ def installation(img):
                  "<p>Le premier scan tourne en arrière-plan et peut prendre plusieurs minutes sur un gros "
                  "historique. L'arbre se remplit au fur et à mesure ; recharge la page après une minute ou deux.</p>")
         + toggle("J'ai perdu mon jeton d'appareil",
-                 "<p>Il n'est pas récupérable, par conception. Révoque-le depuis <b>Mon compte</b> et "
-                 "crées-en un nouveau.</p>")
+                 "<p>Il n'est pas récupérable, par conception. Révoque-le depuis <b>Mon compte</b>, puis "
+                 "relance <code>./scripts/enroll.sh</code> sur la machine et approuve la nouvelle "
+                 "empreinte.</p>")
         + toggle("Comment savoir si mon poste est bien rattaché ?",
                  "<p>En haut du tableau de bord, l'indicateur affiche « Cet appareil ». Ouvre <b>Mon compte</b> : "
                  "la ligne sous ton nom dit vers quel hub la machine pousse, ou qu'elle ne pousse nulle part.</p>"),

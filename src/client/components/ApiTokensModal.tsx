@@ -23,6 +23,9 @@ export function ApiTokensModal({ isOpen, onClose, variant = 'modal' }: Props) {
   // The plaintext exists here and nowhere else, for as long as this modal stays open.
   const [justCreated, setJustCreated] = useState<{ name: string; token: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [fingerprint, setFingerprint] = useState('');
+  const [approveName, setApproveName] = useState('');
+  const [approving, setApproving] = useState(false);
 
   const load = async () => {
     try {
@@ -65,6 +68,22 @@ export function ApiTokensModal({ isOpen, onClose, variant = 'modal' }: Props) {
       setError(err.message || 'Création impossible');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const approve = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setApproving(true);
+    setError(null);
+    try {
+      await api.approveDevice(fingerprint.trim(), approveName.trim());
+      setFingerprint('');
+      setApproveName('');
+      await load();
+    } catch (err: any) {
+      setError(err.message || 'Approbation impossible');
+    } finally {
+      setApproving(false);
     }
   };
 
@@ -121,6 +140,42 @@ export function ApiTokensModal({ isOpen, onClose, variant = 'modal' }: Props) {
             </div>
           )}
 
+          {/* La voie recommandée : la machine fabrique son jeton et n'en montre que l'empreinte,
+              qui n'autorise rien. Le formulaire ci-dessous, où le hub fabrique le jeton, reste
+              disponible mais oblige à faire voyager un secret jusqu'à la machine. */}
+          <form onSubmit={approve} className="mb-6 rounded-xl border border-border bg-background/50 p-4">
+            <p className="text-sm font-medium text-foreground">Approuver un appareil</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Sur la machine à rattacher : <code className="rounded-xl bg-muted px-2 py-2 font-mono">./scripts/enroll.sh</code>.
+              Colle ici l'empreinte qu'il affiche — ce n'est pas un secret.
+            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <input
+                value={fingerprint}
+                onChange={(e) => setFingerprint(e.target.value)}
+                placeholder="Empreinte (64 caractères)"
+                className="min-w-0 flex-1 rounded-xl border border-border bg-card px-4 py-2 font-mono text-sm text-foreground placeholder:text-muted-foreground"
+              />
+              <input
+                value={approveName}
+                onChange={(e) => setApproveName(e.target.value)}
+                placeholder="Nom de la machine"
+                className="min-w-0 flex-1 rounded-xl border border-border bg-card px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground"
+              />
+              <button
+                type="submit"
+                disabled={approving || !fingerprint.trim() || !approveName.trim()}
+                className="flex cursor-pointer items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-foreground disabled:opacity-40"
+              >
+                {approving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                Approuver
+              </button>
+            </div>
+          </form>
+
+          <p className="mb-2 text-sm text-muted-foreground">
+            Ou faire fabriquer le jeton par le hub — il faudra alors le transporter jusqu'à la machine :
+          </p>
           <form onSubmit={create} className="mb-4 flex items-center gap-2">
             <input
               value={name}

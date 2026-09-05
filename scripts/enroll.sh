@@ -1,67 +1,68 @@
 #!/usr/bin/env bash
-# Enrôle cette machine auprès d'un hub sync-hub : demande l'URL et le jeton d'appareil, vérifie
-# qu'ils fonctionnent réellement, puis range le jeton dans le trousseau macOS.
+# Rattache cette machine à un hub sync-hub.
 #
-# Le jeton n'est jamais écrit dans un fichier ni passé en argument de commande (il finirait dans
-# l'historique du shell) : il est saisi masqué et va directement dans le trousseau, d'où
-# run_daemon.sh le relit au démarrage du service.
+# Le jeton est fabriqué ici et ne quitte jamais ce poste. Seule son empreinte est affichée, et
+# une empreinte n'autorise rien : elle peut être collée dans un message, un ticket ou un courriel
+# sans précaution. C'est le contraire de l'ancienne procédure, où le hub fabriquait le jeton et
+# où il fallait le faire voyager jusqu'ici — utilisable, en chemin, par quiconque le voyait.
 set -euo pipefail
 
 KEYCHAIN_SERVICE="sync-hub-remote-token"
 DEFAULT_HUB="https://sync-hub.robin-joseph.fr"
 
-echo "Enrôlement de cette machine auprès d'un hub sync-hub."
+echo "Rattachement de cette machine à un hub sync-hub."
 echo
 
 read -r -p "URL du hub [${DEFAULT_HUB}] : " HUB
 HUB="${HUB:-$DEFAULT_HUB}"
 HUB="${HUB%/}"
 
-echo
-echo "Il te faut un jeton d'appareil. Pour l'obtenir :"
-echo "  1. ouvre ${HUB} et connecte-toi"
-echo "  2. menu en haut à droite → « Jetons d'appareil »"
-echo "  3. donne un nom à cette machine (ex. « MacBook de Marie ») et crée le jeton"
-echo "  4. copie-le : il n'est affiché qu'une seule fois"
-echo
-read -r -s -p "Colle le jeton ici (rien ne s'affiche) : " TOKEN
-echo
-echo
-
-if [ -z "$TOKEN" ]; then
-  echo "Aucun jeton saisi — abandon." >&2
-  exit 1
+# Un jeton déjà en place se réutilise : le refabriquer invaliderait un rattachement qui marche.
+if EXISTING=$(security find-generic-password -s "$KEYCHAIN_SERVICE" -w 2>/dev/null); then
+  echo
+  echo "Cette machine a déjà un jeton."
+  read -r -p "En refabriquer un (l'ancien cessera de fonctionner) ? [o/N] : " REPONSE
+  if [ "${REPONSE:-n}" != "o" ]; then
+    TOKEN="$EXISTING"
+  fi
 fi
 
-echo "Vérification auprès du hub…"
-# On teste avec un lot vide : si le jeton est bon le hub répond 200 sans rien modifier.
-STATUS="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
-  -X POST "${HUB}/api/sync/push" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H 'Content-Type: application/json' \
-  -d '{"projects":[],"threads":[],"messages":[]}' || echo 000)"
+if [ -z "${TOKEN:-}" ]; then
+  # 32 octets d'aléa, comme les jetons émis par le hub.
+  TOKEN=$(head -c 32 /dev/urandom | xxd -p | tr -d '\n')
+  security add-generic-password -a "${USER}" -s "$KEYCHAIN_SERVICE" -w "$TOKEN" -U
+fi
 
-case "$STATUS" in
-  200)
-    echo "✓ Jeton accepté par ${HUB}"
-    ;;
-  401)
-    echo "✗ Jeton refusé (401). Vérifie que tu l'as copié en entier, et qu'il n'a pas été révoqué." >&2
-    exit 1
-    ;;
-  000)
-    echo "✗ Hub injoignable à ${HUB}. Vérifie l'URL et ta connexion." >&2
-    exit 1
-    ;;
-  *)
-    echo "✗ Réponse inattendue du hub (HTTP ${STATUS})." >&2
-    exit 1
-    ;;
-esac
+# La même empreinte que celle stockée par le hub : SHA-256 en hexadécimal.
+FINGERPRINT=$(printf '%s' "$TOKEN" | shasum -a 256 | cut -d' ' -f1)
 
-security add-generic-password -a "$USER" -s "$KEYCHAIN_SERVICE" -w "$TOKEN" -U
-echo "✓ Jeton rangé dans le trousseau (entrée « ${KEYCHAIN_SERVICE} »)"
+# Le jeton n'est jamais réaffiché à partir d'ici.
+unset EXISTING
+
+cat <<TEXTE
+
+Jeton fabriqué et rangé dans le trousseau. Il n'a pas quitté cette machine.
+
+Empreinte de cet appareil :
+
+    ${FINGERPRINT}
+
+Ce n'est pas un secret. Transmets-la à la personne qui administre le hub, ou
+approuve-la toi-même si tu as un compte :
+
+    1. ouvre ${HUB} et connecte-toi
+    2. menu du compte, en haut à droite → « Mon compte »
+    3. section « Appareils » → « Approuver un appareil »
+    4. colle l'empreinte et nomme la machine
+
+La synchronisation démarre dès l'approbation. Rien d'autre à faire ici.
+TEXTE
+
+# Enregistre l'URL du hub pour le service, qui la relit au démarrage.
+DATA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/data"
+mkdir -p "$DATA_DIR"
+printf '{\n  "remoteUrl": "%s"\n}\n' "$HUB" > "$DATA_DIR/remote.json"
 
 echo
-echo "Dernière étape : installer le service, qui lira ce jeton au démarrage."
-echo "  SYNC_HUB_REMOTE_URL=${HUB} ./scripts/install_service.sh"
+echo "Hub enregistré : ${HUB}"
+echo "Relance le service pour qu'il prenne effet : launchctl kickstart -k gui/\$(id -u)/fr.sync-hub.daemon"

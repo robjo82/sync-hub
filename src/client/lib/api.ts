@@ -184,6 +184,12 @@ export const api = {
     const qs = params.toString();
     return jsonFetch<CostSummary>(`/api/costs${qs ? `?${qs}` : ''}`);
   },
+  approveDevice: (fingerprint: string, name: string) =>
+    jsonFetch<{ id: string; name: string; createdAt: string }>('/api/tokens/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fingerprint, name }),
+    }),
   activity: (scope?: { projectId?: string; threadId?: string; category?: string; startDate?: string; endDate?: string }) => {
     const params = new URLSearchParams();
     if (scope?.projectId) params.set('projectId', scope.projectId);
